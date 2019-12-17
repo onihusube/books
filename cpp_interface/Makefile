@@ -2,8 +2,8 @@ EMBED_JFONT = "YuMincho"
 EMBED_MFONT = "Monaco"
 
 ifeq ($(OS),Windows_NT)
-    EMBED_JFONT = "YuMincho"
-	EMBED_MFONT = "Consolas"
+    EMBED_JFONT = "yumin.ttf"
+	EMBED_MFONT = "consola.ttf"
 endif
 
 all : book
