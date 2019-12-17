@@ -1,7 +1,6 @@
 ---
 documentclass: bxjsarticle
 ---
-\xeCJKDeclareCharClass{CJK}{`■} 
 \clearpage
 
 # はじめに
