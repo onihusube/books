@@ -16,7 +16,9 @@
 ### MacOS
 
 - pandoc
-    - `$ brew install pandoc`
+   ```bash
+   $ brew install pandoc
+   ```
 - Tex
     ```bash
     $ brew cask install mactex-no-gui
