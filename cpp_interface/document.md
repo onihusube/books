@@ -130,10 +130,42 @@ auto get_range(Iterable& range_obj) {
 ```
 
 この`std::ranges::begin(), std::ranges::end()`によってイテレータのペア（範囲）を取得可能な型は、`range`コンセプトを満たすことができます。すなわち、rangeライブラリの各種アダプタ・ビューなどで利用可能になります。
-このような意味で、イテレータインターフェースは`range`インターフェースと呼ばれることになるかもしれません。
+このような意味で、イテレータインターフェースは`range`インターフェースと呼ぶことができるかもしれません。
 
 
-### イテレータ特性
+### `::iterator`
+
+```cpp
+//何かイテレート可能な型
+struct enumrable {
+
+  using iterator = /*提供するイテレータの型*/;
+
+  auto begin() -> iterator {
+    //実装略
+  }
+  
+  auto end() -> iterator {
+    //実装略
+  }
+};
+```
+
+イテレート可能な型は通常、そのイテレータの型についての情報を入れ子型として公開します。上記の`enumrable`クラスならば`enumrable::iterator`のように利用されます。`auto`が無い時代は複雑なイテレータの型を受けるためにこの入れ子型を利用していました。
+
+```cpp
+//任意のvectorの要素を列挙し標準出力に出力する、C++11より前のコード
+template<typename T>
+void output_vector(const std::vector<T>& vec) {
+  for (typename std::vector<T>::iterator it = vec.begin(), end = vec.end(); it != end; ++it) {
+    std::cout << *it << std::endl;
+  }
+}
+```
+
+現在ではイテレータ型を受けるためには`auto`を利用すればいいですし、このような典型的な列挙ループは範囲`for`文によってかなり簡易に書くことができます。
+
+そのため、この入れ子型`::iterator`はイテレータインターフェースにとって必須ではありませんが、イテレータの型を取得する標準的な方法として提供しておくことで、`std::iterator_traits`（後述）を介してイテレータ詳細を引き出すための口として利用してもらうことができます。特に理由がなければ一緒に定義しておくといいかと思います。
 
 
 ## イテレータ型のインターフェース
