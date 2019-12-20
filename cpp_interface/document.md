@@ -157,7 +157,8 @@ struct enumrable {
 //任意のvectorの要素を列挙し標準出力に出力する、C++11より前のコード
 template<typename T>
 void output_vector(const std::vector<T>& vec) {
-  for (typename std::vector<T>::iterator it = vec.begin(), end = vec.end(); it != end; ++it) {
+  typename std::vector<T>::iterator it = vec.begin(), end = vec.end();
+  for (; it != end; ++it) {
     std::cout << *it << std::endl;
   }
 }
