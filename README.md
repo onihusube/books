@@ -22,6 +22,4 @@
 - Tex
     ```bash
     $ brew cask install mactex-no-gui
-    $ sudo tlmgr update --self --all
-    $ sudo tlmgr paper a4
     ```
