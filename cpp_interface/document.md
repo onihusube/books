@@ -64,13 +64,9 @@ C++STLの柱でもあり、おそらく最も自然に出会うのがこのイ�
 //何かイテレート可能な型
 struct enumrable {
 
-  auto begin() -> iterator {
-    //実装略
-  }
+  iterator begin();
   
-  auto end() -> iterator {
-    //実装略
-  }
+  iterator end();
 };
 ```
 
@@ -145,13 +141,9 @@ struct enumrable {
 
   using iterator = /*提供するイテレータの型*/;
 
-  auto begin() -> iterator {
-    //実装略
-  }
+  iterator begin();
   
-  auto end() -> iterator {
-    //実装略
-  }
+  iterator end();
 };
 ```
 
@@ -175,29 +167,216 @@ void output_vector(const std::vector<T>& vec) {
 
 ## イテレータ型のインターフェース
 
-イテレータ型というのは、イテレータそのものの型のことです。せっかくイテレータという概念でアルゴリズムとコンテナを分離しているのに、イテレータ型によって操作が異なってしまうと抽象化の意味がありません。そのため、C++で利用されるイテレータのインターフェースは統一されています。
+イテレータ型というのは、イテレータそのものの型のことです。せっかくイテレータという概念でアルゴリズムとコンテナを分離しているのにイテレータによって操作が異なってしまうと抽象化の意味がありません。そのため、C++で利用されるイテレータ型のインターフェースは統一されています。
+
+そして、イテレータ型はそのイテレータの制約の強さ（特性）に応じて階層的に種類が分けられており、備えているインターフェースもその段階的に限定されたものとなっています。
+
+### 全イテレータ共通の型インターフェース
+
+先ほどのイテレート可能な型でちらっと言っていましたが、イテレータ型はそのイテレータに関する情報をその入れ子型から取得することが出来ます。
+
+```cpp
+struct iterator {
+  using difference_type   = /*イテレータの差分の型*/;
+  using value_type        = /*イテレートする要素の型*/;
+  using pointer           = /*イテレータする要素のポインタ型*/;
+  using reference         = /*イテレータする要素の参照型*/;
+  using iterator_category = /*イテレータの種類を表すタグ*/;
+};
+```
+
+おそらくよく使うのは`value_type`と`iterator_category`ではないかと思います。これらの情報を取得出来るようにすることで、コンパイル時にそのイテレータの特性に合わせた処理の切り替えが行えるようしています。
+
+ただし、イテレータがの典型例でもあるポインタ型はこのような入れ子型を提供できません。自分でテンプレートこちょこちょするコードを書けば取得はできますが面倒なので、標準ライブラリには`std::iterator_traits`という型特性クラスが用意されています。
+
+```cpp
+//通常のクラス型はこちらを利用
+template <typename Iterator>
+struct iterator_traits {
+ using difference_type   = typename Iterator::difference_type;
+ using value_type        = typename Iterator::value_type;
+ using pointer           = typename Iterator::pointer;
+ using reference         = typename Iterator::reference;
+ using iterator_category = typename Iterator::iterator_category;
+};
+
+//ポインタ型はこっちを利用
+template <typename T>
+struct iterator_traits<T*> {
+ using difference_type   = std::ptrdiff_t;
+ using value_type        = std::remove_cv_t<T>;
+ using pointer           = T*;
+ using reference         = T&;
+ using iterator_category = std::random_access_iterator_tag;
+};
+```
+
+この`std::iterator_traits`クラスを通すようにすればポインタ型含めたあらゆるイテレータから共通の操作でイテレータに関する情報を引き出すことが出来ます。この場合でも、自分のイテレータ型に対しては先ほどのように入れ子型としてこれらを定義しておくだけでokです。なお、上級者向けではありますが、イテレータ型に入れ子で定義しなくても（もしくは、したくない場合に）、`std::iterator_traits`クラスをそのイテレータ型に対して明示的特殊化しても構いません。
+
+標準ライブラリにもイテレータ型のこれらの情報によって使用する処理を切り替えるものがいくつかあるので、イテレータを実装する際はこれらの入れ子型を定義しておくべきです。
+
 
 ### forward iterator
 
+```cpp
+//参照先の要素型をTとするイテレータ
+template<typename T>
+struct forward_iterator {
+  using difference_type   = std::ptrdiff_t;
+  using value_type        = T;
+  using pointer           = T*;
+  using reference         = T&;
+  using iterator_category = std::forward_iterator_tag;
+
+  //イテレータを1つ進める
+  forward_iterator& operator++();
+  forward_iterator& operator++(int);
+
+  //現在の要素を参照
+  reference operator*();
+
+  //イテレータの比較
+  bool operator==(const forward_iterator&);
+  bool operator!=(const forward_iterator&);
+}
+```
+
+*forward iterator*（前進イテレータ）は一方向にのみ進む事の出来るイテレータであり、1つづつしか要素を進める事のできないものです。その名の通り、イテレータを1度進めたら戻ることが出来ません。これは最も基本的なイテレータであり、全てのイテレータは少なくとも*forward iterator*でなければなりません。すなわち、C++におけるイテレータは全て*forward iterator*として扱うことができます。
+
 #### `operator++()`
+
+これはイテレータを1つ進める操作です。インクリメント演算子と呼ばれるものをオーバーロードします。
 
 #### `operator*()`
 
+　
+
 #### `operator!=()`
+
+　
 
 #### コピー可能
 
+　
+
+
 ### bidirectional iterator
+
+```cpp
+template<typename T>
+struct bidirectional_iterator : forward_iterator<T> {
+
+  using iterator_category = std::bidirectional_iterator_tag;
+
+  //イテレータを1つ戻す
+  bidirectional_iterator& operator--();
+  bidirectional_iterator& operator--(int);
+}
+```
 
 #### `operator--()`
 
+　
+
 ### random access iterator
 
-#### `operator+=()`
+```cpp
+template<typename T>
+struct random_access_iterator : bidirectional_iterator<T> {
 
-#### `operator-=()`
+  using difference_type   = std::ptrdiff_t;
+  using iterator_category = std::random_access_iterator_tag;
 
-### 全イテレータ共通の型インターフェース
+  //イテレータをn進める/戻す
+  random_access_iterator& operator+=(difference_type n);
+  random_access_iterator& operator-=(difference_type n);
+
+  //n進めた/戻したイテレータを計算する
+  random_access_iterator& operator+(difference_type n);
+  random_access_iterator& operator-(difference_type n);
+}
+
+//n進めた/戻したイテレータを計算する（逆順の演算子）
+template<typename T>
+random_access_iterator<T>&
+    operator+(typename random_access_iterator<T>::difference_type n,
+              const random_access_iterator<T>&);
+template<typename T>
+random_access_iterator<T>&
+    operator-(typename random_access_iterator<T>::difference_type n,
+              const random_access_iterator<T>&);
+```
+
+#### `operator+=()`/`operator-=()`
+
+　
+
+#### `operator+()`/`operator-()`
+
+　
+
+
+
+　
+
+
+--- コラム：Hidden Friends イディオム ---
+上記*random access iterator*の非メンバの`operator+`のようにメンバ関数として定義する事の出来ない関数や、そもそもメンバ関数を最小にしたいなどの理由から、あるクラスにまつわる関数を非メンバ関数として外部の名前空間スコープに定義することがあります。この時、実質的にそのクラス専用の関数が名前空間スコープに存在することになり、コードの可読性が低下するだけでなく、`using namespace`や暗黙の型変換が絡むと意図しない関数呼び出しによる謎のバグを踏んでしまうかもしれません・・・。
+
+この解決として、クラス定義内で`friend`関数としてそうした関数を定義するのが*Hidden Friendsイディオム*です。このような関数はそのクラスのメンバ関数ではありませんが、名前空間に展開されているフリー関数というわけでもありません。ADLでのみ使用可能となる不思議な関数になります。
+
+```cpp
+namespace MyNS {
+  template<typename T>
+  struct MyVector {
+
+    using iteretor = /*略*/;
+
+    //Hidden Friendsなイテレータインターフェース
+    friend iteretor begin(MyVector&);
+    friend iteretor end(MyVector&);
+  };
+}
+
+MyNS::MyVector v = {1, 2, 4};
+
+auto frist1 = v.begin();      //ng
+auto frist2 = MyNS::begin(v); //ng
+auto frist3 = begin(v);       //ok
+```
+
+この不思議な性質によって、名前空間スコープを汚すこともなく、`using namespace`された時などに意図しない関数を呼び出してしまうことを防止することが出来ます。標準ライブラリでも`std::filesystem::path`の非メンバ`operator==(const path&, const path&)`が`using namespace std::filesystem`された時に文字列比較に取って代わるバグが発見され、このイディオムを用いて修正されました。それ以降、クラスのインターフェース、特にオーバーロードされた演算子はこのイディオムを利用するようになり、C++20では規格書に明記されるに至りました。
+
+先ほどの`random_access_iterator`クラスで使ってみると例えば次のようになるでしょう。
+
+```cpp
+template<typename T>
+struct random_access_iterator : bidirectional_iterator<T> {
+
+  using difference_type   = std::ptrdiff_t;
+  using iterator_category = std::random_access_iterator_tag;
+
+  //イテレータをn進める/戻す
+  random_access_iterator& operator+=(difference_type n);
+  random_access_iterator& operator-=(difference_type n);
+
+  //n進めた/戻したイテレータを計算する
+  friend random_access_iterator& 
+      operator+(const random_access_iterator&, difference_type n);
+  friend random_access_iterator& 
+      operator-(const random_access_iterator&, difference_type n);
+  friend random_access_iterator& 
+      operator+(difference_type n, const random_access_iterator&);
+  friend random_access_iterator& 
+      operator-(difference_type n, const random_access_iterator&);
+}
+```
+
+クラス外で定義されていた`operator+`/`-`を*Hidden Friends*にし、対応する逆順の演算子も同様にしました。クラス定義内で定義できることによって記述がスッキリしているメリットがここで確認できるでしょう。  
+なお、`friend`であるので非`public`なメンバに全てアクセスすることができるので、`operator+=`なども含めた全てのメンバ関数を*Hidden Friends*にすることはできます。この塩梅は個人の好みによるかもしれませんが、メンバ関数としてのインターフェースとそうでないものを適切に選り分け、メンバ関数として定義した方がいいものは*Hidden Friends*にはしない方がいいでしょう。
+
+
+\clearpage
 
 # コンテナインターフェース
 
