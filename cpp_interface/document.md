@@ -62,6 +62,8 @@ C++STLの柱でもあり、おそらく最も自然に出会うのがこのイ�
 
 ### `begin(), end()`
 
+　
+
 ```cpp
 //何かイテレート可能な型
 struct enumrable {
@@ -125,13 +127,13 @@ C++20からはイテレータインターフェースの利用にあたっては
 これらを利用すると先ほどの`get_range()`はだいぶすっきりします。
 
 ```cpp
-template<std::range Iterable>
+template<std::ranges::range Iterable>
 auto get_range(Iterable& range_obj) {
   return std::make_pair(std::ranges::begin(range_obj), std::ranges::end(range_obj));
 }
 ```
 
-この`std::ranges::begin(), std::ranges::end()`によってイテレータのペア（範囲）を取得可能な型は、`range`コンセプトを満たすことができます。すなわち、rangeライブラリの各種アダプタ・ビューなどで利用可能になります。
+この`std::ranges::begin(), std::ranges::end()`によってイテレータのペア（範囲）を取得可能な型は、`std::ranges::range`コンセプトを満たすことができます。すなわち、rangeライブラリの各種アダプタ・ビューなどで利用可能になります。
 このような意味で、イテレータインターフェースは`range`インターフェースと呼ぶことができるかもしれません。
 
 
@@ -173,9 +175,9 @@ void output_vector(const std::vector<T>& vec) {
 
 イテレータ型というのは、イテレータそのものの型のことです。せっかくイテレータという概念でアルゴリズムとコンテナを分離しているのにイテレータによって操作が異なってしまうと抽象化の意味がありません。そのため、C++で利用されるイテレータ型のインターフェースは統一されています。
 
-そして、イテレータ型はそのイテレータの制約の強さ（特性）に応じて階層的に種類が分けられており、備えているインターフェースもその段階的に限定されたものとなっています。
+そして、イテレータ型はそのイテレータの制約の強さ（特性）に応じて階層的にカテゴリ分けされており、備えているインターフェースもそれによって段階的に限定されたものとなっています。
 
-### 全イテレータ共通の型インターフェース
+### 全イテレータ共通の型特性インターフェース
 
 　
 
@@ -242,7 +244,7 @@ struct input_iterator {
   input_iterator& operator++();
   input_iterator& operator++(int);
 
-  //現在の要素を参照
+  //現在の要素の読み出し
   reference operator*();
 
   //イテレータの比較
@@ -264,16 +266,16 @@ struct forward_iterator : input_iterator<T> {
 この2つのイテレータでは以下のような操作が可能です。
 
 ```cpp
-input_iterator it{}, end{};
+input_iterator<int> it{}, end{};
 
 ++it;
 it++;
-auto v = *it;
-bool e = it != end;
+int  v  = *it;
+bool eq = it != end;
 input_iterator cp = it;
 ```
 
-*forward iterator*と*input iterator*には操作上の違いはありません。違いはその意味論にあります。*forward iterator*では*input iterator*の要件に加えて、__マルチパス保証__ という意味論的な制約が要求されます。それは簡単に言えば以下のようになります。
+*forward iterator*と*input iterator*には操作上の違いはありません。違いはその意味論にあります。*forward iterator*では*input iterator*の要件に加えて、__マルチパス保証__ という意味論的な制約が要求されます。それは以下のような要求です。
 
 あるイテレータ`I`の値`a, b`について
 
@@ -284,27 +286,11 @@ input_iterator cp = it;
 - `((void)[](X x){++x;}(a), *a)`と`*a`は等価な操作となる
     - すなわち、イテレータをコピーして何をしてもコピー元のイテレータには影響がない
 
-C++20以降のコンセプトによって厳密に定義されたイテレータの要件に従おうとするならこれを遵守すべきです。イテレートするものが特殊でこれを満たせるかが分からなければ。*input iterator*として宣言しておくといいでしょう。
-
-#### `operator++()`
-
-　
-
-これはイテレータを1つ進める操作です。インクリメント演算子と呼ばれるものをオーバーロードします。
-
-#### `operator*()`
-
-　
-
-#### `operator!=()`
-
-　
-
-#### コピー可能
-
-　
+これはその名の通り複数の経路、すなわち複数のイテレータから同時に同じ要素列を同じ順序でイテレートできるという保証です。*input iterator*でしかないイテレータは、あるイテレータから要素を読み出したり、イテレータを進めたりすると、その対象の（参照する）要素列の状態が変更される事があります。*forward iterator*はそのような事が起きない事を表明しており、普通のイテレータであることの証とも言えます。イテレートするものが特殊でこれを満たせるかが分からなければ。*input iterator*として宣言しておくといいでしょう。
 
 ### bidirectional iterator
+
+　
 
 ```cpp
 template<typename T>
@@ -318,11 +304,22 @@ struct bidirectional_iterator : forward_iterator<T> {
 }
 ```
 
-#### `operator--()`
+*bidirectional iterator*は*forward iterator*であり、さらにイテレータを1つ戻す操作を行えるものです。ただし、あくまで今の位置から前後に1つづつ動く事ができるだけです。
 
-　
+このイテレータでは、*forward iterator*での操作に加えて以下のような操作が可能です。
+
+```cpp
+bidirectional_iterator<int> it{};
+
+//一歩進んで二歩下がる
+++it;
+--it;
+it--;
+```
 
 ### random access iterator
+
+　
 
 ```cpp
 template<typename T>
@@ -338,6 +335,9 @@ struct random_access_iterator : bidirectional_iterator<T> {
   //n進めた/戻したイテレータを計算する
   random_access_iterator& operator+(difference_type n);
   random_access_iterator& operator-(difference_type n);
+
+  //イテレータ間の距離を計算する
+  difference_type operator-(random_access_iterator&) const;
 }
 
 //n進めた/戻したイテレータを計算する（逆順の演算子）
@@ -351,33 +351,28 @@ random_access_iterator<T>&
               const random_access_iterator<T>&);
 ```
 
-#### `operator+=()`/`operator-=()`
+*random access iterator*は*bidirectional iterator*であり、さらにイテレータを任意の数進める/戻す事ができるようになったものです。*random access iterator*はイテレート範囲を自由に動き回る事ができます。
 
-　
-
-#### `operator+()`/`operator-()`
-
-　
-
-
-### output itereator
-
-上記の全てのイテレータの`operator*()`（間接参照）において、その返す値に対して`operator=`による代入が可能でありそれが何らかの出力として意味を持つイテレータは*output itereator*でもあります。*output itereator*の`::iterator_category`は`std::input_iterator_tag`が使われます。
-
-これは、以下のような操作が可能なものです。
+このイテレータでは、*bidirectional iterator*での操作に加えて以下のような操作が可能です。
 
 ```cpp
-output_itereator oit{}; //何らかのoutput itereatorとする
+random_access_iterator<int> it{};
 
-*oit = 'A'; //イテレータの参照先へ出力
+it += 3;
+it -= 2;
+
+auto cp = it + 6;
+cp = 6  + it
+cp = it - 6;
+cp = 6  - it
+
+auto distance = cp - it;
 ```
 
-この*output itereator*の要件を追加で満たすイテレータは、可変（*mutable*）なイテレータと呼ばれます。
+#### コラム：Hidden Friends イディオム
 
 　
 
-
---- コラム：Hidden Friends イディオム ---  
 上記*random access iterator*の非メンバの`operator+`のようにメンバ関数として定義する事の出来ない関数や、そもそもメンバ関数を最小にしたいなどの理由から、あるクラスにまつわる関数を非メンバ関数として外部の名前空間スコープに定義することがあります。この時、実質的にそのクラス専用の関数が名前空間スコープに存在することになり、コードの可読性が低下するだけでなく、`using namespace`や暗黙の型変換が絡むと意図しない関数呼び出しによる謎のバグを踏んでしまうかもしれません・・・。
 
 この解決として、クラス定義内で`friend`関数としてそうした関数を定義するのが*Hidden Friendsイディオム*です。このような関数はそのクラスのメンバ関数ではありませんが、名前空間に展開されているフリー関数というわけでもありません。ADLでのみ使用可能となる不思議な関数になります。
@@ -432,16 +427,44 @@ struct random_access_iterator : bidirectional_iterator<T> {
 クラス外で定義されていた`operator+`/`-`を*Hidden Friends*にし、対応する逆順の演算子も同様にしました。クラス定義内で定義できることによって記述がスッキリしているメリットがここで確認できるでしょう。  
 なお、`friend`であるので非`public`なメンバに全てアクセスすることができるので、`operator+=`なども含めた全てのメンバ関数を*Hidden Friends*にすることはできます。この塩梅は個人の好みによるかもしれませんが、メンバ関数としてのインターフェースとそうでないものを適切に選り分け、メンバ関数として定義した方がいいものは*Hidden Friends*にはしない方が良いかと思われます。
 
+### output itereator
 
-\clearpage
-
-### 標準ライブラリのクラスとイテレータ型
-  
 　
 
-標準ライブラリに存在するイテレート可能な型のイテレータ、およびイテレータアダプタがどのようなイテレータとして扱えるのかを表にまとめました。自作の型にイテレータインターフェースを定義する際の参考になるかもしれません。
+```cpp
+//TをOutへ出力するoutput itereator
+template<typename T, typename Out>
+struct output_iterator : input_iterator<T> {
+  using difference_type   = void;
+  using value_type        = void;
+  using pointer           = void;
+  using reference         = void;
+  using iterator_category = std::output_iterator_tag;
 
-<!-- TableBorder=yes -->
+  //参照先への出力
+  Out& operator=(const T& value);
+}
+```
+
+あるイテレータに対して`operator=`による代入が可能であり、それが何らかの出力として（イテレータのコピーではない）意味を持つイテレータは*output itereator*でもあります。*output itereator*の`::iterator_category`は`std::output_iterator_tag`が使われます。
+
+これは、以下のような操作が可能なものです。
+
+```cpp
+output_itereator oit{}; //何らかのoutput itereatorとする
+
+oit = 'A'; //イテレータの参照先へ出力
+```
+
+この*output itereator*の要件を追加で満たすイテレータは、可変（*mutable*）なイテレータと呼ばれます。
+
+この*output itereator*では、`::iterator_category`以外の入れ子型に`void`を指定して出力専用である事を表明することがあります。そのような場合`++oit`や`*oit`は意味を持たない事があります。また、そのように実装しても構いません。その場合、ある出力先へ順番に出力するという意味論だけを持つ事になります。
+
+### 標準ライブラリのクラス・イテレータアダプタとイテレータカテゴリ
+　
+
+標準ライブラリに存在するイテレート可能な型のイテレータ、およびイテレータアダプタがどのようなイテレータとして扱えるのかを表にまとめました。標準コンテナやイテレータアダプタを使う際や自作の型にイテレータインターフェースを定義する際の参考になるかもしれません。
+
 |型名|*random access*|*bidirectional*|*forward*|*input*|*output*|
 |:---|:---:|:---:|:---:|:---:|:---:|
 |`vector`|◎|○|○|○|△|
@@ -465,13 +488,104 @@ struct random_access_iterator : bidirectional_iterator<T> {
 |`back_insert_iterator`|-|-|-|○|○|
 |`front_insert_iterator`|-|-|-|○|○|
 |`insert_iterator`|-|-|-|○|○|
-|`i(o)stream_iterator`|-|-|-|○|○|
-|`i(o)streambuf_iterator`|-|-|-|○|○|
+|`(i|o)stream_iterator`|-|-|-|○|○|
+|`(i|o)streambuf_iterator`|-|-|-|○|○|
 
-*random access iterator*が◎になっているものは、そのイテレータがさらに*contiguous iterator*（連続イテレータ、メモリ連続性を持つイテレータ）の要件を満たしていることを表しています。その他、△となっている所は常にその要件を満たしているわけではないことを表しています。
+*random access iterator*が○になっているものは、そのイテレータがさらに*contiguous iterator*（連続イテレータ、メモリ連続性を持つイテレータ）の要件を満たしていることを表しています。その他、△となっている所は常にその要件を満たしているわけではないことを表します。
 
+\clearpage
 
 # コンテナインターフェース
+
+コンテナインターフェースとは、標準ライブラリに定義されている各種コンテナが持ち合わせているインターフェースのことです。その目的によってわかりやすい名前を付けられており、コンテナの間で可能な限り統一が図られています。そのようなインターフェースの中からよく使用されると思われるものを中心に見ていきます。
+
+なお、イテレータインターフェースは基本的に全てのコンテナが持ち合わせていますので省略します。
+
+## 領域
+
+### `size()`
+
+　
+
+### `empty()`
+
+　
+
+### `resize()`
+
+　
+
+### `resrve()`
+
+　
+
+### 標準コンテナ対応表
+
+　
+
+|型名|`size()`|`empty()`|`resize()`|`reserve()`|
+|:---|:---:|:---:|:---:|:---:|
+|`vector`|○|○|○|○|
+|`array`|○|○|-|-|
+|`string`|○|○|○|○|
+|`deque`|○|○|○|-|
+|`list`|○|○|○|-|
+|`forward_list`|-|○|○|-|
+|`set`|○|○|-|-|
+|`multi_set`|○|○|-|-|
+|`map`|○|○|-|-|
+|`multi_map`|○|○|-|-|
+|`unordered_set`|○|○|-|○|
+|`unordered_multi_set`|○|○|-|○|
+|`unordered_map`|○|○|-|○|
+|`unordered_multi_map`|○|○|-|○|
+|`stack`|○|○|-|-|
+|`queue`|○|○|-|-|
+|`priority_queue`|○|○|-|-|
+
+## 要素アクセス
+
+### `operator[]`（`at()`）
+### `data()`
+### `front()`
+### `back()`
+
+### 標準コンテナ対応表
+
+　
+
+|型名|`operator[]/at()`|`data()`|`front()`|`back()`|
+|:---|:---:|:---:|:---:|:---:|
+|`vector`|○|○|○|○|
+|`array`|○|○|○|○|
+|`string`|○|○|○|○|
+|`deque`|○|-|○|○|
+|`list`|-|-|○|○|
+|`forward_list`|-|-|○|-|
+|`set`|-|-|-|-|
+|`multi_set`|-|-|-|-|
+|`map`|○|-|-|-|
+|`multi_map`|-|-|-|-|
+|`unordered_set`|-|-|-|○|
+|`unordered_multi_set`|-|-|-|○|
+|`unordered_map`|○|-|-|○|
+|`unordered_multi_map`|-|-|-|○|
+|`stack`|-|-|-|△|
+|`queue`|-|-|○|○|
+|`priority_queue`|-|-|△|-|
+
+`stack`と`priority_queue`の△になっている所は、同じ意味論を持つ関数を`top()`という別の名前でしか備えていない事を表しています。
+
+## コンテナの変更
+
+## 入れ子型特性
+
+## 検索やソートなど
+
+C++の標準コンテナに対する検索やソートなどアルゴリズムの適用は基本的に`<algorithm>`ヘッダにあるフリー関数のものを利用する事で行います。連想コンテナの検索系のアルゴリズムやリスト系コンテナのリスト操作アルゴリズムのように、コンテナの特性上メンバとして持っているコンテナもありますが少数派です。`<algorithm>`や`<range>`ヘッダにはさらに多彩なアルゴリズムが定義されており、イテレータインターフェースを備えておけば利用する事ができるようになるので、基本的にはそちらを利用すべきです。
+
+これは原初のSTLのコンテナとアルゴリズムの詳細をイテレータを介して分離するというコンセプトによります。C++ではメンバ関数とフリー関数の区別をなくす仕組み（*Uniform Function Call*）が度々検討されており、これが将来可能になればメンバ関数のように`<algorithm>`ヘッダにあるフリー関数のアルゴリズムを使用できるようになるかもしれません。
+
 
 # 文字列インターフェース
 
@@ -488,5 +602,11 @@ struct random_access_iterator : bidirectional_iterator<T> {
 # 関数呼び出しインターフェース
 
 # `swap`インターフェース
+
+この`swap`という操作を用いるとコピーコンストラクタなどをより簡単に書く事ができるので、`swap`はコピーやムーブよりもより基本的な操作だと見る向きもあります。
+
+## ムーブコンストラクタ/代入演算子
+
+## `swap`関数
 
 # メタ関数のインターフェース
