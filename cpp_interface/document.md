@@ -269,10 +269,14 @@ struct forward_iterator : input_iterator<T> {
 ```cpp
 input_iterator<int> it{}, end{};
 
+//イテレータを1つ進める
 ++it;
 it++;
+//要素を参照する
 int  v  = *it;
+//イテレータの比較
 bool eq = it != end;
+//イテレータのコピー
 input_iterator cp = it;
 ```
 
@@ -359,14 +363,17 @@ random_access_iterator<T>&
 ```cpp
 random_access_iterator<int> it{};
 
+//イテレータを任意の数進める
 it += 3;
 it -= 2;
 
+//任意の数進めたイテレータを得る
 auto cp = it + 6;
 cp = 6  + it
 cp = it - 6;
 cp = 6  - it
 
+//イテレータ間の差分（イテレータ間距離）をとる
 auto distance = cp - it;
 ```
 
@@ -383,7 +390,7 @@ namespace MyNS {
   template<typename T>
   struct MyVector {
 
-    using iteretor = /*略*/;
+    using iteretor = T*;
 
     //Hidden Friendsなイテレータインターフェース
     friend iteretor begin(MyVector&);
@@ -426,7 +433,7 @@ struct random_access_iterator : bidirectional_iterator<T> {
 ```
 
 クラス外で定義されていた`operator+`/`-`を*Hidden Friends*にし、対応する逆順の演算子も同様にしました。クラス定義内で定義できることによって記述がスッキリしているメリットがここで確認できるでしょう。  
-なお、`friend`であるので非`public`なメンバに全てアクセスすることができるので、`operator+=`なども含めた全てのメンバ関数を*Hidden Friends*にすることはできます。この塩梅は個人の好みによるかもしれませんが、メンバ関数としてのインターフェースとそうでないものを適切に選り分け、メンバ関数として定義した方がいいものは*Hidden Friends*にはしない方が良いかと思われます。
+なお、`friend`であるので非`public`なメンバ全てにアクセスすることができるため、`operator+=`なども含めた全てのメンバ関数を*Hidden Friends*にすることはできます。この塩梅は個人の好みによるかもしれませんが、メンバ関数としてのインターフェースとそうでないものを適切に選り分け、メンバ関数として定義した方がいいものは*Hidden Friends*にはしない方が良いかと思われます。
 
 ### output itereator
 
@@ -493,7 +500,7 @@ oit = 'A'; //イテレータの参照先へ出力
 | `i(o)stream_iterator`            | -               | -               | -         | ○       | ○        |
 | `i(o)streambuf_iterator`         | -               | -               | -         | ○       | ○        |
 
-*random access iterator*が○になっているものは、そのイテレータがさらに*contiguous iterator*（連続イテレータ、メモリ連続性を持つイテレータ）の要件を満たしていることを表しています。その他、△となっている所は常にその要件を満たしているわけではないことを表します。
+*random access iterator*が◎になっているものは、そのイテレータがさらに*contiguous iterator*（連続イテレータ、メモリ連続性を持つイテレータ）の要件を満たしていることを表しています。その他、△となっている所は常にその要件を満たしているわけではないことを表します。
 
 \clearpage
 
@@ -508,22 +515,128 @@ oit = 'A'; //イテレータの参照先へ出力
 ### `size()`
 
 　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class vector {
+  //宣言の例
+  std::size_t size() const noexcept;
+}
+```
+
+`size()`関数はコンテナが現在保持している要素数を返します。
+
+```cpp
+std::vector vec = {1, 2, 4, 8, 16};
+vec.emplace_back(32);
+
+std::size_t size = vec.size(); // 6
+```
+
+配列型では`size()`メンバ関数を利用することができないので、フリーの`std::size()`関数を利用します。こちらを使用すると標準コンテナと配列型とで共通の操作によって現在の要素数を取得できるようになります。
+
+```cpp
+int arr[] = {1, 2, 3, 5, 7, 11, 13};
+
+std::size_t v_size = std::size(vec); // 6
+std::size_t a_size = std::size(arr); // 7
+```
+
+この戻り値型は通常符号なし整数型ですが、符号付と符号なしの整数比較は安全ではなくコンパイラによっては警告を発するため、符号付整数型で取得したいことがあります。そのために、C++20からは`std::ssize()`というフリー関数が追加されます。これは各コンテナから`size()`によって取得した要素数を符号付整数型にキャストして返すものです。
+
+```cpp
+std::ptrdiff_t v_size = std::ssize(vec); // 6
+std::ptrdiff_t a_size = std::ssize(arr); // 7
+```
 
 ### `empty()`
 
 　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class vector {
+  [[nodiscard]]
+  bool empty() const noexcept;
+}
+```
+
+`empty()`関数はコンテナが空かどうかを調べる関数です。すなわち、要素数がゼロ（`container.size() == 0`）かどうかをチェックするのと等価な意味を持ちます。
+
+```cpp
+std::vector<int> vec{};
+
+bool empty = vec.empty(); // true
+```
+
+これもやはり配列型では使用できないので、フリー関数の`std::empty()`が用意されています。これを使用すると標準コンテナと配列型とで共通の操作によってコンテナが空かどうかを判定できます。ただし、通常は要素数ゼロの配列を宣言できないので配列版は常に`false`を返します（要素数ゼロの配列を渡すとコンパイルエラーになります）。
+
+```cpp
+int arr[] = {1};
+
+bool v_empty = std::empty(vec); // true
+bool a_empty = std::empty(arr); // false
+```
 
 ### `resize()`
 
 　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class vector {
+  void resize(std::size_t size, T c = {});
+}
+```
 
-### `resrve()`
+ `resize()`関数はその名の通りコンテナの現在の要素数を指定したものに変更する操作です。もし現在の要素数よりも小さい数字が指定された場合は要素列の末尾から指定した数になるように切り詰められます。逆に現在の要素数よりも大きい数が指定された場合はデフォルト構築された要素がコピーされて補われます。
+
+ ```cpp
+std::vector vec = {1, 2, 4, 8, 16};
+vec.resize(3);  // {1, 2, 4}
+vec.resize(6);  // {1, 2, 4, 0, 0, 0}
+```
+
+現在の要素数よりも大きい数が指定された場合に挿入される要素を指定することもできます。
+
+ ```cpp
+std::vector vec = {1, 2, 4, 8, 16};
+vec.resize(3, 1);  // {1, 2, 4}
+vec.resize(6, 1);  // {1, 2, 4, 1, 1, 1}
+```
+
+
+### `reserve()`
 
 　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class vector {
+  void reserve(std::size_t n);
+}
+```
+
+`reserve()`関数はコンテナが追加のメモリ確保を行わなくても追加できる要素数を指定した数`n`に変更する操作です。ただし、指定した数ぴったりになるとは限らず、少なくとも`n`要素をメモリ確保せずに追加できるように内部の領域を拡張します。すでに要素がある場合はその要素のムーブを行いますが、現在の要素数を超えた領域に対しては何もせずにそのままにしておきます。
+
+```cpp
+std::vector<int> vec{};
+
+vec.reserve(1000);
+auto capa = vec.capacity(); // 1000 (clang9.0.0 & GCC9.2)
+
+for (int i = 0; i < 1000; ++i) {
+  vec.emplace_back(i);  //このループ中では追加のメモリ確保は発生しない
+}
+```
+
+多くの実装では初項`1`、公比`r`の等比数列に従って内部領域が拡張されるようになっているようで（そうする事で償却計算量を*O(1)*にできるため）、`r`には`1.5`や`2`が使われるようです。そのため、`reserve()`をせずに上記のループによる要素追加を実行すると、完了までに少なくとも11回のメモリ確保が発生します。上記のように`reserve()`を予め行っておく事で1回のメモリ確保で済ませておく事ができます。これは意外と見落とされがちですが、大きなボトルネックの解消に繋がることが多々あります。
+
+この`reserve()`インターフェースを備えている標準コンテナでは、`reserve(n)`の呼び出しの後では少なくとも指定した`n`個の要素はメモリ確保をせずに追加できることが保証されています。自作のコンテナに`reserve()`インターフェースを定義する場合はそのような保証を行うべきです。
+
+ただし、この関数には内部領域縮小の機能はなく、必要ありません。現在の内部容量よりも小さい数が指定された場合は何もしません。
 
 ### 標準コンテナ対応表
 
 　
+
+上記4つのインターフェースは必ずしも全ての標準コンテナで使用可能ではありません。何で使えて何で使えないのかを一覧にしてみました。
 
 | 型名                  | `size()` | `empty()` | `resize()` | `reserve()` |
 | --------------------- | :------: | :-------: | :--------: | :---------: |
@@ -544,6 +657,8 @@ oit = 'A'; //イテレータの参照先へ出力
 | `stack`               | ○        | ○         | -          | -           |
 | `queue`               | ○        | ○         | -          | -           |
 | `priority_queue`      | ○        | ○         | -          | -           |
+
+`forward_list`が`size()`を持たないのは、そのオブジェクトサイズを最小にするためです。`size()`に必要なメンバ変数を持った場合、その他の事に使用する事は無くオブジェクトサイズを無駄に太らせるだけという判断のようです。`forward_list` で`size()`相当の値を取得するにはイテレータを取得してその距離を求めます。`std::distance()`がその用途に使用できます。また、C++20から追加される`std::ranges::size()`を使用すると`forward_list`も含めて統一された操作によってコンテナ容量を取得できます。
 
 ## 要素アクセス
 
@@ -580,10 +695,14 @@ oit = 'A'; //イテレータの参照先へ出力
 
 ## コンテナの変更
 
-### `push_back()`
+### `push/pop`インターフェース
+#### `push_back()`
+#### `push_front()`
+#### `pop_back()`
+#### `pop_front()`
+
 ### `emplace()`
-#### `emplace_back()`
-#### `emplace_front()`
+#### `emplace_back()/emplace_front()`
 #### `emplace_hint()`
 #### `try_emplace()`
 ### `insert()`
@@ -592,25 +711,45 @@ oit = 'A'; //イテレータの参照先へ出力
 
 ### 標準コンテナ対応表
 
-| 型名                  | `push_back()` | `insert()`       | `erase()`       | `clear()` |
+| 型名                   | `push_back()` | `push_front()`   | `pop_back()`    | `pop_front()` |
 | --------------------- | :-----------: | :--------------: | :-------------: | :-------: |
-| `vector`              | ○             | ○                | ○               | ○         |
+| `vector`              | ○             | -                | -               | -         |
 | `array`               | -             | -                | -               | -         |
-| `string`              | ○             | ○                | ○               | ○         |
+| `string`              | ○             | -                | -               | -         |
 | `deque`               | ○             | ○                | ○               | ○         |
 | `list`                | ○             | ○                | ○               | ○         |
-| `forward_list`        | -             | `insert_after()` | `erase_after()` | ○         |
-| `set`                 | -             | ○                | ○               | ○         |
-| `multi_set`           | -             | ○                | ○               | ○         |
-| `map`                 | -             | ○                | ○               | ○         |
-| `multi_map`           | -             | ○                | ○               | ○         |
-| `unordered_set`       | -             | ○                | ○               | ○         |
-| `unordered_multi_set` | -             | ○                | ○               | ○         |
-| `unordered_map`       | -             | ○                | ○               | ○         |
-| `unordered_multi_map` | -             | ○                | ○               | ○         |
-| `stack`               | `push()`      | -                | ○               | -         |
-| `queue`               | `push()`      | -                | ○               | ○         |
-| `priority_queue`      | `push()`      | -                | ○               | -         |
+| `forward_list`        | -             | ○                | ○               | ○         |
+| `set`                 | -             | -                | -               | -         |
+| `multi_set`           | -             | -                | -               | -         |
+| `map`                 | -             | -                | -               | -         |
+| `multi_map`           | -             | -                | -               | -         |
+| `unordered_set`       | -             | -                | -               | -         |
+| `unordered_multi_set` | -             | -                | -               | -         |
+| `unordered_map`       | -             | -                | -               | -         |
+| `unordered_multi_map` | -             | -                | -               | -         |
+| `stack`               | -             | `push()`         | -               | `pop()`   |
+| `queue`               | `push()`      | `pop()`          | -               | -         |
+| `priority_queue`      | `push()`      | `pop()`          | -               | -         |
+
+| 型名                  | `insert()`       | `erase()`       | `clear()` |
+| --------------------- | :--------------: | :-------------: | :-------: |
+| `vector`              | ○                | ○               | ○         |
+| `array`               | -                | -               | -         |
+| `string`              | ○                | ○               | ○         |
+| `deque`               | ○                | ○               | ○         |
+| `list`                | ○                | ○               | ○         |
+| `forward_list`        | `insert_after()` | `erase_after()` | ○         |
+| `set`                 | ○                | ○               | ○         |
+| `multi_set`           | ○                | ○               | ○         |
+| `map`                 | ○                | ○               | ○         |
+| `multi_map`           | ○                | ○               | ○         |
+| `unordered_set`       | ○                | ○               | ○         |
+| `unordered_multi_set` | ○                | ○               | ○         |
+| `unordered_map`       | ○                | ○               | ○         |
+| `unordered_multi_map` | ○                | ○               | ○         |
+| `stack`               | -                | ○               | -         |
+| `queue`               | -                | ○               | ○         |
+| `priority_queue`      | -                | ○               | -         |
 
 
 | 型名                    | `try_emplace` | `emplace_hint` | `emplace_front` | `emplace_back` | `emplace` |
@@ -629,14 +768,13 @@ oit = 'A'; //イテレータの参照先へ出力
 | `unordered_multi_set` | -             | ○              | -               | -              | ○         |
 | `unordered_map`       | ○             | ○              | -               | -              | ○         |
 | `unordered_multi_map` | -             | ○              | -               | -              | ○         |
-| `stack`               | -             | -              | -               | `emplace()`    | -         |
+| `stack`               | -             | -              | `emplace()`     | -              | -         |
 | `queue`               | -             | -              | -               | `emplace()`    | -         |
 | `priority_queue`      | -             | -              | -               | `emplace()`    | -         |
 
-## 入れ子型特性
+## 型特性インターフェース
 
 ```cpp
-
 template<class T, class Allocator = allocator<T>>
 class vector {
   using value_type = T;
@@ -672,6 +810,6 @@ C++の標準コンテナに対する検索やソートなどアルゴリズム�
 
 ## ムーブコンストラクタ/代入演算子
 
-## `swap`関数
+## 非メンバ`swap`関数
 
 # メタ関数のインターフェース
