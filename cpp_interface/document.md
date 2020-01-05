@@ -1,6 +1,9 @@
 ---
+title: C++ 標準的インターフェース
+author: onihusube
+date: 2020/01/05
 documentclass: bxjsarticle
----
+...
 \clearpage
 
 # 標準的インターフェース
@@ -260,9 +263,9 @@ struct forward_iterator : input_iterator<T> {
 };
 ```
 
-*forward iterator*（前進イテレータ）は一方向にのみ進む事の出来るイテレータであり、1つづつしか要素を進める事のできないものです。その名の通り、イテレータを1度進めたら戻ることが出来ません。
-
 *input iterator*（入力イテレータ）はイテレータの要件のなかで最小の（最も制約の弱い）もので、イテレータの基本的な要求を定めたものです。これは最も基本的なイテレータであり、全てのイテレータは少なくとも*input iterator*でなければなりません。すなわち、C++におけるイテレータは全て*input iterator*として扱うことができます。
+
+*forward iterator*（前進イテレータ）は一方向にのみ進む事の出来るイテレータであり、1つづつしか要素を進める事のできないものです。その名の通りイテレータを1度進めたら戻ることが出来ません。これも*input iterator*でもあります。
 
 この2つのイテレータでは以下のような操作が可能です。
 
@@ -291,7 +294,7 @@ input_iterator cp = it;
 - `((void)[](X x){++x;}(a), *a)`と`*a`は等価な操作となる
     - すなわち、イテレータをコピーして何をしてもコピー元のイテレータには影響がない
 
-これはその名の通り複数の経路、すなわち複数のイテレータから同時に同じ要素列を同じ順序でイテレートできるという保証です。*input iterator*でしかないイテレータは、あるイテレータから要素を読み出したり、イテレータを進めたりすると、その対象の（参照する）要素列の状態が変更される事があります。*forward iterator*はそのような事が起きない事を表明しており、普通のイテレータであることの証とも言えます。イテレートするものが特殊でこれを満たせるかが分からなければ。*input iterator*として宣言しておくといいでしょう。
+これはその名の通り複数の経路、すなわち複数のイテレータから同時に同じ要素列を同じ順序の上でイテレートできるという保証です。*input iterator*でしかないイテレータは、あるイテレータから要素を読み出したり、イテレータを進めたりすると、その対象の（参照する）要素列の状態が変更される事があります。*forward iterator*はそのような事が起きない事を表明しており、普通のイテレータであることの証とも言えます。イテレートするものが特殊でこれを満たせるかが分からなければ。*input iterator*として宣言しておくといいでしょう。
 
 ### bidirectional iterator
 
@@ -454,7 +457,7 @@ struct output_iterator : input_iterator<T> {
 }
 ```
 
-あるイテレータに対して`operator=`による代入が可能であり、それが何らかの出力として（イテレータのコピーではない）意味を持つイテレータは*output itereator*でもあります。*output itereator*の`::iterator_category`は`std::output_iterator_tag`が使われます。
+上記4つのイテレータカテゴリに属するあるイテレータに対して、更に`operator=`による代入が可能であり、それが何らかの出力として（イテレータのコピーではない）意味を持つイテレータは*output itereator*でもあります。*output itereator*の`::iterator_category`は`std::output_iterator_tag`が使われます。
 
 これは、以下のような操作が可能なものです。
 
@@ -658,14 +661,113 @@ for (int i = 0; i < 1000; ++i) {
 | `queue`               | ○        | ○         | -          | -           |
 | `priority_queue`      | ○        | ○         | -          | -           |
 
-`forward_list`が`size()`を持たないのは、そのオブジェクトサイズを最小にするためです。`size()`に必要なメンバ変数を持った場合、その他の事に使用する事は無くオブジェクトサイズを無駄に太らせるだけという判断のようです。`forward_list` で`size()`相当の値を取得するにはイテレータを取得してその距離を求めます。`std::distance()`がその用途に使用できます。また、C++20から追加される`std::ranges::size()`を使用すると`forward_list`も含めて統一された操作によってコンテナ容量を取得できます。
+`forward_list`が`size()`を持たないのは、そのオブジェクトサイズを最小にするためです。`size()`に必要なメンバ変数を持った場合、その他の事に使用する事は無くオブジェクトサイズを無駄に太らせるだけという判断のようです。`forward_list` で`size()`相当の値を取得するにはイテレータを取得してその距離を求めます。`std::distance()`がその用途に使用できます。
 
 ## 要素アクセス
 
 ### `operator[]`（`at()`）
+
+　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class vector {
+  T& operator[](std::size_t n);
+  T& at(std::size_t n);
+}
+```
+
+`operator[]`は添字演算子と呼ばれるもので、C言語の生配列アクセスで使用されていたものがベースにあります。`c[1]`のように使用し、指定された添字に対応する要素への参照を返します。`std::map, std::unordered_map`がそうであるように、添字は必ずしも数字である必要はありません。コンテナの意味論において、その要素との対応付けがある何らかの値であれば良いでしょう。別の見方をすれば、この演算子は添字の集合からコンテナという要素の集合への写像となるものです。
+
+```cpp
+//vectorの場合
+std::vector vec = {1, 3, 5, 7, 11, 13};
+
+int p = vec[2]; //読み出し
+vec[3] = 17;    //書き込み
+
+//mapの場合
+std::map<std::string, int> map{};
+map.emplace("one", 1);
+
+int n = map["one"]; //読み出し
+map["two"] = 2;     //書き込み
+```
+
+`operator[]`を備えているコンテナは必ず`at()`関数も備えており、ほとんど同じ意味論を持ちます。その違いは、指定された添字に対応する要素が存在しない時の対応を誰が行うのかにあります。`operator[]`では、指定された添字に対応する要素が存在しない場合はコンテナの側で対応します。対して、`at()`関数は`std::out_of_range`例外を投げることでユーザーに対応を任せます。コンテナによっては、要素の存在チェックを行う分パフォーマンスが犠牲になります（現在のCPUでは強力な分岐予測のおかげでその影響はほぼないという説もありますが）。
+
+```cpp
+//vectorの場合
+std::vector vec = {1, 3, 5, 7, 11, 13};
+
+vec[6];     //未定義動作、範囲境界をチェックしない
+vec.at(6);  //std::out_of_range例外を投げる、範囲境界をチェックする
+
+//mapの場合
+std::map<std::string, int> map{};
+map.emplace("one", 1);
+
+int n = map["two"];     //対応する要素をデフォルト構築して返す、n = 0
+int m = map.at("two");  //std::out_of_range例外を投げる
+```
+
+自前の型に実装する場合、`operator[]`と`at()`関数は片方を備えるならばもう片方も備えておくことが推奨されます。その差については上記の通りにすべきでしょう。
+
 ### `data()`
-### `front()`
-### `back()`
+
+　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class vector {
+  T* data();
+}
+```
+
+`data()`関数はコンテナ内で要素を保持しているメモリ領域へのポインタを得るものです。ただし、使用できるのは`std::vetor`や`std::array`のようにその領域がメモリ連続性を満たしているコンテナだけです。
+
+```cpp
+std::vector vec = {1, 3, 5, 7, 9, 11};
+
+auto p = vec.data();
+
+*p        //1
+*(p + 1); //3
+*(p + 5); //11
+```
+
+配列型も連続したメモリ領域に要素を保持していますが、メンバ関数を持てないのでフリー関数の`std::data()`が用意されています。これを使用すると標準コンテナと配列型とで共通の操作によってメモリ領域先頭へのポインタを取得できます。
+
+```cpp
+int arr[] = {1, 3, 5, 7, 9, 11};
+
+auto p = std::data(arr);
+
+*p        //1
+*(p + 1); //3
+*(p + 5); //11
+```
+
+メモリ連続性を満たしているとは、コンテナの保持する要素列がメモリ上でもその順番通りに連続して並んでいる事を言います。そにれより、その先頭のポインタからは通常のポインタ操作によって要素をイテレートすることができます。しかし、コンテナの特性によってはこれを満たすことができないこともあるので、そういう場合は定義する必要はありません。
+
+### `front()`/`back()`
+
+　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class vector {
+  T& front();
+  T& back();
+}
+```
+
+`front()`/`back()`関数はコンテナの抱える要素列の先頭/末尾の要素への参照を得るものです。この先頭/末尾というのはコンテナの意味論においてのもので、必ずしも内部のメモリ領域上での順番とか追加された順番などである必要はありません。標準ライブラリでは、シーケンスコンテナと呼ばれる種類のコンテナがこれを備えています。  
+これと同じことはイテレータを用いても簡単にできるのですが、要素列の先頭や末尾にアクセスしたいことは多々あるため、その近道となるコンビニエンス関数として定義されています。
+
+```cpp
+std::vector vec = {1, 3, 5, 7, 11, 13};
+
+int f = vec.front();  //f = 1
+int b = vec.back();   //b = 13
+```
 
 ### 標準コンテナ対応表
 
@@ -683,11 +785,11 @@ for (int i = 0; i < 1000; ++i) {
 | `multi_set`           | -                 | -        | -         | -        |
 | `map`                 | ○                 | -        | -         | -        |
 | `multi_map`           | -                 | -        | -         | -        |
-| `unordered_set`       | -                 | -        | -         | ○        |
-| `unordered_multi_set` | -                 | -        | -         | ○        |
-| `unordered_map`       | ○                 | -        | -         | ○        |
-| `unordered_multi_map` | -                 | -        | -         | ○        |
-| `stack`               | -                 | -        | -         | `top()`  |
+| `unordered_set`       | -                 | -        | -         | -        |
+| `unordered_multi_set` | -                 | -        | -         | -        |
+| `unordered_map`       | ○                 | -        | -         | -        |
+| `unordered_multi_map` | -                 | -        | -         | -        |
+| `stack`               | -                 | -        | `top()`   | -        |
 | `queue`               | -                 | -        | ○         | ○        |
 | `priority_queue`      | -                 | -        | `top()`   | -        |
 
@@ -695,16 +797,167 @@ for (int i = 0; i < 1000; ++i) {
 
 ## コンテナの変更
 
-### `push/pop`インターフェース
-#### `push_back()`
-#### `push_front()`
-#### `pop_back()`
-#### `pop_front()`
+### `push/pop`系インターフェース
 
-### `emplace()`
-#### `emplace_back()/emplace_front()`
-#### `emplace_hint()`
-#### `try_emplace()`
+`push_xxx()`関数群はその名の通りコンテナに要素を追加する関数です。既に構築済みの要素を受け取り、対応する内部領域にコピー（ムーブ）構築します。
+
+`pop_xxx()`関数群はその名の通りコンテナから要素を削除する関数です。他のプログラミング言語における同じような関数と異なり、この関数は対応する場所の要素を削除をするだけで要素を取り出す機能は持っていません（例外安全への対応のためにこうなっているという噂があります・・・）。
+
+
+#### `push_back()/push_front()`
+
+　
+```cpp
+//vectorは全てを持ち合わせていないのでdequeでの宣言例
+template<class T, class Allocator = allocator<T>>
+class deque {
+  void push_front(const T& x);
+  void push_back(const T& x);
+}
+```
+
+*front/back*の名前の通りこれらはそれぞれコンテナの要素列の先頭/末尾に要素を押し込むものです。要素アクセス関数の`front()/back()`と同じく、頻出する操作のためコンビニエンス関数として定義されています。
+
+```cpp
+std::deque deq = {3, 5, 7};
+
+deq.push_front(1);  // {1, 3, 5, 7}
+deq.push_back(11);  // {1, 3, 5, 7, 11}
+```
+
+要素列の先頭や末尾に要素を追加するという性質上、コンテナによってはその操作は非効率になってしまうことがあり得ます。例えば、`std::vector`は`push_front()`すると必ず領域の再確保が入ることになるため、`push_front()`を備えていません。
+
+#### `pop_back()/pop_front()`
+
+　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class deque {
+  void pop_front();
+  void pop_back();
+}
+```
+
+こちらも*front/back*の名前の通りそれぞれコンテナの要素列の先頭/末尾の要素を削除するものです。
+
+```cpp
+std::deque deq = {1, 3, 5, 7, 11};
+
+deq.pop_front(1);  // {3, 5, 7, 11}
+deq.pop_back(11);  // {3, 5, 7}
+```
+
+これらも`push_front()`と同じような理由により一部のコンテナしか備えていません
+
+### `emplace()`系インターフェース
+
+```cpp
+template<class T, class Allocator = allocator<T>>
+class deque {
+  template<calss... Args>
+  iterator emplace(const_iterator position, Args&&... args);
+}
+```
+
+`emplace()`系関数は`push`系関数と同じくコンテナに要素を追加する関数ですが、受け取る引数が異なります。これらの関数は要素型のコンストラクタ引数を受け取り、指定した位置（`position`）に要素を直接構築します。
+`push`系関数と比べると、要素を一度構築する必要が無い分効率的になります（単純な型ならば最適化で同等の処理になるようですが）。構築済みのオブジェクトを渡してもコピー（ムーブ）コンストラクタが呼ばれるため一見`push`系関数と同じように扱うことができます。
+
+```cpp
+//何か自作の型
+struct myobj {
+
+  myobj() = default;
+
+  myobj(int n, double d, const char* chars)
+    : num(n)
+    , v(d)
+    , str(chars)
+  {}
+
+  int num;
+  double v;
+  std::string str;
+};
+
+
+std::deque<myobj> deq{};
+
+auto it = deq.emplace(deq.begin(), 10, 2.71, "emplace");  //コンテナ先頭に要素を直接構築
+
+myobj mo{};
+
+it = deq.emplace(it, mo);  //コンテナ先頭に要素をコピー構築
+```
+
+#### `emplace_front()/emplace_back()`
+
+　
+```cpp
+template<class T, class Allocator = allocator<T>>
+class deque {
+  template<calss... Args>
+  void emplace_front(Args&&... args);
+
+  template<calss... Args>
+  void emplace_back(Args&&... args);
+}
+```
+
+*front/back*の名前の通りそれぞれコンテナの要素列の先頭/末尾へ`emplace`するものです。これも頻出する操作のためコンビニエンス関数として定義されています。
+
+
+```cpp
+std::deque<myobj> deq{};
+
+deq.emplace(deq.begin(), 10, 2.71, "emplace");
+
+deq.emplace_front(1, 0.0, "front");  //コンテナ先頭に要素を直接構築
+deq.emplace_back(20, 3.14, "back");  //コンテナ末尾に要素を直接構築
+```
+
+#### `emplace_hint()/try_emplace()`
+
+　
+```cpp
+//両方を備えているmapでの宣言例
+template <
+  class Key,
+  class T,
+  class Compare = less<Key>,
+  class Allocator = allocator<pair<const Key, T> >
+>
+class map {
+  template<calss... Args>
+  iterator emplace_hint(const_iterator hint, Args&&... args);
+
+  template<calss... Args>
+  pair<iterator, bool> try_emplace(const_iterator hint, const Key& k, Args&&... args);
+}
+```
+
+`emplace_hint()`は要素を新しく挿入したい位置を指しているイテレータを渡すことで連想コンテナにおいての要素追加時の計算量を削減しようとするもので、`try_emplace()`は一部の連想コンテナにおいて指定されたキーを持つ要素が既に存在している場合には引数`args...`に一切手を付けない事を保証するものです。共に、標準ライブラリの連想コンテナにおいて提供されています。
+
+連想コンテナは`std::vector`等のシーケンスコンテナと異なり、要素はその比較述語`Compare`に従う何らかの順序によって保持されています。そのため、要素を新しく挿入しようとしてもまずその挿入位置を決めてやる必要があり、位置を決めた後もコンテナ種別によっては要素の重複を許さない場合があります。前者の問題を可能ならば効率化しようとしたものが`emplace_hint()`であり、加えて後者の場合にも対処したものが`try_emplace()`になるわけです。  
+すなわち、`emplace_hint()`では重複要素を許さないような連想コンテナに対して重複する要素を`emplace`使用とした場合に、渡したコンストラクタ引数`args...`がムーブされる可能性があり、`emplace_hint()`はそのような場合でも何もしない事を保証します。
+
+
+
+
+ここまで紹介した`emplace`系関数は特に顕著ですが、コンテナ間でその関数名が統一されていても関数引数や戻り値までも含めて（このことをシグネチャと言います）統一されてはいない事があります。
+
+| コンテナ種別       | `emplace()`                                                   |
+| ------------ | ------------------------------------------------------------- |
+| シーケンスコンテナ    | `template<calss... Args>`                                     |
+|              | `iterator emplace(const_iterator position, Args&&... args);`  |
+| 連想コンテナ       | `template<calss... Args>`                                     |
+|              | `iterator emplace_hint(const_iterator hint, Args&&... args);` |
+| 重複不可能な連想コンテナ | `template<calss... Args>`                                     |
+|              | `pair<iterator, bool> emplace(Args&&... args);`               |
+| 重複可能な連想コンテナ  | `template<calss... Args>`                                     |
+|              | `iterator emplace(Args&&... args);`                           |
+
+本書におけるインターフェースへの準拠とはほとんど関数名のみを指しています。その意味論さえ同じであればこのように引数や戻り値に多少の差があっても構わないでしょう。もちろん、統一できるのならばその方が良いです。
+
 ### `insert()`
 ### `erase()`
 ### `clear()`
@@ -731,6 +984,26 @@ for (int i = 0; i < 1000; ++i) {
 | `queue`               | `push()`      | `pop()`          | -               | -         |
 | `priority_queue`      | `push()`      | `pop()`          | -               | -         |
 
+| 型名                    | `try_emplace` | `emplace_hint` | `emplace_front` | `emplace_back` | `emplace` |
+| --------------------- | :-----------: | :------------: | :-------------: | :------------: | :-------: |
+| `vector`              | -             | -              | -               | ○              | ○         |
+| `array`               | -             | -              | -               | -              | -         |
+| `string`              | -             | -              | -               | -              | -         |
+| `deque`               | -             | -              | ○               | ○              | ○         |
+| `list`                | -             | -              | ○               | ○              | ○         |
+| `forward_list`        | -             | -              | ○               | -              | ○         |
+| `set`                 | -             | ○              | -               | -              | ○         |
+| `multi_set`           | -             | ○              | -               | -              | ○         |
+| `map`                 | ○             | ○              | -               | -              | ○         |
+| `multi_map`           | -             | ○              | -               | -              | ○         |
+| `unordered_set`       | -             | ○              | -               | -              | ○         |
+| `unordered_multi_set` | -             | ○              | -               | -              | ○         |
+| `unordered_map`       | ○             | ○              | -               | -              | ○         |
+| `unordered_multi_map` | -             | ○              | -               | -              | ○         |
+| `stack`               | -             | -              | `emplace()`     | -              | -         |
+| `queue`               | -             | -              | -               | `emplace()`    | -         |
+| `priority_queue`      | -             | -              | -               | `emplace()`    | -         |
+
 | 型名                  | `insert()`       | `erase()`       | `clear()` |
 | --------------------- | :--------------: | :-------------: | :-------: |
 | `vector`              | ○                | ○               | ○         |
@@ -752,30 +1025,10 @@ for (int i = 0; i < 1000; ++i) {
 | `priority_queue`      | -                | ○               | -         |
 
 
-| 型名                    | `try_emplace` | `emplace_hint` | `emplace_front` | `emplace_back` | `emplace` |
-| --------------------- | :-----------: | :------------: | :-------------: | :------------: | :-------: |
-| `vector`              | -             | -              | -               | ○              | ○         |
-| `array`               | -             | -              | -               | -              | -         |
-| `string`              | -             | -              | -               | -              | -         |
-| `deque`               | -             | -              | ○               | ○              | ○         |
-| `list`                | -             | -              | ○               | ○              | ○         |
-| `forward_list`        | -             | -              | ○               | -              | ○         |
-| `set`                 | -             | ○              | -               | -              | ○         |
-| `multi_set`           | -             | ○              | -               | -              | ○         |
-| `map`                 | ○             | ○              | -               | -              | ○         |
-| `multi_map`           | -             | ○              | -               | -              | ○         |
-| `unordered_set`       | -             | ○              | -               | -              | ○         |
-| `unordered_multi_set` | -             | ○              | -               | -              | ○         |
-| `unordered_map`       | ○             | ○              | -               | -              | ○         |
-| `unordered_multi_map` | -             | ○              | -               | -              | ○         |
-| `stack`               | -             | -              | `emplace()`     | -              | -         |
-| `queue`               | -             | -              | -               | `emplace()`    | -         |
-| `priority_queue`      | -             | -              | -               | `emplace()`    | -         |
-
 ## 型特性インターフェース
 
 ```cpp
-template<class T, class Allocator = allocator<T>>
+template<class T, class Allocator = std::allocator<T>>
 class vector {
   using value_type = T;
   using iterator = /*イテレータの型*/;
@@ -813,3 +1066,9 @@ C++の標準コンテナに対する検索やソートなどアルゴリズム�
 ## 非メンバ`swap`関数
 
 # メタ関数のインターフェース
+
+
+\clearpage
+# 謝辞
+
+本書を執筆するに当たっては、cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0に基づく)をとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。

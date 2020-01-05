@@ -404,7 +404,28 @@ $endif$
 \xeCJKDeclareCharClass{CJK}{`■}
 \usepackage{ascmac}
 
+%%% タイトルページ画像IN
+\usepackage[dvipdfmx,hiresbb]{graphicx}
+
 \begin{document}
+
+%%% タイトル画像挿入
+\enlargethispage{\paperwidth}
+\thispagestyle{empty}
+\vspace*{-1truein}
+\vspace*{-\topmargin}
+\vspace*{-\headheight}
+\vspace*{-\headsep}
+\vspace*{-\topskip}
+\noindent\hspace*{-1in}\hspace*{-\oddsidemargin}
+\includegraphics[width=\paperwidth,height=\paperheight]{cover.jpg}
+
+\clearpage
+　%% 表紙裏の空白ページ
+\clearpage
+
+%%% 中表紙
+
 $if(has-frontmatter)$
 \frontmatter
 $endif$
@@ -420,6 +441,8 @@ $abstract$
 \end{abstract}
 $endif$
 $endif$
+
+\clearpage  %%中表紙改ページ
 
 $for(include-before)$
 $include-before$
@@ -498,4 +521,21 @@ $for(include-after)$
 $include-after$
 
 $endfor$
+
+
+\clearpage
+　%% 裏表紙前の空白ページ
+\clearpage
+
+%%% 裏表紙画像挿入
+\enlargethispage{\paperwidth}
+\thispagestyle{empty}
+\vspace*{-1truein}
+\vspace*{-\topmargin}
+\vspace*{-\headheight}
+\vspace*{-\headsep}
+\vspace*{-\topskip}
+\noindent\hspace*{-1in}\hspace*{-\oddsidemargin}
+\includegraphics[width=\paperwidth,height=\paperheight]{backcover.jpg}
+
 \end{document}
