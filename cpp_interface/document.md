@@ -849,6 +849,29 @@ deq.pop_back(11);  // {3, 5, 7}
 
 これらも`push_front()`と同じような理由により一部のコンテナしか備えていません
 
+#### 標準コンテナ対応表
+
+　
+| 型名                   | `push_back()` | `push_front()`   | `pop_back()`    | `pop_front()` |
+| --------------------- | :-----------: | :--------------: | :-------------: | :-------: |
+| `vector`              | ○             | -                | -               | -         |
+| `array`               | -             | -                | -               | -         |
+| `string`              | ○             | -                | -               | -         |
+| `deque`               | ○             | ○                | ○               | ○         |
+| `list`                | ○             | ○                | ○               | ○         |
+| `forward_list`        | -             | ○                | ○               | ○         |
+| `set`                 | -             | -                | -               | -         |
+| `multi_set`           | -             | -                | -               | -         |
+| `map`                 | -             | -                | -               | -         |
+| `multi_map`           | -             | -                | -               | -         |
+| `unordered_set`       | -             | -                | -               | -         |
+| `unordered_multi_set` | -             | -                | -               | -         |
+| `unordered_map`       | -             | -                | -               | -         |
+| `unordered_multi_map` | -             | -                | -               | -         |
+| `stack`               | -             | `push()`         | -               | `pop()`   |
+| `queue`               | `push()`      | `pop()`          | -               | -         |
+| `priority_queue`      | `push()`      | `pop()`          | -               | -         |
+
 ### `emplace()`系インターフェース
 
 ```cpp
@@ -931,19 +954,35 @@ class map {
   iterator emplace_hint(const_iterator hint, Args&&... args);
 
   template<calss... Args>
-  pair<iterator, bool> try_emplace(const_iterator hint, const Key& k, Args&&... args);
+  iterator try_emplace(const_iterator hint, const Key& k, Args&&... args);
 }
 ```
 
 `emplace_hint()`は要素を新しく挿入したい位置を指しているイテレータを渡すことで連想コンテナにおいての要素追加時の計算量を削減しようとするもので、`try_emplace()`は一部の連想コンテナにおいて指定されたキーを持つ要素が既に存在している場合には引数`args...`に一切手を付けない事を保証するものです。共に、標準ライブラリの連想コンテナにおいて提供されています。
 
 連想コンテナは`std::vector`等のシーケンスコンテナと異なり、要素はその比較述語`Compare`に従う何らかの順序によって保持されています。そのため、要素を新しく挿入しようとしてもまずその挿入位置を決めてやる必要があり、位置を決めた後もコンテナ種別によっては要素の重複を許さない場合があります。前者の問題を可能ならば効率化しようとしたものが`emplace_hint()`であり、加えて後者の場合にも対処したものが`try_emplace()`になるわけです。  
-すなわち、`emplace_hint()`では重複要素を許さないような連想コンテナに対して重複する要素を`emplace`使用とした場合に、渡したコンストラクタ引数`args...`がムーブされる可能性があり、`emplace_hint()`はそのような場合でも何もしない事を保証します。
+すなわち、`emplace_hint()`では重複要素を許さないような連想コンテナに対して重複する要素を`emplace`した場合に渡したコンストラクタ引数`args...`がムーブされる可能性があり、`emplace_hint()`はそのような場合でも何もしない事を保証します。
 
+```cpp
+std::map itos = {std::make_pair(1, "one"), std::make_pair(3, "three"), std::make_pair(5, "five")};
 
+//1番目に要素を挿入しようとする、戻り値は既にある要素のイテレータ
+auto it = itos.emplace_hint(itos.begin(), 1, "one");
 
+//2番目に要素を挿入（直接構築）、戻り値は挿入した要素のイテレータ
+it = itos.emplace_hint(++it, 2, "two");
 
-ここまで紹介した`emplace`系関数は特に顕著ですが、コンテナ間でその関数名が統一されていても関数引数や戻り値までも含めて（このことをシグネチャと言います）統一されてはいない事があります。
+//3番目に重複構築しようとする、戻り値は既にある要素のイテレータ
+++it;
+auto res = itos.try_emplace(it, 3, "three");
+//4番目に要素を挿入（直接構築）、戻り値は挿入した要素のイテレータ
+++it;
+res = itos.try_emplace(it, 4, "four");
+
+// itos = { {1, "one"}, {2, "two"}, {3, "three"}, {4, "four"}, {5, "five"} }
+```
+
+ここまで紹介した`emplace`系関数は特に顕著ですが、コンテナ間でその関数名が統一されていても関数引数や戻り値までも含めて（このことをシグネチャと言います）統一されてはいない事があります。また、ある関数についていくつかのオーバーロードを備えている事もあります。
 
 | コンテナ種別       | `emplace()`                                                   |
 | ------------ | ------------------------------------------------------------- |
@@ -955,35 +994,14 @@ class map {
 |              | `pair<iterator, bool> emplace(Args&&... args);`               |
 | 重複可能な連想コンテナ  | `template<calss... Args>`                                     |
 |              | `iterator emplace(Args&&... args);`                           |
+| `std::forward_list`  | `template<calss... Args>`                                     |
+|              | `iterator emplace_after(const_iterator position, Args&&... args);`                           |
 
-本書におけるインターフェースへの準拠とはほとんど関数名のみを指しています。その意味論さえ同じであればこのように引数や戻り値に多少の差があっても構わないでしょう。もちろん、統一できるのならばその方が良いです。
+本書におけるインターフェースへの準拠とはほとんど関数名のみを指しています。その意味論さえ同じであればこのように引数や戻り値に多少の差やオーバーロードがあっても構わないでしょう。もちろん、統一できるのならばその方が良いです。
 
-### `insert()`
-### `erase()`
-### `clear()`
+#### 標準コンテナ対応表
 
-### 標準コンテナ対応表
-
-| 型名                   | `push_back()` | `push_front()`   | `pop_back()`    | `pop_front()` |
-| --------------------- | :-----------: | :--------------: | :-------------: | :-------: |
-| `vector`              | ○             | -                | -               | -         |
-| `array`               | -             | -                | -               | -         |
-| `string`              | ○             | -                | -               | -         |
-| `deque`               | ○             | ○                | ○               | ○         |
-| `list`                | ○             | ○                | ○               | ○         |
-| `forward_list`        | -             | ○                | ○               | ○         |
-| `set`                 | -             | -                | -               | -         |
-| `multi_set`           | -             | -                | -               | -         |
-| `map`                 | -             | -                | -               | -         |
-| `multi_map`           | -             | -                | -               | -         |
-| `unordered_set`       | -             | -                | -               | -         |
-| `unordered_multi_set` | -             | -                | -               | -         |
-| `unordered_map`       | -             | -                | -               | -         |
-| `unordered_multi_map` | -             | -                | -               | -         |
-| `stack`               | -             | `push()`         | -               | `pop()`   |
-| `queue`               | `push()`      | `pop()`          | -               | -         |
-| `priority_queue`      | `push()`      | `pop()`          | -               | -         |
-
+　
 | 型名                    | `try_emplace` | `emplace_hint` | `emplace_front` | `emplace_back` | `emplace` |
 | --------------------- | :-----------: | :------------: | :-------------: | :------------: | :-------: |
 | `vector`              | -             | -              | -               | ○              | ○         |
@@ -991,7 +1009,7 @@ class map {
 | `string`              | -             | -              | -               | -              | -         |
 | `deque`               | -             | -              | ○               | ○              | ○         |
 | `list`                | -             | -              | ○               | ○              | ○         |
-| `forward_list`        | -             | -              | ○               | -              | ○         |
+| `forward_list`        | -             | -              | ○               | -              | `emplace_after()`|
 | `set`                 | -             | ○              | -               | -              | ○         |
 | `multi_set`           | -             | ○              | -               | -              | ○         |
 | `map`                 | ○             | ○              | -               | -              | ○         |
@@ -1004,7 +1022,112 @@ class map {
 | `queue`               | -             | -              | -               | `emplace()`    | -         |
 | `priority_queue`      | -             | -              | -               | `emplace()`    | -         |
 
-| 型名                  | `insert()`       | `erase()`       | `clear()` |
+`forward_list`はそのコンテナ特性上指定された要素の一つ前を参照する事にコストがかかるため、`emplace()`は指定された要素の1つ後ろに構築するようになっており、それを明示するために名前が変更されています。
+
+### `insert()`
+
+```cpp
+template<class T, class Allocator = std::allocator<T>>
+class vector {
+  iterator insert(const_iterator position, cont T& x);
+};
+```
+
+`insert()`はその名の通り指定した位置に要素を挿入する関数です。新しい要素は指定した位置に挿入する、つまりは指定した位置にある要素の1つ前に挿入されます。
+
+
+```cpp
+std::vector vec = {1, 3, 5};
+
+auto it = vec.begin();
+++it;
+
+it = vec.insert(it, 2);
+
+it += 2;
+
+it = vec.insert(it, 4);
+
+// vec = {1, 2, 3, 4, 5}
+```
+
+### `erase()`
+
+```cpp
+template<class T, class Allocator = std::allocator<T>>
+class vector {
+  iterator erase(const_iterator position);
+  iterator erase(const_iterator first, const_iterator last);
+};
+```
+
+`erase()`は要素を削除する関数です。削除したい要素はイテレータもしくはイテレータ範囲で指定し、指定された要素をコンテナから完全に削除します。
+
+```cpp
+std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8};
+
+auto it = vec.begin();
+++it;
+
+//2番目の要素を削除
+it = vec.erase(it);
+++it;
+
+//3番目以降の要素を全削除
+it = vec.erase(it, vec.end());
+
+// vec = {1, 3}
+```
+
+#### `std::erase()/std::erase_if()`
+
+　
+```cpp
+//vectorに対する宣言例
+namespace std {
+  template<class T, class Allocator, class U>
+  void erase(vector<T, Allocator>& c, const U& value);
+
+  template<class T, class Allocator, class Predicate>
+  void erase_if(vector<T, Allocator>& c, Predicate pred);
+}
+```
+
+実際のところ、イテレータを指定してピンポイントに削除したいということはあまりなく、特定の条件に合う要素をまとめて削除したいというケースの方が多かったりします。ところがそれをやろうとすると、コンテナによって削除のベストプラクティスとなる操作が全く異なったものになってしまいます。  
+C++20よりそのような操作を統一的に行うために追加されたのが、この`std::erase()/std::erase_if()`フリー関数です。
+
+基本的に、`std::erase()`関数は値を受け取りそれとの比較を行う関数オブジェクトを作成して`std::erase_if()`に移譲する作りになっています。そして、`std::erase_if()`は述語となる関数オブジェクトを受け取り、それを用いて各コンテナ毎に最適な操作によって条件に合う要素を削除します。
+
+```cpp
+std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8};
+
+std::erase_if(vec, [](auto x){ return x % 2 == 0;});
+
+// vec = {1, 3, 5, 7}
+```
+
+残念ながら、これらの関数にはカスタマイゼーションポイントが用意されていないため、ユーザー定義のコンテナに対してもこの関数によって条件付き削除を行うことはできません。ただ、これに倣ってフリー関数の`std::erase()/std::erase_if()`を用意しておくのはありでしょう。
+
+### `clear()`
+
+```cpp
+template<class T, class Allocator = std::allocator<T>>
+class vector {
+  void clear();
+};
+```
+
+`clear()`はコンテナの全ての要素を削除します。別の言い方をすると、コンテナを空にします。
+
+```cpp
+std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8};
+
+vec.clear();  //以降要素は無くなる
+```
+
+### 標準コンテナ対応表
+
+| 型名                  | `insert()`       | `erase()`        | `clear()` |
 | --------------------- | :--------------: | :-------------: | :-------: |
 | `vector`              | ○                | ○               | ○         |
 | `array`               | -                | -               | -         |
@@ -1024,6 +1147,8 @@ class map {
 | `queue`               | -                | ○               | ○         |
 | `priority_queue`      | -                | ○               | -         |
 
+`forward_list`はそのコンテナ特性上指定された要素の一つ前を参照する事にコストがかかるため、`insert()/erase()`は指定された要素の1つ後ろを対象にとるようになっており、それを明示するために名前が変更されています。
+
 
 ## 型特性インターフェース
 
@@ -1033,14 +1158,35 @@ class vector {
   using value_type = T;
   using iterator = /*イテレータの型*/;
   using size_type = std::size_t;
-}
+};
 ```
+
+`std::map`等の連想コンテナの場合、要素としてキーと値のペアを保持するため`value_type`はテンプレートパラメータの`T`や`Key`とは異なったものになります。そのため、連想コンテナでは追加でそれらを取得するための型特性を持ちます。
+
+```cpp
+template <
+  class Key,
+  class T,
+  class Compare = less<Key>,
+  class Allocator = allocator<pair<const Key, T> >
+>
+class map {
+  using key_type = Key;
+  using mapped_type = T;  //map系連想コンテナのみ
+
+  using value_type = std::pair<Key, T>;
+  using iterator = /*イテレータの型*/;
+  using size_type = std::size_t;
+};
+```
+
+なお、本当はさらにいくつもの入れ子型が定義されています。ここで紹介しているのはよく使うであろう一部だけです。
 
 ## 検索やソートなど
 
 C++の標準コンテナに対する検索やソートなどアルゴリズムの適用は基本的に`<algorithm>`ヘッダにあるフリー関数のものを利用する事で行います。連想コンテナの検索系のアルゴリズムやリスト系コンテナのリスト操作アルゴリズムのように、その特性上メンバとして持っているコンテナもありますが少数派です。`<algorithm>`や`<range>`ヘッダにはさらに多彩なアルゴリズムが定義されており、イテレータインターフェースを備えておけば利用する事ができるようになるので、基本的にはそちらを利用すべきです。
 
-これは原初のSTLからのコンテナとアルゴリズムの詳細をイテレータを介して分離するというコンセプトによります。C++ではメンバ関数とフリー関数の区別をなくす仕組み（*Uniform Function Call*）が度々検討されており、これが将来可能になればメンバ関数のように`<algorithm>`ヘッダにあるフリー関数のアルゴリズムを使用できるようになるかもしれません。
+これは原初のSTLからのコンテナとアルゴリズムの詳細をイテレータを介して分離するというコンセプトによります。C++ではメンバ関数とフリー関数の区別をなくす仕組み（*Uniform Function Call*あるいは*Unified Call Syntax*）が度々検討されており、これが将来可能になればメンバ関数のように`<algorithm>`ヘッダにあるフリー関数のアルゴリズムを使用できるようになるかもしれません。
 
 
 # 文字列インターフェース
@@ -1055,8 +1201,6 @@ C++の標準コンテナに対する検索やソートなどアルゴリズム�
 
 ## `std::get()`
 
-# 関数呼び出しインターフェース
-
 # `swap`インターフェース
 
 この`swap`という操作を用いるとコピーコンストラクタなどをより簡単に書く事ができるので、`swap`はコピーやムーブよりもより基本的な操作だと見る向きもあります。
@@ -1065,10 +1209,12 @@ C++の標準コンテナに対する検索やソートなどアルゴリズム�
 
 ## 非メンバ`swap`関数
 
+# 関数呼び出しインターフェース
+
 # メタ関数のインターフェース
 
 
 \clearpage
 # 謝辞
 
-本書を執筆するに当たっては、cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0に基づく)をとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
+本書を執筆するに当たっては、cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0に基づく)、cppreference(https://ja.cppreference.com/w/ : ライセンスはCC-BY-SA 3.0に基づく)およびcppmap(https://cppmap.github.io/)をとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
