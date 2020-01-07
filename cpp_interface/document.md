@@ -1230,7 +1230,12 @@ struct triple {
 };
 
 template<class T1, class T2, class T3>
-triple(T1&&, T2&&, T3&&) -> triple<std::remove_cvref_t<T1>, std::remove_cvref_t<T2>, std::remove_cvref_t<T3>>;
+triple(T1&&, T2&&, T3&&)
+  -> triple<
+       std::remove_cvref_t<T1>,
+       std::remove_cvref_t<T2>,
+       std::remove_cvref_t<T3>
+     >;
 ```
 
 ## `std::tuple_size`
@@ -1238,6 +1243,7 @@ triple(T1&&, T2&&, T3&&) -> triple<std::remove_cvref_t<T1>, std::remove_cvref_t<
 ```cpp
 // tupleの宣言例
 namespace std {
+
   //プライマリーテンプレート
   template<class T>
   class tuple_size;
@@ -1272,7 +1278,7 @@ namespace std {
 }
 ```
 
-`std::integral_constant`は静的な整数を表す標準ライブラリの型です。これの1つ目のパラメータに整数の型、2つ目のパラメータに要素数を与えた上で継承してやる事によって入れ子の静的変数`value`を提供できます。このテクニックはメタ関数転送と呼ばれます。
+`std::integral_constant`は静的な整数を表す標準ライブラリのクラスです。これの1つ目のパラメータに整数の型、2つ目のパラメータに要素数を与えた上で継承してやる事によって入れ子の静的変数`value`を提供できます。このテクニックはメタ関数転送と呼ばれています。
 
 ## `std::tuple_element`
 
@@ -1317,7 +1323,7 @@ namespace std {
 
 
 
-## `std::get()`
+## `get()`
 
 ```cpp
 // tupleの宣言例
@@ -1349,7 +1355,7 @@ constexpr std::tuple_element<I, triple<T1, T2, T3>>::type&
   }
 ```
 
-注意ですが、`get()`の場合は先ほどの2つのように`std`名前空間のものをオーバーロードするのではなく、対象の型（今は`triple`）と同じ名前空間に定義しておくか、対象の型のメンバ関数として定義しておきます。
+注意ですが、`get()`の場合は先ほどの2つのように`std`名前空間のものをオーバーロードするのではなく、対象の型（今は`triple`）と同じ名前空間にフリー関数として定義しておくか、メンバ関数として定義しておきます。また、*Hidden Friends*にしても良いでしょう。
 
 ```cpp
 template<class T1, class T2, class T3>
@@ -1388,17 +1394,133 @@ std::cout << v1 << ", " << v2 << ", " << v3 << std::endl;
 
 #### コラム：構造化束縛へのアダプト
 
+　
 
+構造化束縛に任意の型をアダプトするにはもう一つ方法があります。それは、集成体のようにクラスのメンバ変数を`public`にしておくことです。そのような型のオブジェクトに対する構造化束縛宣言ではコンパイラが特別な計らいをして、非静的`public`変数だけをその宣言順に束縛してくれます。
+
+```cpp
+template<class T>
+struct my_pair {
+  T first;
+  T second;
+};
+
+template<class T>
+my_pair(T&&, T&&) -> my_pair<std::remove_cvref_t<T>>;
+
+
+int main() {
+  my_pair p = {10, 20};
+
+  auto& [n1, n2] = p;
+  
+  std::cout << n1 << ", " << n2 << std::endl;
+  // 10, 20
+}
+```
+
+単に構造化束縛にアダプトしたいだけならばこちらの方がはるかに簡単に行えます。ところで、お気付きになられた方もいるでしょう。先程の`triple`型はあんな複雑な事をしなくてもそのまま構造化束縛で使用可能だったのです・・・  
+カプセル化のためにメンバを隠蔽する場合や、一部のメンバを公開したくない場合などにタプルインターフェースを備えてみると良いでしょう。
 
 \clearpage
 
 # `swap`インターフェース
 
+`swap`インターフェースは唯一つ`swap`という操作のためだけのものです。それはその名の通り、同じ型のオブジェクト同士あるいは互換性のある型のオブジェクト同士の間でその値を交換する操作です。
+
 この`swap`という操作を用いるとコピーコンストラクタなどをより簡単に書く事ができるので、`swap`はコピーやムーブよりもより基本的な操作だと見る向きもあります。
 
 ## ムーブコンストラクタ/代入演算子
 
-## 非メンバ`swap`関数
+```cpp
+namespace std {
+
+  template <class T>
+  constexpr void swap(T& a, T& b) noexcept(/*略*/) {
+    T t = std::move(a);
+    a = std::move(b);
+    b = std::move(t);
+  }
+}
+```
+
+デフォルトの`std::swap()`はこの様な典型的な交換操作によって`swap`します。従って、これにアダプトするために必要なのはムーブコンストラクタ及びムーブ代入演算子の2つです（ムーブが提供できない場合はコピーでも大丈夫です）。
+
+```cpp
+template<typename T>
+struct wrap {
+  T t;
+
+  template<typename U=T>
+  wrap(U&& u) : t(std::forward<U>(u)) {}
+
+  //ムーブコンストラクタ
+  wrap(wrap&&) = default;
+
+  //ムーブ代入演算子
+  wrap& operator=(wrap&&) = default;
+};
+
+template<typename T>
+wrap(T&&) -> wrap<std::remove_cvref_t<T>>;
+
+
+int main() {
+  wrap a = {10};
+  wrap b = {35};
+
+  std::swap(a, b);
+  // a = {35}, b = {10}
+}
+```
+
+なお、ムーブに限らず代入演算子やコンストラクタはなるべくならば`default`実装にお任せするのが推奨されます。
+
+## 非メンバ`swap()`
+
+もしも自作のコンテナ等において、典型的なムーブ操作によるものよりも効率的な`swap`を提供出来る等の場合、`swap`操作そのものをカスタマイズすることもできます。そのためには、対象となる型と同じ名前空間で2引数を取る`swap()`というフリー関数を定義します。
+
+```cpp
+// 先程のwrap<T>に対するカスタマイズswap()定義
+template<typename T>
+void swap(wrap<T>& a, wrap<T>& b) {
+  // しかし典型的な操作・・・
+  wrap<T> t = std::move(a);
+  a = std::move(b);
+  b = std::move(a);
+}
+```
+
+メンバ関数として書きたい気持ちもありますが、`swap()`の場合はフリー関数でなければなりません。ただし、ここでも*Hidden Friends*は有効です。
+
+これを呼び出すだけならば単に名前空間名などを付けずに、`swap(a, b)`のように呼び出すだけです。しかし、よりジェネリックに`swap`するためにはどこかで見たようなコードを書かなければなりません。
+
+```cpp
+template<typename T, typename U>
+void my_swap(T&& t, U&& u) {
+  using std::swap;
+
+  swap(std::forward<T>(t), std::forward<U>(u));
+}
+
+wrap a = {10};
+wrap b = {35};
+
+my_swap(a, b);
+// a = {35}, b = {10}
+```
+
+こうすることで、最適な`swap()`関数が適切に呼び出されることになります。
+
+`begin()/end()`と同じくこれはあまりにも分かり辛いので、C++20よりこの様な事をよしなにやってくれる`std::ranges::swap`が導入されます。これを使えば先程の`my_swap()`のような関数は必要なくなり、簡潔にジェネリック`swap`操作を書くことができるようになります。
+
+```cpp
+wrap a = {10};
+wrap b = {35};
+
+std::ranges::swap(a, b);
+// a = {35}, b = {10}
+```
 
 \clearpage
 
