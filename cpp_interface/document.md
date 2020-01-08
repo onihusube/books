@@ -1428,7 +1428,7 @@ int main() {
 
 `swap`インターフェースは唯一つ`swap`という操作のためだけのものです。それはその名の通り、同じ型のオブジェクト同士あるいは互換性のある型のオブジェクト同士の間でその値を交換する操作です。
 
-この`swap`という操作を用いるとコピーコンストラクタなどをより簡単に書く事ができるので、`swap`はコピーやムーブよりもより基本的な操作だと見る向きもあります。
+この`swap`という操作を用いるとコピーコンストラクタなどをより簡単に書く事ができたり、例外安全への対応が書きやすくなったりという恩恵があるので、`swap`はコピーやムーブよりもより基本的な操作だと見る向きもあります。
 
 ## ムーブコンストラクタ/代入演算子
 
@@ -1444,7 +1444,7 @@ namespace std {
 }
 ```
 
-デフォルトの`std::swap()`はこの様な典型的な交換操作によって`swap`します。従って、これにアダプトするために必要なのはムーブコンストラクタ及びムーブ代入演算子の2つです（ムーブが提供できない場合はコピーでも大丈夫です）。
+デフォルトの`std::swap()`はこの様な典型的な交換操作によって`swap`します。従って、これにアダプトするために必要なのはムーブコンストラクタとムーブ代入演算子の2つです（ムーブが提供できない場合はコピーでも大丈夫です）。
 
 ```cpp
 template<typename T>
@@ -1526,19 +1526,227 @@ std::ranges::swap(a, b);
 
 # 関数呼び出しインターフェース
 
+クラスに対して関数呼び出しインターフェースを備える事で、関数呼び出し構文によってそのオブジェクトから何かしらの処理を呼び出すことが可能になります。型によっては単なるメンバ関数呼び出しよりも直感的な操作となる場合があり、標準ライブラリの関数などはその動作のカスタマイズのために関数呼び出しインターフェースを備えた型の値を受け入れる構造になっている事があり、そのような所に渡しやすくなります。また、自作のライブラリにおいてもそのような簡易なカスタマイゼーションポイントとして利用する事ができます。
+
+クラスに対して関数呼び出しインターフェースを備えるには、関数呼び出し演算子をオーバーロードします。
+
+```cpp
+struct functor {
+
+  template<typename Arg>
+  void operator()(const Arg& arg) {
+    std::cout << arg << std::endl;  // 引数を出力
+  }
+};
+
+functor f{};
+
+f(10);  //関数呼び出し
+```
+
+関数呼び出し演算子は`operator()`という名前の関数として定義します。その戻り値および引数型、引数の数や処理内容などは完全に自由です。ほとんど通常のメンバ関数と同様に書く事ができます。ただし、クラス外に書くことはできません（従って*Hidden Friends*ではダメです）。そして、その型のオブジェクト名をさも関数名であるかのように書いてその処理を呼び出す事ができます。
+
+このような関数呼び出しインターフェースは、標準ライブラリ（特に`<algorithm>`ヘッダ）の関数で多用されますが、関数のごく一部の動作をカスタマイズするのに利用されます。
+
+```cpp
+struct greater_than_10 {
+
+  // 10よりも大きいかを判定する
+  template<typename T>
+  bool operator()(T arg) {
+    return 10 < arg;
+  }
+};
+
+std::vector vec = {5, 2, 4, 9, 1, 20, 3, 12, 7};
+
+// 10よりも大きい最初の要素を探す
+auto it = std::find_if(vec.begin(), vec.end(), greater_than_10{});
+// *it = 20
+```
+
+この`std::find_if()`は次のように宣言されています。
+
+```cpp
+namespace std {
+  template<class InputIterator, class Predicate>
+  constexpr InputIterator find_if(InputIterator first,
+                                  InputIterator last,
+                                  Predicate pred);
+}
+```
+
+この第3引数の`pred`がこの動作をカスタマイズする関数オブジェクトの受け口です。この場合に期待されているのは1引数を受けとり`bool`を返す関数です。このように、ある値がある条件に合っているかどうか判定する関数（オブジェクト）のことを述語（*predicate*）と呼びます。
+
+また、先ほどのようなコードはラムダ式を用いてより簡単に書けます。
+
+```cpp
+std::vector vec = {5, 2, 4, 9, 1, 20, 3, 12, 7};
+
+// 10よりも大きい最初の要素を探す
+auto it = std::find_if(vec.begin(), vec.end(), [](auto arg){return 10 < arg;});
+```
+
+実のところ、ラムダ式は関数呼び出しインターフェースを備える型のオブジェクトをその場に生成しています。その処理はラムダ式の本体に書かれたものが入り、キャプチャした変数はその型のメンバとなります。先ほどの述語型を定義したコードと比べると対応がわかるでしょう。  
+多くの場合、1から関数呼び出し可能な型を書くよりもラムダ式を使った方が同じことを簡便に書く事ができます。
+
+## `std::invoke()`
+
+```cpp
+namespace std {
+
+  template<class F, class... Args>
+  constexpr invoke_result_t<F, Args...> invoke(F&& f, Args&&... args)
+    noexcept(is_nothrow_invocable_v<F, Args...>); 
+}
+```
+
+C++標準ではさらに、メンバポインタ及び`std::reference_wrapper`さえも関数呼び出し可能な型として扱います。そして、それらの呼び出しを統一的に書くために`std::invoke()`という関数を用意しています。例えばこのような呼び出しが可能です。
+
+```cpp
+struct S {
+  int num;
+  std::string str;
+};
+
+S s = {11, "eleven"};
+
+// メンバ変数呼び出し、プロジェクションという操作
+auto  num = std::invoke(&S::num, &s); // num = 11
+auto& str = std::invoke(&S::str, &s); // str = "eleven"
+```
+
+この`std::invoke()`を利用すれば関数呼び出しインターフェースの範囲を広げる事ができます。典型的には次のようなコードを書く事で利用します。
+
+```cpp
+// あまり意味のない任意関数呼び出し
+template<class F, class... Args>
+decltype(auto) custom_func(F&& f, Args... args) {
+  return std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
+}
+```
+
+関数呼び出し可能な`f`とその引数`args...`を受けとって`std::invoke`に完全転送します。`f`にはラムダ式を渡しても、関数オブジェクトを渡しても、関数ポインタを渡しても、メンバポインタを渡しても、あるいは`std::reference_wrapper`を渡しても、引数`args...`が適切であれば関数呼び出しという操作を達成できます。
+
 \clearpage
 
 # メタ関数のインターフェース
 
+メタ関数はテンプレートメタプログラミング（TMP）の文脈において関数に相当するものです。ただ、そこには通常の文脈における関数のように決まったものがある訳ではないので、何を関数とするのかには決まりがありません。しかし、その書き方についてはC++コミュニティおよびC++標準に渡って広く合意が形成されています。これはおそらく、STLライクなメタプログラミングライブラリである`boost.MPL`からのものです。
+
 ## 型を返すメタ関数
+
+型を返すメタ関数はテンプレートの文脈においての普通の関数です。引数として型を受け取り、その処理結果を型として返します。
+
+```cpp
+// 入力の型にポインタ修飾を付加する
+template<typename T>
+struct add_pointer {
+  using type = T*;
+};
+
+// メタ関数の呼び出し
+using P = add_pointer<int>::type; // P = int*
+```
+
+メタ関数は通常クラステンプレートとして定義され、そのテンプレートパラメータに引数型を与え、入れ子型`::type`によってその戻り値を得ます。通常の関数呼び出しと見比べてみると何か見えてくるものがあるかもしれません・・・
+
+```cpp
+// メタ関数の呼び出し
+using P = add_pointer<int>::type;
+
+// 実行時関数の呼び出し
+auto r = func(10);
+```
+
+このように、メタ関数名はそのまま関数名に、`<　>`の間のものが引数リストに対応し、`::type`を書くことで関数を呼び出します。このような書き方（および見方）が、ほぼデファクトスタンダードとなっているメタ関数の記法です。
+
+しかし現在ではあえてこう書くことは珍しく、大抵はエイリアステンプレートを代わりに使います。しかし、この場合でも大元のメタ関数の書き方が変わる訳ではありません。
+
+```cpp
+// add_pointerのエイリアステンプレート
+template<typename T>
+using add_pointer_t = add_pointer<T>::type;
+
+// メタ関数の呼び出し
+using P = add_pointer_t<int>;
+```
+
+型を返すメタ関数のエイリアステンプレートを定義する場合は、元のメタ関数名の後ろに`_t`を付けます。
+
+また、非型テンプレートパラメータによって型ではなく値を受け取る事ができ、引数は多変数にすることもできます。
+
+```cpp
+template<typename T, std::size_t N>
+struct add_pointer_n_impl {
+  using type = add_pointer_n_impl<T*, N - 1>;
+};
+
+template<typename T>
+struct add_pointer_n_impl<T, 0> {
+  using type = T;
+};
+
+// 型にN個のポインタを付け足す、2引数メタ関数
+template<typename T, std::size_t N>
+struct add_pointer_n : add_pointer_n_impl<T, N>::type {};
+
+
+// メタ関数の呼び出し
+using P = add_pointer_n<int, 4>::type; // P = int****
+```
+
+ますます関数っぽく見えてきませんか・・・？
 
 ## 値を返すメタ関数
 
-## 高階メタ関数
+値を受け取る関数があるのですから、当然メタ関数は値を返す事ができます。この場合、先ほど`::type`でメタ関数を起動していた所を、`::value`で起動するようにします。
 
+```cpp
+// 2つの型が同じかどうかを判定する
+template<typename T, typename U>
+struct is_same {
+  static constexpr bool value = false;
+};
+
+template<typename T>
+struct is_same<T, T> {
+  static constexpr bool value = true;
+};
+
+// メタ関数の呼び出し、値を受け取る
+constexpr bool b = is_same<int, int>::value; // b = true
+```
+
+現代では`std::true_type`などを使う事で定義を簡略化でき、さらに変数テンプレートによって呼び出しも簡略化できます。
+
+```cpp
+// 2つの型が同じかどうかを判定する
+template<typename T, typename U>
+struct is_same : std::false_type {};
+
+template<typename T>
+struct is_same<T, T> : std::true_type {};
+
+// is_sameの変数テンプレート
+template<typename T,  typename U>
+inline constexpr bool is_same_v = is_same<T, U>::value;
+
+
+// メタ関数の呼び出し、値を受け取る
+constexpr bool b = is_same_v<int, int>; // b = true
+```
+
+値を返すメタ関数の変数テンプレートを定義する場合は、元のメタ関数名の後ろに`_v`を付けます。
+
+## `<type_traits>`
+
+標準ライブラリではよく利用されるメタ関数を`<type_traits>`ヘッダに定義しています。ここに定義されているメタ関数は全て上記のようなインターフェースに従った呼び出しが可能で、エイリアステンプレートや変数テンプレートの命名規則も同じです。
+
+全てを書いて定義できる訳ではありませんが、このヘッダの実装は一度見てみると面白いかもしれません。
 
 \clearpage
 
 # 謝辞
 
-本書を執筆するに当たっては、cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0に基づく)、cppreference(https://ja.cppreference.com/w/ : ライセンスはCC-BY-SA 3.0に基づく)およびcppmap(https://cppmap.github.io/)をとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
+本書を執筆するに当たっては、cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0に基づく)およびcppmap(https://cppmap.github.io/)をとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
