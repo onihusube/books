@@ -69,7 +69,7 @@ C++STLの柱でもあり、おそらく最も自然に出会うのがこのイ�
 　
 
 ```cpp
-//何かイテレート可能な型
+// 何かイテレート可能な型
 struct enumrable {
 
   iterator begin();
@@ -95,7 +95,7 @@ struct enumrable {
 例えば次のように利用できます。
 
 ```cpp
-//任意のイテレート可能な型から[first, last)の範囲のイテレータを引き出す
+// 任意のイテレート可能な型から[first, last)の範囲のイテレータを引き出す
 template<typename Iterable>
 auto get_range(Iterable& range_obj) {
   return std::make_pair(std::begin(range_obj), std::end(range_obj));
@@ -146,7 +146,7 @@ auto get_range(Iterable& range_obj) {
 　
 
 ```cpp
-//何かイテレート可能な型
+// 何かイテレート可能な型
 struct enumrable {
 
   using iterator = /*提供するイテレータの型*/;
@@ -160,7 +160,7 @@ struct enumrable {
 イテレート可能な型は通常、そのイテレータの型についての情報を入れ子型として公開します。上記の`enumrable`クラスならば`enumrable::iterator`のように利用されます。`auto`が無い時代は複雑なイテレータの型を受けるためにこの入れ子型を利用していました。
 
 ```cpp
-//任意のvectorの要素を列挙し標準出力に出力する、C++11より前のコード
+// 任意のvectorの要素を列挙し標準出力に出力する、C++11より前のコード
 template<typename T>
 void output_vector(const std::vector<T>& vec) {
   typename std::vector<T>::iterator it = vec.begin(), end = vec.end();
@@ -202,7 +202,7 @@ struct iterator {
 ただし、イテレータがの典型例でもあるポインタ型はこのような入れ子型を提供できません。自分でテンプレートこちょこちょするコードを書けば取得はできますが面倒なので、標準ライブラリには`std::iterator_traits`という型特性クラスが用意されています。
 
 ```cpp
-//通常のクラス型はこちらを利用
+// 通常のクラス型はこちらを利用
 template <typename Iterator>
 struct iterator_traits {
  using difference_type   = typename Iterator::difference_type;
@@ -212,7 +212,7 @@ struct iterator_traits {
  using iterator_category = typename Iterator::iterator_category;
 };
 
-//ポインタ型はこっちを利用
+// ポインタ型はこっちを利用
 template <typename T>
 struct iterator_traits<T*> {
  using difference_type   = std::ptrdiff_t;
@@ -232,7 +232,7 @@ struct iterator_traits<T*> {
 　
 
 ```cpp
-//参照先の要素型をTとするイテレータの一例
+// 参照先の要素型をTとするイテレータの一例
 template<typename T>
 struct input_iterator {
   using difference_type   = std::ptrdiff_t;
@@ -241,17 +241,17 @@ struct input_iterator {
   using reference         = T&;
   using iterator_category = std::input_iterator_tag;
 
-  //コピー可能
+  // コピー可能
   input_iterator(const input_iterator&);
 
-  //イテレータを1つ進める
+  // イテレータを1つ進める
   input_iterator& operator++();
   input_iterator& operator++(int);
 
-  //現在の要素の読み出し
+  // 現在の要素の読み出し
   reference operator*();
 
-  //イテレータの比較
+  // イテレータの比較
   bool operator==(const input_iterator&);
   bool operator!=(const input_iterator&);
 }
@@ -272,14 +272,14 @@ struct forward_iterator : input_iterator<T> {
 ```cpp
 input_iterator<int> it{}, end{};
 
-//イテレータを1つ進める
+// イテレータを1つ進める
 ++it;
 it++;
-//要素を参照する
+// 要素を参照する
 int  v  = *it;
-//イテレータの比較
+// イテレータの比較
 bool eq = it != end;
-//イテレータのコピー
+// イテレータのコピー
 input_iterator cp = it;
 ```
 
@@ -306,7 +306,7 @@ struct bidirectional_iterator : forward_iterator<T> {
 
   using iterator_category = std::bidirectional_iterator_tag;
 
-  //イテレータを1つ戻す
+  // イテレータを1つ戻す
   bidirectional_iterator& operator--();
   bidirectional_iterator& operator--(int);
 }
@@ -319,7 +319,7 @@ struct bidirectional_iterator : forward_iterator<T> {
 ```cpp
 bidirectional_iterator<int> it{};
 
-//一歩進んで二歩下がる
+// 一歩進んで二歩下がる
 ++it;
 --it;
 it--;
@@ -336,19 +336,19 @@ struct random_access_iterator : bidirectional_iterator<T> {
   using difference_type   = std::ptrdiff_t;
   using iterator_category = std::random_access_iterator_tag;
 
-  //イテレータをn進める/戻す
+  // イテレータをn進める/戻す
   random_access_iterator& operator+=(difference_type n);
   random_access_iterator& operator-=(difference_type n);
 
-  //n進めた/戻したイテレータを計算する
+  // n進めた/戻したイテレータを計算する
   random_access_iterator& operator+(difference_type n);
   random_access_iterator& operator-(difference_type n);
 
-  //イテレータ間の距離を計算する
+  // イテレータ間の距離を計算する
   difference_type operator-(random_access_iterator&) const;
 }
 
-//n進めた/戻したイテレータを計算する（逆順の演算子）
+// n進めた/戻したイテレータを計算する（逆順の演算子）
 template<typename T>
 random_access_iterator<T>&
     operator+(typename random_access_iterator<T>::difference_type n,
@@ -366,17 +366,17 @@ random_access_iterator<T>&
 ```cpp
 random_access_iterator<int> it{};
 
-//イテレータを任意の数進める
+// イテレータを任意の数進める
 it += 3;
 it -= 2;
 
-//任意の数進めたイテレータを得る
+// 任意の数進めたイテレータを得る
 auto cp = it + 6;
 cp = 6  + it
 cp = it - 6;
 cp = 6  - it
 
-//イテレータ間の差分（イテレータ間距離）をとる
+// イテレータ間の差分（イテレータ間距離）をとる
 auto distance = cp - it;
 ```
 
@@ -395,7 +395,7 @@ namespace MyNS {
 
     using iteretor = T*;
 
-    //Hidden Friendsなイテレータインターフェース
+    // Hidden Friendsなイテレータインターフェース
     friend iteretor begin(MyVector&);
     friend iteretor end(MyVector&);
   };
@@ -403,9 +403,9 @@ namespace MyNS {
 
 MyNS::MyVector v = {1, 2, 4};
 
-auto frist1 = v.begin();      //ng
-auto frist2 = MyNS::begin(v); //ng
-auto frist3 = begin(v);       //ok
+auto frist1 = v.begin();      // ng
+auto frist2 = MyNS::begin(v); // ng
+auto frist3 = begin(v);       // ok
 ```
 
 この不思議な性質によって、名前空間スコープを汚すこともなく、`using namespace`された時などに意図しない関数を呼び出してしまうことを防止することが出来ます。標準ライブラリでも`std::filesystem::path`の非メンバ`operator==(const path&, const path&)`が`using namespace std::filesystem`された時に文字列比較に取って代わるバグが発見され、このイディオムを用いて修正されました。それ以降、クラスのインターフェース、特にオーバーロードされた演算子はこのイディオムを利用するようになり、C++20では規格書に明記されるに至りました。
@@ -419,11 +419,11 @@ struct random_access_iterator : bidirectional_iterator<T> {
   using difference_type   = std::ptrdiff_t;
   using iterator_category = std::random_access_iterator_tag;
 
-  //イテレータをn進める/戻す
+  // イテレータをn進める/戻す
   random_access_iterator& operator+=(difference_type n);
   random_access_iterator& operator-=(difference_type n);
 
-  //n進めた/戻したイテレータを計算する
+  // n進めた/戻したイテレータを計算する
   friend random_access_iterator& 
       operator+(const random_access_iterator&, difference_type n);
   friend random_access_iterator& 
@@ -443,7 +443,7 @@ struct random_access_iterator : bidirectional_iterator<T> {
 　
 
 ```cpp
-//TをOutへ出力するoutput itereator
+// TをOutへ出力するoutput itereator
 template<typename T, typename Out>
 struct output_iterator : input_iterator<T> {
   using difference_type   = void;
@@ -452,7 +452,7 @@ struct output_iterator : input_iterator<T> {
   using reference         = void;
   using iterator_category = std::output_iterator_tag;
 
-  //参照先への出力
+  // 参照先への出力
   Out& operator=(const T& value);
 }
 ```
@@ -462,9 +462,9 @@ struct output_iterator : input_iterator<T> {
 これは、以下のような操作が可能なものです。
 
 ```cpp
-output_itereator oit{}; //何らかのoutput itereatorとする
+output_itereator oit{}; // 何らかのoutput itereatorとする
 
-oit = 'A'; //イテレータの参照先へ出力
+oit = 'A'; // イテレータの参照先へ出力
 ```
 
 この*output itereator*の要件を追加で満たすイテレータは、可変（*mutable*）なイテレータと呼ばれます。
@@ -521,7 +521,7 @@ oit = 'A'; //イテレータの参照先へ出力
 ```cpp
 template<class T, class Allocator = allocator<T>>
 class vector {
-  //宣言の例
+  // 宣言の例
   std::size_t size() const noexcept;
 }
 ```
@@ -625,7 +625,7 @@ vec.reserve(1000);
 auto capa = vec.capacity(); // 1000 (clang9.0.0 & GCC9.2)
 
 for (int i = 0; i < 1000; ++i) {
-  vec.emplace_back(i);  //このループ中では追加のメモリ確保は発生しない
+  vec.emplace_back(i);  // このループ中では追加のメモリ確保は発生しない
 }
 ```
 
@@ -679,35 +679,35 @@ class vector {
 `operator[]`は添字演算子と呼ばれるもので、C言語の生配列アクセスで使用されていたものがベースにあります。`c[1]`のように使用し、指定された添字に対応する要素への参照を返します。`std::map, std::unordered_map`がそうであるように、添字は必ずしも数字である必要はありません。コンテナの意味論において、その要素との対応付けがある何らかの値であれば良いでしょう。別の見方をすれば、この演算子は添字の集合からコンテナという要素の集合への写像となるものです。
 
 ```cpp
-//vectorの場合
+// vectorの場合
 std::vector vec = {1, 3, 5, 7, 11, 13};
 
-int p = vec[2]; //読み出し
-vec[3] = 17;    //書き込み
+int p = vec[2]; // 読み出し
+vec[3] = 17;    // 書き込み
 
-//mapの場合
+// mapの場合
 std::map<std::string, int> map{};
 map.emplace("one", 1);
 
-int n = map["one"]; //読み出し
-map["two"] = 2;     //書き込み
+int n = map["one"]; // 読み出し
+map["two"] = 2;     // 書き込み
 ```
 
 `operator[]`を備えているコンテナは必ず`at()`関数も備えており、ほとんど同じ意味論を持ちます。その違いは、指定された添字に対応する要素が存在しない時の対応を誰が行うのかにあります。`operator[]`では、指定された添字に対応する要素が存在しない場合はコンテナの側で対応します。対して、`at()`関数は`std::out_of_range`例外を投げることでユーザーに対応を任せます。コンテナによっては、要素の存在チェックを行う分パフォーマンスが犠牲になります（現在のCPUでは強力な分岐予測のおかげでその影響はほぼないという説もありますが）。
 
 ```cpp
-//vectorの場合
+// vectorの場合
 std::vector vec = {1, 3, 5, 7, 11, 13};
 
-vec[6];     //未定義動作、範囲境界をチェックしない
-vec.at(6);  //std::out_of_range例外を投げる、範囲境界をチェックする
+vec[6];     // 未定義動作、範囲境界をチェックしない
+vec.at(6);  // std::out_of_range例外を投げる、範囲境界をチェックする
 
-//mapの場合
+// mapの場合
 std::map<std::string, int> map{};
 map.emplace("one", 1);
 
-int n = map["two"];     //対応する要素をデフォルト構築して返す、n = 0
-int m = map.at("two");  //std::out_of_range例外を投げる
+int n = map["two"];     // 対応する要素をデフォルト構築して返す、n = 0
+int m = map.at("two");  // std::out_of_range例外を投げる
 ```
 
 自前の型に実装する場合、`operator[]`と`at()`関数は片方を備えるならばもう片方も備えておくことが推奨されます。その差については上記の通りにすべきでしょう。
@@ -729,9 +729,9 @@ std::vector vec = {1, 3, 5, 7, 9, 11};
 
 auto p = vec.data();
 
-*p        //1
-*(p + 1); //3
-*(p + 5); //11
+*p        // 1
+*(p + 1); // 3
+*(p + 5); // 11
 ```
 
 配列型も連続したメモリ領域に要素を保持していますが、メンバ関数を持てないのでフリー関数の`std::data()`が用意されています。これを使用すると標準コンテナと配列型とで共通の操作によってメモリ領域先頭へのポインタを取得できます。
@@ -741,9 +741,9 @@ int arr[] = {1, 3, 5, 7, 9, 11};
 
 auto p = std::data(arr);
 
-*p        //1
-*(p + 1); //3
-*(p + 5); //11
+*p        // 1
+*(p + 1); // 3
+*(p + 5); // 11
 ```
 
 メモリ連続性を満たしているとは、コンテナの保持する要素列がメモリ上でもその順番通りに連続して並んでいる事を言います。そにれより、その先頭のポインタからは通常のポインタ操作によって要素をイテレートすることができます。しかし、コンテナの特性によってはこれを満たすことができないこともあるので、そういう場合は定義する必要はありません。
@@ -765,8 +765,8 @@ class vector {
 ```cpp
 std::vector vec = {1, 3, 5, 7, 11, 13};
 
-int f = vec.front();  //f = 1
-int b = vec.back();   //b = 13
+int f = vec.front();  // f = 1
+int b = vec.back();   // b = 13
 ```
 
 ### 標準コンテナ対応表
@@ -808,7 +808,7 @@ int b = vec.back();   //b = 13
 
 　
 ```cpp
-//vectorは全てを持ち合わせていないのでdequeでの宣言例
+// vectorは全てを持ち合わせていないのでdequeでの宣言例
 template<class T, class Allocator = allocator<T>>
 class deque {
   void push_front(const T& x);
@@ -887,7 +887,7 @@ class deque {
 `push`系関数と比べると、要素を一度構築する必要が無い分効率的になります（単純な型ならば最適化で同等の処理になるようですが）。構築済みのオブジェクトを渡してもコピー（ムーブ）コンストラクタが呼ばれるため一見`push`系関数と同じように扱うことができます。
 
 ```cpp
-//何か自作の型
+// 何か自作の型
 struct myobj {
 
   myobj() = default;
@@ -906,11 +906,11 @@ struct myobj {
 
 std::deque<myobj> deq{};
 
-auto it = deq.emplace(deq.begin(), 10, 2.71, "emplace");  //コンテナ先頭に要素を直接構築
+auto it = deq.emplace(deq.begin(), 10, 2.71, "emplace");  // コンテナ先頭に要素を直接構築
 
 myobj mo{};
 
-it = deq.emplace(it, mo);  //コンテナ先頭に要素をコピー構築
+it = deq.emplace(it, mo);  // コンテナ先頭に要素をコピー構築
 ```
 
 #### `emplace_front()/emplace_back()`
@@ -935,15 +935,15 @@ std::deque<myobj> deq{};
 
 deq.emplace(deq.begin(), 10, 2.71, "emplace");
 
-deq.emplace_front(1, 0.0, "front");  //コンテナ先頭に要素を直接構築
-deq.emplace_back(20, 3.14, "back");  //コンテナ末尾に要素を直接構築
+deq.emplace_front(1, 0.0, "front");  // コンテナ先頭に要素を直接構築
+deq.emplace_back(20, 3.14, "back");  // コンテナ末尾に要素を直接構築
 ```
 
 #### `emplace_hint()/try_emplace()`
 
 　
 ```cpp
-//両方を備えているmapでの宣言例
+// 両方を備えているmapでの宣言例
 template <
   class Key,
   class T,
@@ -971,16 +971,16 @@ std::map itos = {
   std::make_pair(1, "one")
 };
 
-//1番目に要素を挿入しようとする、戻り値は既にある要素のイテレータ
+// 1番目に要素を挿入しようとする、戻り値は既にある要素のイテレータ
 auto it = itos.emplace_hint(itos.begin(), 1, "one");
 
-//2番目に要素を挿入（直接構築）、戻り値は挿入した要素のイテレータ
+// 2番目に要素を挿入（直接構築）、戻り値は挿入した要素のイテレータ
 it = itos.emplace_hint(++it, 2, "two");
 
-//3番目に重複構築しようとする、戻り値は既にある要素のイテレータ
+// 3番目に重複構築しようとする、戻り値は既にある要素のイテレータ
 ++it;
 auto res = itos.try_emplace(it, 3, "three");
-//4番目に要素を挿入（直接構築）、戻り値は挿入した要素のイテレータ
+// 4番目に要素を挿入（直接構築）、戻り値は挿入した要素のイテレータ
 ++it;
 res = itos.try_emplace(it, 4, "four");
 
@@ -1079,11 +1079,11 @@ std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8};
 auto it = vec.begin();
 ++it;
 
-//2番目の要素を削除
+// 2番目の要素を削除
 it = vec.erase(it);
 ++it;
 
-//3番目以降の要素を全削除
+// 3番目以降の要素を全削除
 it = vec.erase(it, vec.end());
 
 // vec = {1, 3}
@@ -1093,7 +1093,7 @@ it = vec.erase(it, vec.end());
 
 　
 ```cpp
-//vectorに対する宣言例
+// vectorに対する宣言例
 namespace std {
   template<class T, class Allocator, class U>
   void erase(vector<T, Allocator>& c, const U& value);
@@ -1143,7 +1143,7 @@ class vector {
 ```cpp
 std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8};
 
-vec.clear();  //以降要素は無くなる
+vec.clear();  // 以降要素は無くなる
 ```
 
 ### 標準コンテナ対応表
@@ -1197,7 +1197,7 @@ template <
 >
 class map {
   using key_type = Key;
-  using mapped_type = T;  //map系連想コンテナのみ
+  using mapped_type = T;  // map系連想コンテナのみ
 
   using value_type = std::pair<Key, T>;
   using iterator = /*イテレータの型*/;
@@ -1217,33 +1217,21 @@ C++の標準コンテナに対する検索やソートなどアルゴリズム�
 
 # `any, optional, variant`の共通インターフェース
 
-C++17で追加されたこれらの型は別々の人々の別々の提案によって標準化委員会で議論され、導入されました。その後、これらの型の間で同じ意味論を持つのに別の名前になっている関数名の統一や、可能な限り同じ構築が出来るようにする変更がこれまた別の人の提案によって導入されました。これによって、これら3つの型の間である程度操作が統一されることとなりました。
+C++17で追加されたこれらの型は別々の人々の別々の提案によって標準化委員会で議論され、導入されました。その後、これらの型の間で同じ意味論を持つのに別の名前になっている関数名の統一や、可能な限り同じ構築が出来るようにする変更がこれまた別の人の提案によって導入されました。当初はこれら3つの型のインターフェースはバラバラでしたが、これによってある程度操作が統一されることとなりました。
 
 | 関数名                     | `std::any` | `std::optional<T>` | `std::variant<Ts...>` |
 | ----------------------- | :------: | :-----------: | :--------------: |
-| `in_place`コンストラクタ       | ○        | ○             | ○                |
-| `constexpr`デフォルトコンストラクタ | ○        | ○             | ○                |
 | `emplace()`             | ○        | ○             | ○                |
 | `reset()`               | ○        | ○             | -                |
-| `has_value()`           | ○        | ○             | -                |
+| `has_value()`           | ○        | ○             | `valueless_by_exception()`                |
 | `make_xxx()`           | ○        | ○             | -                |
 
 これらの型は、ある単一の値をその内部に内包しているという共通の特徴があります。これらはモナド的な型と見ることもできます。
 
-## コンストラクタ
-```cpp
-template<typename T>
-class optional {
-  constexpr optional() noexcept;
-
-  template <class... Args>
-  constexpr explicit optional(in_place_t, Args&&... args);
-};
-```
-
 ## `emplace()`
 
 ```cpp
+// optionalでの宣言例
 template<typename T>
 class optional {
 
@@ -1252,9 +1240,32 @@ class optional {
 };
 ```
 
-この関数はコンテナインターフェースにおけるそれと全く同じ意味です。ただし、構築するのは要素ではなくその内部の単一の値です。
+この関数はコンテナインターフェースにおけるそれと全く同じ意味です。ただし、`any, variant`の場合は構築対象の型が1つに定まらないため、別に指定してあげる必要があります。
 
 ```cpp
+// 何か自作の型
+struct myobj {
+
+  myobj() = default;
+
+  myobj(int n, double d, const char* chars)
+    : num(n)
+    , v(d)
+    , str(chars)
+  {}
+
+  int num;
+  double v;
+  std::string str;
+};
+
+std::any any{};
+std::optional<myobj> opt{};
+std::variant<myobj, int, double> var{}
+
+any.emplace<myobj>(1, 2.0, "any");
+opt.emplace(2, 3.0, "optional");
+var.emplace<myobj>(3, 4.0, "variant");
 ```
 
 ## `reset()`
@@ -1267,6 +1278,17 @@ class optional {
 };
 ```
 
+この関数は`any, optional`において現在保持する値を破棄し、値を保持しない状態にするものです。`variant`には基本的に空の状態というものがないのでこの関数はありません。
+
+```cpp
+std::any any{11};
+std::optional<int> opt{13};
+
+any.reset();
+opt.reset();
+// 以降、有効値を保持していない状態となる
+```
+
 ## `has_value()`
 
 ```cpp
@@ -1275,6 +1297,25 @@ class optional {
 
   bool has_value() noexcept;
 };
+```
+
+この関数は`any, optional`において現在値を保持しているのかどうかを取得するものです。共通するものは`variant`にはありませんが、`variant`も特殊な状況では空になり得るため、`valueless_by_exception()`という名前で近い意味論の関数を持ち合わせています（ただし、返される値が逆です）。
+
+```cpp
+std::any any{11};
+std::optional<int> opt{13};
+std::variant<int, double, char> var{17}
+
+bool ba = any.has_value();              // true
+bool bo = opt.has_value();              // true
+bool bv = var.valueless_by_exception(); // false
+
+any.reset();
+opt.reset();
+
+ba = any.has_value();               // false
+bo = opt.has_value();               // false
+bv = var.valueless_by_exception();  // false
 ```
 
 ## `make_xxx()`ファクトリ関数
@@ -1286,6 +1327,15 @@ namespace std {
   constexpr optional<T> make_optional(Args&&... args); 
 }
 ```
+
+これはメンバ関数ではなく`std`名前空間に定義されている、`any, optional`構築を簡略化するためのヘルパーのファクトリ関数です。残念ながら`variant`にはありません。いくつかオーバーロードがありますが共通する主要なものは、内包型`T`とそのコンストラクタ引数を受け取って内包型オブジェクトを直接構築した`any/optional`オブジェクトを返します。
+
+```cpp
+auto any = std::make_any<myobj>(1, 2.0, "any");
+auto opt = std::make_optional<myobj>(2, 3.0, "optional");
+```
+
+ただ実際、C++17からはコンストラクタ引数からのクラステンプレート引数推定が可能になったので、これらファクトリ関数を使用する機会は減っていくかもしれません（特に`optional`は）。
 
 ## `std::expected<T, E>`
 
@@ -1324,11 +1374,11 @@ triple(T1&&, T2&&, T3&&)
 // tupleの宣言例
 namespace std {
 
-  //プライマリーテンプレート
+  // プライマリーテンプレート
   template<class T>
   class tuple_size;
 
-  //std::tupleに対する部分特殊化
+  // std::tupleに対する部分特殊化
   template<class... Types>
   class tuple_size<tupla<Types...>> : integral_constant<size_t, sizeof...(Types)> {};
 }
@@ -1365,11 +1415,11 @@ namespace std {
 ```cpp
 // tupleの宣言例
 namespace std {
-  //プライマリーテンプレート
+  // プライマリーテンプレート
   template<size_t I, class T>
   class tuple_element;
 
-  //std::tupleに対する部分特殊化
+  // std::tupleに対する部分特殊化
   template<size_t I, class... Types>
   class tuple_element<I, tupla<Types...>> {
     using type = /*tupleのI番目の型*/;
@@ -1444,7 +1494,7 @@ struct triple {
   T2 v2;
   T3 v3;
 
-  //こうしてもok
+  // こうしてもok
   template<size_t I>
   constexpr std::tuple_element<I, triple<T1, T2, T3>>::type&
     get() noexcept {
@@ -1464,7 +1514,7 @@ struct triple {
 これらを完全に理解するには所謂テンプレートメタプログラミングの知識が必要になりますが、なんとかこれらを定義することができれば、自作の型を構造化束縛で使用できるようになります。
 
 ```cpp
-triple t = {1, 3.1415, "triple"};
+triple t = { .v1 = 1, .v2 = 3.1415, .v3 = "triple" };
 
 auto& [v1, v2, v3] = t;
 
@@ -1490,7 +1540,7 @@ my_pair(T&&, T&&) -> my_pair<std::remove_cvref_t<T>>;
 
 
 int main() {
-  my_pair p = {10, 20};
+  my_pair p = { .first = 10, .second = 20 };
 
   auto& [n1, n2] = p;
   
@@ -1534,10 +1584,10 @@ struct wrap {
   template<typename U=T>
   wrap(U&& u) : t(std::forward<U>(u)) {}
 
-  //ムーブコンストラクタ
+  // ムーブコンストラクタ
   wrap(wrap&&) = default;
 
-  //ムーブ代入演算子
+  // ムーブ代入演算子
   wrap& operator=(wrap&&) = default;
 };
 
@@ -1606,7 +1656,7 @@ std::ranges::swap(a, b);
 
 # 関数呼び出しインターフェース
 
-クラスに対して関数呼び出しインターフェースを備える事で、関数呼び出し構文によってそのオブジェクトから何かしらの処理を呼び出すことが可能になります。型によっては単なるメンバ関数呼び出しよりも直感的な操作となる場合があり、標準ライブラリの関数などはその動作のカスタマイズのために関数呼び出しインターフェースを備えた型の値を受け入れる構造になっている事があり、そのような所に渡しやすくなります。また、自作のライブラリにおいてもそのような簡易なカスタマイゼーションポイントとして利用する事ができます。
+クラスに対して関数呼び出しインターフェースを備える事で、関数呼び出し構文によってそのオブジェクトから何かしらの処理を呼び出すことが可能になります。型によっては単なるメンバ関数呼び出しよりも直感的な操作となる場合があったり、標準ライブラリの関数などはその動作のカスタマイズのために関数呼び出しインターフェースを備えた型の値を受け入れる構造になっている事があり、そのような所に渡しやすくなります。また、自作のライブラリにおいてもそのような簡易なカスタマイゼーションポイントとして利用する事ができます。
 
 クラスに対して関数呼び出しインターフェースを備えるには、関数呼び出し演算子をオーバーロードします。
 
@@ -1621,31 +1671,33 @@ struct functor {
 
 functor f{};
 
-f(10);  //関数呼び出し
+f(10);  // 関数呼び出し
 ```
 
-関数呼び出し演算子は`operator()`という名前の関数として定義します。その戻り値および引数型、引数の数や処理内容などは完全に自由です。ほとんど通常のメンバ関数と同様に書く事ができます。ただし、クラス外に書くことはできません（従って*Hidden Friends*ではダメです）。そして、その型のオブジェクト名をさも関数名であるかのように書いてその処理を呼び出す事ができます。
+関数呼び出し演算子は`operator()`という名前の関数として定義します。その戻り値および引数型、引数の数や処理内容などは完全に自由です。ほとんど通常のメンバ関数と同様に書く事ができます。ただし、クラス外に書くことはできません（従って*Hidden Friends*ではダメです）。そして、その型のオブジェクト名をさも関数名であるかのように書いてその処理を呼び出す事ができます。特に、関数呼び出しインターフェースを備えたクラスのことを関数オブジェクトやファンクタ（*functor*）と呼びます。
 
-このような関数呼び出しインターフェースは、標準ライブラリ（特に`<algorithm>`ヘッダ）の関数で多用されますが、関数のごく一部の動作をカスタマイズするのに利用されます。
+このような関数呼び出しインターフェースは、標準ライブラリ（特に`<algorithm>`ヘッダ）の関数で多用され、関数のごく一部の動作をカスタマイズするのに利用されます。例えば、
 
 ```cpp
-struct greater_than_10 {
+struct greater_than_n {
 
-  // 10よりも大きいかを判定する
+  int threshold;
+
+  // 閾値よりも大きいかを判定する
   template<typename T>
   bool operator()(T arg) {
-    return 10 < arg;
+    return threshold < arg;
   }
 };
 
 std::vector vec = {5, 2, 4, 9, 1, 20, 3, 12, 7};
 
 // 10よりも大きい最初の要素を探す
-auto it = std::find_if(vec.begin(), vec.end(), greater_than_10{});
+auto it = std::find_if(vec.begin(), vec.end(), greater_than_n{ .threshold = 10 });
 // *it = 20
 ```
 
-この`std::find_if()`は次のように宣言されています。
+この`std::find_if()`はイテレータと条件式を用いて要素列から条件に合う最初の要素へのイテレータを取得します。これは次のように宣言されています。
 
 ```cpp
 namespace std {
@@ -1656,7 +1708,7 @@ namespace std {
 }
 ```
 
-この第3引数の`pred`がこの動作をカスタマイズする関数オブジェクトの受け口です。この場合に期待されているのは1引数を受けとり`bool`を返す関数です。このように、ある値がある条件に合っているかどうか判定する関数（オブジェクト）のことを述語（*predicate*）と呼びます。
+この第3引数の`pred`がこの動作をカスタマイズする条件式の受け口です。この場合に期待されているのは1引数を受けとり`bool`を返す関数です。このような、ある値がある条件に合っているかどうか判定する関数（オブジェクト）のことを述語（*predicate*）と呼びます。テンプレートで書かれているため、ここには関数呼び出しインターフェースを備えたもの（関数ポインタ、関数オブジェクト）を渡すことができます。
 
 また、先ほどのようなコードはラムダ式を用いてより簡単に書けます。
 
@@ -1664,10 +1716,10 @@ namespace std {
 std::vector vec = {5, 2, 4, 9, 1, 20, 3, 12, 7};
 
 // 10よりも大きい最初の要素を探す
-auto it = std::find_if(vec.begin(), vec.end(), [](auto arg){return 10 < arg;});
+auto it = std::find_if(vec.begin(), vec.end(), [threshold = 10](auto arg){return threshold < arg;});
 ```
 
-実のところ、ラムダ式は関数呼び出しインターフェースを備える型のオブジェクトをその場に生成しています。その処理はラムダ式の本体に書かれたものが入り、キャプチャした変数はその型のメンバとなります。先ほどの述語型を定義したコードと比べると対応がわかるでしょう。  
+実のところ、ラムダ式は関数呼び出しインターフェースを備える型のオブジェクトをその場に生成しています。その処理はラムダ式の本体に書かれたものが入り、キャプチャした変数はその型のメンバとなります。先ほどの述語型を定義したコードと比べると対応がわかるでしょう（この例はそのためにわざと冗長な書き方をしています）。  
 多くの場合、1から関数呼び出し可能な型を書くよりもラムダ式を使った方が同じことを簡便に書く事ができます。
 
 ## `std::invoke()`
@@ -1689,30 +1741,34 @@ struct S {
   std::string str;
 };
 
-S s = {11, "eleven"};
+S s = { .num = 11, .str = "eleven" };
 
 // メンバ変数呼び出し、プロジェクションという操作
-auto  num = std::invoke(&S::num, &s); // num = 11
-auto& str = std::invoke(&S::str, &s); // str = "eleven"
+auto  num = std::invoke(&S::num, s); // num = 11
+auto& str = std::invoke(&S::str, s); // str = "eleven"
 ```
 
-この`std::invoke()`を利用すれば関数呼び出しインターフェースの範囲を広げる事ができます。典型的には次のようなコードを書く事で利用します。
+この`std::invoke()`を利用すれば関数呼び出しインターフェースの範囲を広げる事ができます。典型的には次のような受け口を用意します。
 
 ```cpp
-// あまり意味のない任意関数呼び出し
+// あまり意味がないけれど、任意関数呼び出し
 template<class F, class... Args>
 decltype(auto) custom_func(F&& f, Args... args) {
   return std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
 }
 ```
 
-関数呼び出し可能な`f`とその引数`args...`を受けとって`std::invoke`に完全転送します。`f`にはラムダ式を渡しても、関数オブジェクトを渡しても、関数ポインタを渡しても、メンバポインタを渡しても、あるいは`std::reference_wrapper`を渡しても、引数`args...`が適切であれば関数呼び出しという操作を達成できます。
+関数呼び出し可能な`f`とその引数`args...`を受けとって`std::invoke`に完全転送します。`f`にはラムダ式を渡しても、関数オブジェクトを渡しても、関数ポインタを渡しても、メンバポインタを渡しても、あるいは`std::reference_wrapper`を渡しても、引数`args...`が適切であれば関数呼び出しという操作を達成できます。なお、1つの関数の中で2回以上の関数呼び出しをする場合には完全転送の必要はありません（というか、やってはいけません・・・）。
+
+先ほどの述語を受け取るようなところには適用しづらいですが、このような受け口を関数の一部に持っておく事で関数の動作をカスタマイズするポイントを提供することが出来ます。良くやるのは、処理の殆どの部分は同じだけれど、ごく一部だけが異なるために別々の関数に分けていたものを一つにする場合でしょうか。
+
+またC++20からの`range`ライブラリでは、このような受け口を持つ部分では`std::invoke`によって関数呼び出しを行うようにしているため、先ほどのプロジェクション（メンバ変数呼び出し）などの恩恵を強く受けることが出来ます。
 
 \clearpage
 
 # メタ関数のインターフェース
 
-メタ関数はテンプレートメタプログラミング（TMP）の文脈において関数に相当するものです。ただ、そこには通常の文脈における関数のように決まったものがある訳ではないので、何を関数とするのかには決まりがありません。しかし、その書き方についてはC++コミュニティおよびC++標準に渡って広く合意が形成されています。これはおそらく、STLライクなメタプログラミングライブラリである`boost.MPL`からのものです。
+メタ関数はテンプレートメタプログラミング（TMP）の文脈において関数に相当するものです。ただ、そこには通常の実行時文脈における関数のように決まったものがある訳ではないので、何を関数とするのかには決まりがありません。しかし、その書き方についてはC++コミュニティおよびC++標準に渡って広く合意が形成されています。これはおそらく、STLライクなメタプログラミングライブラリである`boost.MPL`からのものです。
 
 ## 型を返すメタ関数
 
@@ -1788,7 +1844,7 @@ using P = add_pointer_n<int, 4>::type; // P = int****
 
 ## 値を返すメタ関数
 
-値を受け取る関数があるのですから、当然メタ関数は値を返す事ができます。この場合、先ほど`::type`でメタ関数を起動していた所を、`::value`で起動するようにします。定義する方も入れ子型ではなく、`static constexpr`なメンバ変数`value`として返したい値を定義します。この場合の値の型については特に決まりはありません。`bool`や`std::size_t`等整数型がよく使われている気はします。
+値を受け取る関数があるのですから、当然メタ関数は値を返す事ができます。この場合、先ほど`::type`でメタ関数を起動していた所を、`::value`で起動するようにします。定義する方も入れ子型ではなく、`static constexpr`なメンバ変数`value`として返したい値を定義します。この場合の値の型については特に決まりはありません。`bool`や`std::size_t`等の整数型がよく使われている気はします。
 
 ```cpp
 // 2つの型が同じかどうかを判定する
@@ -1829,7 +1885,7 @@ constexpr bool b = is_same_v<int, int>; // b = true
 
 ## `<type_traits>`
 
-標準ライブラリではよく利用されるメタ関数を`<type_traits>`ヘッダに定義しています。ここに定義されているメタ関数は全て上記のようなインターフェースに従った呼び出しが可能で、エイリアステンプレートや変数テンプレートの命名規則も同じです。
+標準ライブラリではよく利用されるメタ関数を`<type_traits>`ヘッダに定義しています。ここに定義されているメタ関数はほとんどが上記のようなインターフェースに従った呼び出しが可能で、エイリアステンプレートや変数テンプレートの命名規則も同じです。
 
 全てを書いて定義できる訳ではありませんが、このヘッダの実装は一度見てみると面白いかもしれません。
 
