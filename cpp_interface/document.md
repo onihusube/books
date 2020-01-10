@@ -3,6 +3,11 @@ title: C++ 標準的インターフェース
 author: onihusube
 date: 2020/01/05
 documentclass: bxjsarticle
+coverimage: cover.png
+backcoverimage: backcover.png
+okuduke:
+  revision: 初版
+  printing: ねこのしっぽ
 ---
 \clearpage
 

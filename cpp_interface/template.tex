@@ -410,6 +410,9 @@ $endif$
 \begin{document}
 
 %%% タイトル画像挿入
+
+$if(coverimage)$
+
 \enlargethispage{\paperwidth}
 \thispagestyle{empty}
 \vspace*{-1truein}
@@ -418,7 +421,11 @@ $endif$
 \vspace*{-\headsep}
 \vspace*{-\topskip}
 \noindent\hspace*{-1in}\hspace*{-\oddsidemargin}
-\includegraphics[width=\paperwidth,height=\paperheight]{cover.jpg}
+\includegraphics[width=\paperwidth,height=\paperheight]{$coverimage$}
+
+$else$
+表紙
+$endif$
 
 \clearpage
 　%% 表紙裏の空白ページ
@@ -522,12 +529,46 @@ $include-after$
 
 $endfor$
 
+%% 奥付
+\clearpage
+%% \backmatter
+
+\begin{itemize}
+  \item 引用・私的利用の範囲を超える無断転載・複製・複写・インターネット上への掲載（SNS・ネットオークション・フリマアプリ含む）を禁じます。
+  \item 落丁・乱丁の場合は下記連絡先までご一報ください。
+\end{itemize}
+
+\vspace*{\stretch{1}}
+
+\begin{center}
+\textsf{$title$}
+$if(subtitle)$
+$subtitle$
+$endif$
+
+\begin{tabular}{ll}
+$if(okuduke.revision)$
+$okuduke.revision$ & $date$ \\
+$endif$
+\end{tabular}
+
+\begin{tabular}{ll} \toprule
+  発行      & Cryptomycocolacales \\
+  著者      & $author$ \\
+  連絡先    & ↓のtwitterからお願いします \\
+  twitter  & \verb|@onihusube9| \\
+  Webサイト & \verb|https://onihusube.hatenablog.com/| \\
+  印刷      & $okuduke.printing$  \\ \bottomrule
+\end{tabular}
+\end{center}
 
 \clearpage
 　%% 裏表紙前の空白ページ
 \clearpage
 
 %%% 裏表紙画像挿入
+$if(backcoverimage)$
+
 \enlargethispage{\paperwidth}
 \thispagestyle{empty}
 \vspace*{-1truein}
@@ -536,6 +577,10 @@ $endfor$
 \vspace*{-\headsep}
 \vspace*{-\topskip}
 \noindent\hspace*{-1in}\hspace*{-\oddsidemargin}
-\includegraphics[width=\paperwidth,height=\paperheight]{backcover.jpg}
+\includegraphics[width=\paperwidth,height=\paperheight]{$backcoverimage$}
+
+$else$
+裏表紙
+$endif$
 
 \end{document}
