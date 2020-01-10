@@ -2,7 +2,10 @@
 title: C++ 標準的インターフェース
 author: onihusube
 date: 2020/01/05
-documentclass: bxjsarticle
+geometry:
+  width: 154cm
+  height: 216cm
+  margin: 1in
 coverimage: cover.png
 backcoverimage: backcover.png
 okuduke:
