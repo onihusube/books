@@ -1355,6 +1355,14 @@ auto opt = std::make_optional<myobj>(2, 3.0, "optional");
 
 \clearpage
 
+# モナド的な型のインターフェース
+
+## 値を取り出す：`operator*()`
+
+## 値の存在チェック：`operator bool()`
+
+\clearpage
+
 # タプルインターフェース
 
 タプルインターフェースを備えている型はtuple-likeな型と呼ばれます。`std::tuple`と同じように扱えると言う意味合いです。タプルインターフェースを備えておくことで、`std::apply()`や`std::make_from_tuple()`、そして何より構造化束縛へアダプトすることが出来ます。
@@ -1718,7 +1726,7 @@ namespace std {
 }
 ```
 
-この第3引数の`pred`がこの動作をカスタマイズする条件式の受け口です。この場合に期待されているのは1引数を受けとり`bool`を返す関数です。このような、1つ以上の値を受け取りそれがある条件に合っているかどうか判定し`bool`値を返す関数（オブジェクト）のことを述語（*predicate*）と呼びます。テンプレートで書かれているため、ここには関数呼び出しインターフェースを備えたもの（関数ポインタ、関数オブジェクト）を渡すことができます。
+この第3引数の`pred`がこの動作をカスタマイズする条件式の受け口です。この場合に期待されているのは1引数を受けとり`bool`を返す関数です。このような、1つ以上の値を受け取りそれらがある条件に合っているかどうか判定し`bool`値を返す関数（オブジェクト）のことを述語（*predicate*）と呼びます。テンプレートで書かれているためどんな型でも渡すことは出来ますが、この場合には関数呼び出しインターフェースを備えたもの（関数ポインタ、関数オブジェクト）を渡します。
 
 また、先ほどのようなコードはラムダ式を用いてより簡単に書けます。
 
@@ -1726,7 +1734,8 @@ namespace std {
 std::vector vec = {5, 2, 4, 9, 1, 20, 3, 12, 7};
 
 // 10よりも大きい最初の要素を探す
-auto it = std::find_if(vec.begin(), vec.end(), [threshold = 10](auto arg){return threshold < arg;});
+auto it = std::find_if(vec.begin(), vec.end(),
+                      [threshold = 10](auto arg){return threshold < arg;});
 ```
 
 実のところ、ラムダ式は関数呼び出しインターフェースを備える型のオブジェクトをその場に生成しています。その処理はラムダ式の本体に書かれたものが入り、キャプチャした変数はその型のメンバとなります。先ほどの述語型を定義したコードと比べると対応がわかるでしょう（この例はそのためにわざと冗長な書き方をしています）。  
@@ -1761,7 +1770,7 @@ auto& str = std::invoke(&S::str, s); // str = "eleven"
 この`std::invoke()`を利用すれば関数呼び出しインターフェースの範囲を広げる事ができます。典型的には次のような受け口を用意します。
 
 ```cpp
-// あまり意味がないけれど、任意関数呼び出し
+// 関数呼び出し可能なものとその引数を受け取ってinvokeに転送するだけの例
 template<class F, class... Args>
 decltype(auto) custom_func(F&& f, Args... args) {
   return std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
@@ -1773,6 +1782,89 @@ decltype(auto) custom_func(F&& f, Args... args) {
 先ほどの述語を受け取るようなところには適用しづらいですが、このような受け口を関数の一部に持っておく事で関数の動作をカスタマイズするポイントを提供することが出来ます。良くやるのは、処理の殆どの部分は同じだけれど、ごく一部だけが異なるために別々の関数に分けていたものを一つにする場合でしょうか。
 
 またC++20からの`range`ライブラリでは、このような受け口を持つ部分では`std::invoke`によって関数呼び出しを行うようにしているため、先ほどのプロジェクション（メンバ変数呼び出し）などの恩恵を強く受けることが出来ます。
+
+## `std::funcion`
+
+```cpp
+namespace std {
+
+  // プライマリテンプレート
+  template<class>
+  class function;
+
+  // std::function本体
+  template<class R, class... ArgTypes>
+  class function<R(ArgTypes...)> {
+
+    // 関数呼び出し演算子
+    R operator()(ArgTypes... args) const;
+  };
+}
+```
+
+関数呼び出し可能なものの実体は関数呼び出し可能という点以外にはあまり共通点の無い異なる物同士なので、それを一時的に保存しておきたいとなると少し困ってしまいます。テンプレートであれこれすればまあ出来なくはないですが、制約が大きいしスマートではありません。そのため、この様な関数呼び出し可能な型を統一的に保持するために`std::function`というクラスが標準ライブラリに用意されています。
+
+`std::function`はそのテンプレート引数に任意の関数型（`ReturnType(ArgumentsTypes...)`）を指定して利用し、その関数型として呼び出し可能なものを何でも1つだけ入れておくことができます。そして、`std::function`は関数呼び出しインターフェースを備えており、それによって保持しているものを関数として呼び出します。
+
+```cpp
+int g (int n) {
+  return n + n;
+}
+
+struct mem {
+  
+  int h() {
+    return 11;
+  }
+  
+  int value = 13;
+};
+
+
+// 関数ポインタ、関数オブジェクトの保存
+std::function<int(int)> func{};
+
+func = [](int n){ return n * n;};
+int m = func(10); // m = 100
+
+func = [m](int n){ return n + m;};
+int l = func(10); // l = 110
+
+func = g;
+int o = func(10); // o = 20
+
+// メンバポインタの保存
+std::function<int(mem&)> func2{};
+mem c{};
+
+func2 = &mem::h;
+int p = func2(c); // p = 11
+
+func2 = &mem::value;
+int q = func2(c); // q = 13
+```
+
+メンバポインタは少し呼び出しの形式が異なるために完全に統一的とはいきませんが、ラムダ式で一段ラップしてあげることで関数オブジェクトとして統一的に扱えるようになります。
+
+ただし、この魔法の様な挙動を実現するために*Type erasure*という手法を用いている影響で、何かを入れる度に動的メモリ確保が必須になっています（実装によっては、ある一定のサイズまでは動的メモリ確保をしないようになっていることもあります）。そのため、あまりに多用すると思わぬパフォーマンスの低下を引きおこす可能性があります。特に、任意の関数呼び出し可能な型を受けて内部で使用するために`std::function`を引数に取るのはやらない方がいいです。そのような所では先程の`std::erase_if`や`std::invoke`への転送例のようなテンプレートを使った受け口にして、保存が必要となる場合にそこから内部で`std::function`に入れるのが良いでしょう。
+
+```cpp
+// Observerパターンを実装した型
+class observable {
+  // 例えばint2つを受け取ってbool値を返すようなコールバック関数とする
+  std::vector<std::function<bool(int, int)>>　m_listeners{};
+
+public:
+
+  // リスナー（あるいはコールバック）を受け取る
+  template<typename F>
+  void set_listener(F&& listener) {
+　  m_listeners.emplace_back(std::forawrd<F>(listener));
+  }
+}
+```
+
+このように、`std::function`はあくまで関数呼び出し可能な物をその区別なく保存しておく必要がある場合に利用します。
 
 \clearpage
 
