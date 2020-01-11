@@ -1357,218 +1357,65 @@ auto opt = std::make_optional<myobj>(2, 3.0, "optional");
 
 # モナド的な型のインターフェース
 
-## 値を取り出す：`operator*()`
+Haskell等関数型言語におけるモナドと同じような扱いができるとみなせる型の事を本書ではモナド的な型と呼びます。主にmaybeモナドを意識していますが、リストモナドはそのままとしてもstateモナドなどとみなせる物もあります。ただし、厳密にはモナド則を満たしているとは言えないかもしれません、あくまでそれっぽく扱えるという所に焦点を置いています。
 
-## 値の存在チェック：`operator bool()`
+そのような型には例えば以下のものがあります。
 
-\clearpage
-
-# タプルインターフェース
-
-タプルインターフェースを備えている型はtuple-likeな型と呼ばれます。`std::tuple`と同じように扱えると言う意味合いです。タプルインターフェースを備えておくことで、`std::apply()`や`std::make_from_tuple()`、そして何より構造化束縛へアダプトすることが出来ます。
-
-以下のような簡単な型をアダプトする事を考えてみます。
-
-```cpp
-template<class T1, class T2, class T3>
-struct triple {
-  T1 v1;
-  T2 v2;
-  T3 v3;
-};
-
-template<class T1, class T2, class T3>
-triple(T1&&, T2&&, T3&&)
-  -> triple<
-       std::remove_cvref_t<T1>,
-       std::remove_cvref_t<T2>,
-       std::remove_cvref_t<T3>
-     >;
-```
-
-## `std::tuple_size`
-
-```cpp
-// tupleの宣言例
-namespace std {
-
-  // プライマリーテンプレート
-  template<class T>
-  class tuple_size;
-
-  // std::tupleに対する部分特殊化
-  template<class... Types>
-  class tuple_size<tupla<Types...>> : integral_constant<size_t, sizeof...(Types)> {};
-}
-```
-
-これはtuple-likeな型の要素数を取得するものです。tuple-likeな型はその要素数は静的に（コンパイル時に）決まらなければならないのでクラステンプレートの静的変数として取得するようになっています。
-
-先ほどの`triple`型では次のようにアダプトします。
-
-```cpp
-namespace std {
-
-  template<class T1, class T2, class T3>
-  struct tuple_size<triple<T1, T2, T3>> {
-    static constexpr size_t value = 3;
-  };
-}
-```
-
-入れ子の静的変数`value`にその要素数を入れておきます。あるいはこれと同じ事を次のようにより簡易に書くこともできます。
-
-```cpp
-namespace std {
-
-  template<class T1, class T2, class T3>
-  struct tuple_size<triple<T1, T2, T3>> : integral_constant<size_t, 3> {};
-}
-```
-
-`std::integral_constant`は静的な整数を表す標準ライブラリのクラスです。これの1つ目のパラメータに整数の型、2つ目のパラメータに要素数を与えた上で継承してやる事によって入れ子の静的変数`value`を提供できます。このテクニックはメタ関数転送と呼ばれています。
-
-## `std::tuple_element`
-
-```cpp
-// tupleの宣言例
-namespace std {
-  // プライマリーテンプレート
-  template<size_t I, class T>
-  class tuple_element;
-
-  // std::tupleに対する部分特殊化
-  template<size_t I, class... Types>
-  class tuple_element<I, tupla<Types...>> {
-    using type = /*tupleのI番目の型*/;
-  };
-}
-```
-
-これはtuple-likeな型の指定された番号の要素型を取得するものです。これもコンパイル時に定まらなければなりません。
-
-`triple`型に対しては少し複雑ですが、例えば以下のようにアダプトします。
-
-```cpp
-namespace std {
- 
-  template<class T1, class T2, class T3>
-  struct tuple_element<0, triple<T1, T2, T3>> {
-    using type = T1;
-  };
-
-  template<class T1, class T2, class T3>
-  struct tuple_element<1, triple<T1, T2, T3>> {
-    using type = T2;
-  };
-
-  template<class T1, class T2, class T3>
-  struct tuple_element<2, triple<T1, T2, T3>> {
-    using type = T3;
-  };
-}
-```
+- ポインタ型
+- `std::shared_ptr`
+- `std::unique_ptr`
+- `std::function`
+- `std::any`
+- `std::optional`
+- `std::variant`
+- 各種乱数生成器・分布生成器
+    - `std::linear_congruential_engine`
+    - `std::mersenne_twister_engine`
+    - `std::subtract_with_carry_engine`
+    - `std::random_device`
+    - ...etc
+- 各種コンテナ
 
 
-
-## `get()`
-
-```cpp
-// tupleの宣言例
-namespace std {
-
-  template<size_t I, class... Types>
-  constexpr tuple_element<I, tuple<Types...>>::type&
-    get(tuple<Types...>&) noexcept; 
-}
-```
-
-これはtuple-likeな型のオブジェクトから指定された番号の要素を取得するものです。
-
-`triple`型に対してはこれも少し複雑ですが、例えば以下のようにアダプトします。
-
-```cpp
-template<size_t I, class T1, class T2, class T3>
-constexpr std::tuple_element<I, triple<T1, T2, T3>>::type&
-  get(triple<T1, T2, T3>& t) noexcept {
-    if constexpr (I == 0) {
-      return t.v1;
-    } else if constexpr (I == 1) {
-      return t.v2;
-    } else if constexpr (I == 2) {
-      return t.v3;
-    } else {
-      static_assert([]{return false;}, "I must be less than 3");
-    }
-  }
-```
-
-注意ですが、`get()`の場合は先ほどの2つのように`std`名前空間のものをオーバーロードするのではなく、対象の型（今は`triple`）と同じ名前空間にフリー関数として定義しておくか、メンバ関数として定義しておきます。また、*Hidden Friends*にしても良いでしょう。
-
-```cpp
-template<class T1, class T2, class T3>
-struct triple {
-  T1 v1;
-  T2 v2;
-  T3 v3;
-
-  // こうしてもok
-  template<size_t I>
-  constexpr std::tuple_element<I, triple<T1, T2, T3>>::type&
-    get() noexcept {
-      if constexpr (I == 0) {
-        return this->v1;
-      } else if constexpr (I == 1) {
-        return this->v2;
-      } else if constexpr (I == 2) {
-        return this->v3;
-      } else {
-        static_assert([]{return false;}, "I must be less than 3");
-      }
-    }
-};
-```
-
-これらを完全に理解するには所謂テンプレートメタプログラミングの知識が必要になりますが、なんとかこれらを定義することができれば、自作の型を構造化束縛で使用できるようになります。
-
-```cpp
-triple t = { .v1 = 1, .v2 = 3.1415, .v3 = "triple" };
-
-auto& [v1, v2, v3] = t;
-
-std::cout << v1 << ", " << v2 << ", " << v3 << std::endl;
-// 1, 3.1415, triple
-```
-
-#### コラム：構造化束縛へのアダプト
-
-　
-
-構造化束縛に任意の型をアダプトするにはもう一つ方法があります。それは、集成体のようにクラスのメンバ変数を`public`にしておくことです。そのような型のオブジェクトに対する構造化束縛宣言ではコンパイラが特別な計らいをして、非静的`public`変数だけをその宣言順に束縛してくれます。
-
-```cpp
-template<class T>
-struct my_pair {
-  T first;
-  T second;
-};
-
-template<class T>
-my_pair(T&&, T&&) -> my_pair<std::remove_cvref_t<T>>;
+## 中身へアクセスする
 
 
-int main() {
-  my_pair p = { .first = 10, .second = 20 };
+| 関数名        | `operator*()` | `operator()()` | `std::visit()` | `std::any_cast()` |
+| ------------ | :-----------: | :------------: | :----------: | :--------: |
+| ポインタ型    | ○             | -              | -            | -          |
+| `shared_ptr` | ○             | -              | -            | -          |
+| `unique_ptr` | ○             | -              | -            | -          |
+| `function`   | -             | ○              | -            | -          |
+| `any`        | -             | -              | -            | ○          |
+| `optional`   | ○             | -              | -            | -          |
+| `variant`    | -             | -              | ○            | -          |
+| 乱数生成器    | -             | ○              | -            | -          |
 
-  auto& [n1, n2] = p;
-  
-  std::cout << n1 << ", " << n2 << std::endl;
-  // 10, 20
-}
-```
+## 中身の存在チェック
 
-単に構造化束縛にアダプトしたいだけならばこちらの方がはるかに簡単に行えます。ところで、お気付きになられた方もいるでしょう。先程の`triple`型はあんな複雑な事をしなくてもそのまま構造化束縛で使用可能だったのです・・・  
-カプセル化のためにメンバを隠蔽する場合や、一部のメンバを公開したくない場合などにタプルインターフェースを備えてみると良いでしょう。
+| 関数名        | `operator bool()` | `has_value()` | `valueless_by_exception()` |
+| ------------ | :---------------: | :-----------: | :------------------------: |
+| ポインタ型    | ○                 | -             | -                          |
+| `shared_ptr` | ○                 | -             | -                          |
+| `unique_ptr` | ○                 | -             | -                          |
+| `function`   | ○                 | -             | -                          |
+| `any`        | -                 | ○             | -                          |
+| `optional`   | ○                 | ○             | -                          |
+| `variant`    | -                 | -             | ○                          |
+| 乱数生成器    | -                 | -             | -                          |
+
+## 無効値の代入
+
+| 関数名        | `nullptr` | `std::nullopt` | `reest()` |
+| ------------ | :-------: | :------------: | :-------: |
+| ポインタ型    | ○         | -              | -         |
+| `shared_ptr` | ○         | -              | ○         |
+| `unique_ptr` | ○         | -              | ○         |
+| `function`   | ○         | -              | ○         |
+| `any`        | -         | -              | ○         |
+| `optional`   | -         | ○              | ○         |
+| `variant`    | -         | -              | -         |
+| 乱数生成器    | -         | -              | -         |
 
 \clearpage
 
@@ -1865,6 +1712,215 @@ public:
 ```
 
 このように、`std::function`はあくまで関数呼び出し可能な物をその区別なく保存しておく必要がある場合に利用します。
+
+\clearpage
+
+# タプルインターフェース
+
+タプルインターフェースを備えている型はtuple-likeな型と呼ばれます。`std::tuple`と同じように扱えると言う意味合いです。タプルインターフェースを備えておくことで、`std::apply()`や`std::make_from_tuple()`、そして何より構造化束縛へアダプトすることが出来ます。
+
+以下のような簡単な型をアダプトする事を考えてみます。
+
+```cpp
+template<class T1, class T2, class T3>
+struct triple {
+  T1 v1;
+  T2 v2;
+  T3 v3;
+};
+
+template<class T1, class T2, class T3>
+triple(T1&&, T2&&, T3&&)
+  -> triple<
+       std::remove_cvref_t<T1>,
+       std::remove_cvref_t<T2>,
+       std::remove_cvref_t<T3>
+     >;
+```
+
+## `std::tuple_size`
+
+```cpp
+// tupleの宣言例
+namespace std {
+
+  // プライマリーテンプレート
+  template<class T>
+  class tuple_size;
+
+  // std::tupleに対する部分特殊化
+  template<class... Types>
+  class tuple_size<tupla<Types...>> : integral_constant<size_t, sizeof...(Types)> {};
+}
+```
+
+これはtuple-likeな型の要素数を取得するものです。tuple-likeな型はその要素数は静的に（コンパイル時に）決まらなければならないのでクラステンプレートの静的変数として取得するようになっています。
+
+先ほどの`triple`型では次のようにアダプトします。
+
+```cpp
+namespace std {
+
+  template<class T1, class T2, class T3>
+  struct tuple_size<triple<T1, T2, T3>> {
+    static constexpr size_t value = 3;
+  };
+}
+```
+
+入れ子の静的変数`value`にその要素数を入れておきます。あるいはこれと同じ事を次のようにより簡易に書くこともできます。
+
+```cpp
+namespace std {
+
+  template<class T1, class T2, class T3>
+  struct tuple_size<triple<T1, T2, T3>> : integral_constant<size_t, 3> {};
+}
+```
+
+`std::integral_constant`は静的な整数を表す標準ライブラリのクラスです。これの1つ目のパラメータに整数の型、2つ目のパラメータに要素数を与えた上で継承してやる事によって入れ子の静的変数`value`を提供できます。このテクニックはメタ関数転送と呼ばれています。
+
+## `std::tuple_element`
+
+```cpp
+// tupleの宣言例
+namespace std {
+  // プライマリーテンプレート
+  template<size_t I, class T>
+  class tuple_element;
+
+  // std::tupleに対する部分特殊化
+  template<size_t I, class... Types>
+  class tuple_element<I, tupla<Types...>> {
+    using type = /*tupleのI番目の型*/;
+  };
+}
+```
+
+これはtuple-likeな型の指定された番号の要素型を取得するものです。これもコンパイル時に定まらなければなりません。
+
+`triple`型に対しては少し複雑ですが、例えば以下のようにアダプトします。
+
+```cpp
+namespace std {
+ 
+  template<class T1, class T2, class T3>
+  struct tuple_element<0, triple<T1, T2, T3>> {
+    using type = T1;
+  };
+
+  template<class T1, class T2, class T3>
+  struct tuple_element<1, triple<T1, T2, T3>> {
+    using type = T2;
+  };
+
+  template<class T1, class T2, class T3>
+  struct tuple_element<2, triple<T1, T2, T3>> {
+    using type = T3;
+  };
+}
+```
+
+
+
+## `get()`
+
+```cpp
+// tupleの宣言例
+namespace std {
+
+  template<size_t I, class... Types>
+  constexpr tuple_element<I, tuple<Types...>>::type&
+    get(tuple<Types...>&) noexcept; 
+}
+```
+
+これはtuple-likeな型のオブジェクトから指定された番号の要素を取得するものです。
+
+`triple`型に対してはこれも少し複雑ですが、例えば以下のようにアダプトします。
+
+```cpp
+template<size_t I, class T1, class T2, class T3>
+constexpr std::tuple_element<I, triple<T1, T2, T3>>::type&
+  get(triple<T1, T2, T3>& t) noexcept {
+    if constexpr (I == 0) {
+      return t.v1;
+    } else if constexpr (I == 1) {
+      return t.v2;
+    } else if constexpr (I == 2) {
+      return t.v3;
+    } else {
+      static_assert([]{return false;}, "I must be less than 3");
+    }
+  }
+```
+
+注意ですが、`get()`の場合は先ほどの2つのように`std`名前空間のものをオーバーロードするのではなく、対象の型（今は`triple`）と同じ名前空間にフリー関数として定義しておくか、メンバ関数として定義しておきます。また、*Hidden Friends*にしても良いでしょう。
+
+```cpp
+template<class T1, class T2, class T3>
+struct triple {
+  T1 v1;
+  T2 v2;
+  T3 v3;
+
+  // こうしてもok
+  template<size_t I>
+  constexpr std::tuple_element<I, triple<T1, T2, T3>>::type&
+    get() noexcept {
+      if constexpr (I == 0) {
+        return this->v1;
+      } else if constexpr (I == 1) {
+        return this->v2;
+      } else if constexpr (I == 2) {
+        return this->v3;
+      } else {
+        static_assert([]{return false;}, "I must be less than 3");
+      }
+    }
+};
+```
+
+これらを完全に理解するには所謂テンプレートメタプログラミングの知識が必要になりますが、なんとかこれらを定義することができれば、自作の型を構造化束縛で使用できるようになります。
+
+```cpp
+triple t = { .v1 = 1, .v2 = 3.1415, .v3 = "triple" };
+
+auto& [v1, v2, v3] = t;
+
+std::cout << v1 << ", " << v2 << ", " << v3 << std::endl;
+// 1, 3.1415, triple
+```
+
+#### コラム：構造化束縛へのアダプト
+
+　
+
+構造化束縛に任意の型をアダプトするにはもう一つ方法があります。それは、集成体のようにクラスのメンバ変数を`public`にしておくことです。そのような型のオブジェクトに対する構造化束縛宣言ではコンパイラが特別な計らいをして、非静的`public`変数だけをその宣言順に束縛してくれます。
+
+```cpp
+template<class T>
+struct my_pair {
+  T first;
+  T second;
+};
+
+template<class T>
+my_pair(T&&, T&&) -> my_pair<std::remove_cvref_t<T>>;
+
+
+int main() {
+  my_pair p = { .first = 10, .second = 20 };
+
+  auto& [n1, n2] = p;
+  
+  std::cout << n1 << ", " << n2 << std::endl;
+  // 10, 20
+}
+```
+
+単に構造化束縛にアダプトしたいだけならばこちらの方がはるかに簡単に行えます。ところで、お気付きになられた方もいるでしょう。先程の`triple`型はあんな複雑な事をしなくてもそのまま構造化束縛で使用可能だったのです・・・  
+カプセル化のためにメンバを隠蔽する場合や、一部のメンバを公開したくない場合などにタプルインターフェースを備えてみると良いでしょう。
 
 \clearpage
 
