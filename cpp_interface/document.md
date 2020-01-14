@@ -1637,14 +1637,21 @@ auto it = std::find_if(vec.begin(), vec.end(), greater_than_n{ .threshold = 10 }
 // *it = 20
 ```
 
-この`std::find_if()`はイテレータと条件式を用いて要素列から条件に合う最初の要素へのイテレータを取得します。これは次のように宣言されています。
+この`std::find_if()`はイテレータと条件式を用いて要素列から条件に合う最初の要素へのイテレータを取得します。これは例えば次のように宣言・定義されています。
 
 ```cpp
 namespace std {
+
   template<class InputIterator, class Predicate>
   constexpr InputIterator find_if(InputIterator first,
                                   InputIterator last,
-                                  Predicate pred);
+                                  Predicate pred)
+  {
+    for (;first != last; ++first) {
+      if (pred(*first) == true) return first; 
+    }
+    return last;
+  }
 }
 ```
 
@@ -1756,7 +1763,7 @@ func = g;
 int o = func(10); // o = 20
 
 // メンバポインタの保存
-std::function<int(mem&)> func2{};
+std::function<int(mem&)> func2{};　　　
 mem c{};
 
 func2 = &mem::h;
