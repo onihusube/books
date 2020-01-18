@@ -1596,6 +1596,29 @@ std::ranges::swap(a, b);
 // a = {35}, b = {10}
 ```
 
+### 標準ライブラリにおける`swap`の実装
+
+　標準ライブラリの`swap`可能な型はほぼすべて、メンバ関数として定義した`swap()`関数を`std`名前空間スコープの`swap()`関数を介して呼び出すようになっています。
+
+```cpp
+namespace std {
+  template<class T, class Allocator = allocator<T>>
+  class vector {
+    // メンバ関数のswap
+    void swap(vector& other) noexcept(/*略*/);
+
+    // フリー関数のswap
+    friend void swap(vector& lhs, vector& rhs)
+      noexcept(noexcept(lhs.swap(rhs)))
+    {
+      lhs.swap(rhs);
+    }
+  }
+}
+```
+
+　例えばこのような実装になっています。これは多くの場合`swap`操作にプライベートメンバへのアクセスが必要なためです。C++20以降はフリー関数の`swap()`は*Hidden Frineds*を利用して定義されるようですが、それでもメンバ関数の`swap()`を呼び出すようにしている点は変わらないようです。　
+
 \clearpage
 
 # 関数呼び出しインターフェース
