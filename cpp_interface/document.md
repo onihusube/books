@@ -649,25 +649,26 @@ for (int i = 0; i < 1000; ++i) {
 
 上記4つのインターフェースは必ずしも全ての標準コンテナで使用可能ではありません。何で使えて何で使えないのかを一覧にしてみました。
 
-| 型名                  | `size()` | `empty()` | `resize()` | `reserve()` |
-| --------------------- | :------: | :-------: | :--------: | :---------: |
-| `vector`              | ○        | ○         | ○          | ○           |
-| `array`               | ○        | ○         | -          | -           |
-| `string`              | ○        | ○         | ○          | ○           |
-| `deque`               | ○        | ○         | ○          | -           |
-| `list`                | ○        | ○         | ○          | -           |
-| `forward_list`        | -        | ○         | ○          | -           |
-| `set`                 | ○        | ○         | -          | -           |
+| 型名                   | `size()` | `empty()` | `resize()` | `reserve()` |
+| -------------------- | :------: | :-------: | :--------: | :---------: |
+| `vector`             | ○        | ○         | ○          | ○           |
+| `array`              | ○        | ○         | -          | -           |
+| `string`             | ○        | ○         | ○          | ○           |
+| `deque`              | ○        | ○         | ○          | -           |
+| `list`               | ○        | ○         | ○          | -           |
+| `forward_list`       | -        | ○         | ○          | -           |
+| `set`                | ○        | ○         | -          | -           |
 | `multiset`           | ○        | ○         | -          | -           |
-| `map`                 | ○        | ○         | -          | -           |
+| `map`                | ○        | ○         | -          | -           |
 | `multimap`           | ○        | ○         | -          | -           |
-| `unordered_set`       | ○        | ○         | -          | ○           |
+| `unordered_set`      | ○        | ○         | -          | ○           |
 | `unordered_multiset` | ○        | ○         | -          | ○           |
-| `unordered_map`       | ○        | ○         | -          | ○           |
+| `unordered_map`      | ○        | ○         | -          | ○           |
 | `unordered_multimap` | ○        | ○         | -          | ○           |
-| `stack`               | ○        | ○         | -          | -           |
-| `queue`               | ○        | ○         | -          | -           |
-| `priority_queue`      | ○        | ○         | -          | -           |
+| `stack`              | ○        | ○         | -          | -           |
+| `queue`              | ○        | ○         | -          | -           |
+| `priority_queue`     | ○        | ○         | -          | -           |
+| `span`               | ○        | ○         | -          | -           |
 
 `forward_list`が`size()`を持たないのは、そのオブジェクトサイズを最小にするためです。`size()`に必要なメンバ変数を持った場合、その他の事に使用する事は無くオブジェクトサイズを無駄に太らせるだけという判断のようです。`forward_list` で`size()`相当の値を取得するにはイテレータを取得してその距離を求めます。`std::distance()`がその用途に使用できます。
 
@@ -781,25 +782,26 @@ int b = vec.back();   // b = 13
 
 　
 
-| 型名                    | `operator[]/at()` | `data()` | `front()` | `back()` |
-| --------------------- | :---------------: | :------: | :-------: | :------: |
-| `vector`              | ○                 | ○        | ○         | ○        |
-| `array`               | ○                 | ○        | ○         | ○        |
-| `string`              | ○                 | ○        | ○         | ○        |
-| `deque`               | ○                 | -        | ○         | ○        |
-| `list`                | -                 | -        | ○         | ○        |
-| `forward_list`        | -                 | -        | ○         | -        |
-| `set`                 | -                 | -        | -         | -        |
+| 型名                   | `operator[]/at()` | `data()` | `front()` | `back()` |
+| -------------------- | :---------------: | :------: | :-------: | :------: |
+| `vector`             | ○                 | ○        | ○         | ○        |
+| `array`              | ○                 | ○        | ○         | ○        |
+| `string`             | ○                 | ○        | ○         | ○        |
+| `deque`              | ○                 | -        | ○         | ○        |
+| `list`               | -                 | -        | ○         | ○        |
+| `forward_list`       | -                 | -        | ○         | -        |
+| `set`                | -                 | -        | -         | -        |
 | `multiset`           | -                 | -        | -         | -        |
-| `map`                 | ○                 | -        | -         | -        |
+| `map`                | ○                 | -        | -         | -        |
 | `multimap`           | -                 | -        | -         | -        |
-| `unordered_set`       | -                 | -        | -         | -        |
+| `unordered_set`      | -                 | -        | -         | -        |
 | `unordered_multiset` | -                 | -        | -         | -        |
-| `unordered_map`       | ○                 | -        | -         | -        |
+| `unordered_map`      | ○                 | -        | -         | -        |
 | `unordered_multimap` | -                 | -        | -         | -        |
-| `stack`               | -                 | -        | `top()`   | -        |
-| `queue`               | -                 | -        | ○         | ○        |
-| `priority_queue`      | -                 | -        | `top()`   | -        |
+| `stack`              | -                 | -        | `top()`   | -        |
+| `queue`              | -                 | -        | ○         | ○        |
+| `priority_queue`     | -                 | -        | `top()`   | -        |
+| `span`               | ○                 | ○        | ○         | ○        |
 
 `stack`と`priority_queue`は`top()`という別の名前で対応する関数を備えています。
 
@@ -861,25 +863,26 @@ deq.pop_back(11);  // {3, 5, 7}
 
 　
 
-| 型名                   | `push_back()` | `push_front()`   | `pop_back()`    | `pop_front()` |
-| --------------------- | :-----------: | :--------------: | :-------------: | :-------: |
-| `vector`              | ○             | -                | -               | -         |
-| `array`               | -             | -                | -               | -         |
-| `string`              | ○             | -                | -               | -         |
-| `deque`               | ○             | ○                | ○               | ○         |
-| `list`                | ○             | ○                | ○               | ○         |
-| `forward_list`        | -             | ○                | ○               | ○         |
-| `set`                 | -             | -                | -               | -         |
-| `multiset`           | -             | -                | -               | -         |
-| `map`                 | -             | -                | -               | -         |
-| `multimap`           | -             | -                | -               | -         |
-| `unordered_set`       | -             | -                | -               | -         |
-| `unordered_multiset` | -             | -                | -               | -         |
-| `unordered_map`       | -             | -                | -               | -         |
-| `unordered_multimap` | -             | -                | -               | -         |
-| `stack`               | -             | `push()`         | -               | `pop()`   |
-| `queue`               | `push()`      | `pop()`          | -               | -         |
-| `priority_queue`      | `push()`      | `pop()`          | -               | -         |
+| 型名                   | `push_back()` | `push_front()` | `pop_back()` | `pop_front()` |
+| -------------------- | :-----------: | :------------: | :----------: | :-----------: |
+| `vector`             | ○             | -              | -            | -             |
+| `array`              | -             | -              | -            | -             |
+| `string`             | ○             | -              | -            | -             |
+| `deque`              | ○             | ○              | ○            | ○             |
+| `list`               | ○             | ○              | ○            | ○             |
+| `forward_list`       | -             | ○              | ○            | ○             |
+| `set`                | -             | -              | -            | -             |
+| `multiset`           | -             | -              | -            | -             |
+| `map`                | -             | -              | -            | -             |
+| `multimap`           | -             | -              | -            | -             |
+| `unordered_set`      | -             | -              | -            | -             |
+| `unordered_multiset` | -             | -              | -            | -             |
+| `unordered_map`      | -             | -              | -            | -             |
+| `unordered_multimap` | -             | -              | -            | -             |
+| `stack`              | -             | `push()`       | -            | `pop()`       |
+| `queue`              | `push()`      | `pop()`        | -            | -             |
+| `priority_queue`     | `push()`      | `pop()`        | -            | -             |
+| `span`               | -             | -              | -            | -             |
 
 ### `emplace()`系インターフェース
 
@@ -1018,25 +1021,26 @@ res = itos.try_emplace(it, 4, "four");
 
 　
 
-| 型名                    | `try_emplace` | `emplace_hint` | `emplace_front` | `emplace_back` | `emplace` |
-| --------------------- | :-----------: | :------------: | :-------------: | :------------: | :-------: |
-| `vector`              | -             | -              | -               | ○              | ○         |
-| `array`               | -             | -              | -               | -              | -         |
-| `string`              | -             | -              | -               | -              | -         |
-| `deque`               | -             | -              | ○               | ○              | ○         |
-| `list`                | -             | -              | ○               | ○              | ○         |
-| `forward_list`        | -             | -              | ○               | -              | `emplace_after`|
-| `set`                 | -             | ○              | -               | -              | ○         |
-| `multiset`           | -             | ○              | -               | -              | ○         |
-| `map`                 | ○             | ○              | -               | -              | ○         |
-| `multimap`           | -             | ○              | -               | -              | ○         |
-| `unordered_set`       | -             | ○              | -               | -              | ○         |
-| `unordered_multiset` | -             | ○              | -               | -              | ○         |
-| `unordered_map`       | ○             | ○              | -               | -              | ○         |
-| `unordered_multimap` | -             | ○              | -               | -              | ○         |
-| `stack`               | -             | -              | `emplace`     | -              | -         |
-| `queue`               | -             | -              | -               | `emplace`    | -         |
-| `priority_queue`      | -             | -              | -               | `emplace`    | -         |
+| 型名                   | `try_emplace` | `emplace_hint` | `emplace_front` | `emplace_back` | `emplace`       |
+| -------------------- | :-----------: | :------------: | :-------------: | :------------: | :-------------: |
+| `vector`             | -             | -              | -               | ○              | ○               |
+| `array`              | -             | -              | -               | -              | -               |
+| `string`             | -             | -              | -               | -              | -               |
+| `deque`              | -             | -              | ○               | ○              | ○               |
+| `list`               | -             | -              | ○               | ○              | ○               |
+| `forward_list`       | -             | -              | ○               | -              | `emplace_after` |
+| `set`                | -             | ○              | -               | -              | ○               |
+| `multiset`           | -             | ○              | -               | -              | ○               |
+| `map`                | ○             | ○              | -               | -              | ○               |
+| `multimap`           | -             | ○              | -               | -              | ○               |
+| `unordered_set`      | -             | ○              | -               | -              | ○               |
+| `unordered_multiset` | -             | ○              | -               | -              | ○               |
+| `unordered_map`      | ○             | ○              | -               | -              | ○               |
+| `unordered_multimap` | -             | ○              | -               | -              | ○               |
+| `stack`              | -             | -              | `emplace`       | -              | -               |
+| `queue`              | -             | -              | -               | `emplace`      | -               |
+| `priority_queue`     | -             | -              | -               | `emplace`      | -               |
+| `span`               | -             | -              | -               | -              |                 |
 
 `forward_list`はそのコンテナ特性上指定された要素の一つ前を参照する事にコストがかかるため、`emplace()`は指定された要素の1つ後ろに構築するようになっており、それを明示するために名前が変更されています。
 
@@ -1160,28 +1164,76 @@ vec.clear();  // 以降要素は無くなる
 
 　
 
-| 型名                    | `insert()`       | `erase()`       | `std::erase_if()` | `clear()` |
-| --------------------- | :--------------: | :-------------: | :---------------: | :-------: |
-| `vector`              | ○                | ○               | ○                 | ○         |
-| `array`               | -                | -               | -                 | -         |
-| `string`              | ○                | ○               | ○                 | ○         |
-| `deque`               | ○                | ○               | ○                 | ○         |
-| `list`                | ○                | ○               | ○                 | ○         |
-| `forward_list`        | `insert_after()` | `erase_after()` | ○                 | ○         |
-| `set`                 | ○                | ○               | ○                 | ○         |
+| 型名                   | `insert()`       | `erase()`       | `std::erase_if()` | `clear()` |
+| -------------------- | :--------------: | :-------------: | :---------------: | :-------: |
+| `vector`             | ○                | ○               | ○                 | ○         |
+| `array`              | -                | -               | -                 | -         |
+| `string`             | ○                | ○               | ○                 | ○         |
+| `deque`              | ○                | ○               | ○                 | ○         |
+| `list`               | ○                | ○               | ○                 | ○         |
+| `forward_list`       | `insert_after()` | `erase_after()` | ○                 | ○         |
+| `set`                | ○                | ○               | ○                 | ○         |
 | `multiset`           | ○                | ○               | ○                 | ○         |
-| `map`                 | ○                | ○               | ○                 | ○         |
+| `map`                | ○                | ○               | ○                 | ○         |
 | `multimap`           | ○                | ○               | ○                 | ○         |
-| `unordered_set`       | ○                | ○               | ○                 | ○         |
+| `unordered_set`      | ○                | ○               | ○                 | ○         |
 | `unordered_multiset` | ○                | ○               | ○                 | ○         |
-| `unordered_map`       | ○                | ○               | ○                 | ○         |
+| `unordered_map`      | ○                | ○               | ○                 | ○         |
 | `unordered_multimap` | ○                | ○               | ○                 | ○         |
-| `stack`               | -                | -               | -                 | -         |
-| `queue`               | -                | -               | -                 | -         |
-| `priority_queue`      | -                | -               | -                 | -         |
+| `stack`              | -                | -               | -                 | -         |
+| `queue`              | -                | -               | -                 | -         |
+| `priority_queue`     | -                | -               | -                 | -         |
+| `span`               | -                | -               | -                 | -         |
 
 `forward_list`はそのコンテナ特性上指定された要素の一つ前を参照する事にコストがかかるため、`insert()/erase()`は指定された要素の1つ後ろを対象にとるようになっており、それを明示するために名前が変更されています。また、`std::erase()/std::erase_if()`はセットで提供されているため、片方だけを表に書いています。
 
+## メモリ連続性を持つコンテナ
+
+　メモリ連続性とは、生配列のようにその要素列がメモリ上で隙間なく連続で並んでいる事を言います。別の言い方をするとそのイテレータは*contiguous iterator*の要件を満たすイテレータであり（おそらくそれはポインタになるはず）、また別の言い方をすれば`std::span`で参照可能な型です。
+
+　例えば以下の様な型があります。
+
+- 配列型
+- `std::array`
+- `std::vector`
+- `std::initializer_list`
+- `std::string_view`
+- `std::string`
+    - 厳密にはイテレータは*contiguous iterator*と規定されていない
+
+　`std::span`では、メモリ連続性を持つコンテナに対してフリー関数の`data()`と`size()`が呼び出し可能であることを要求し、上記の型もその呼び出しが可能です。メモリ連続性を持つコンテナのインターフェースとはこの2つの関数だといえるでしょう。なお、これらの関数の効果はすでに説明したコンテナのメンバ関数のそれと全く同じ効果です。
+
+　例えば以下のように実装します。
+
+```cpp
+template<typename T, std::size_t N>
+struct my_array {
+  T arr[N] = {};
+
+  friend auto data() noexcept -> T* {
+    return arr;
+  }
+
+  friend auto size() const noexcept -> std::size_t {
+    return N;
+  }
+};
+```
+
+　この様に*Hidden Friends*で実装しても良いですし、メンバ関数で実装しても良いですし、同じ名前空間でフリー関数として実装しても良いです。なぜなら、`std::span`で使用される時には`std`名前空間に定義されているフリー関数版の`std::data(), std::size()`も考慮され、それは任意の型に対してメンバ関数の`data(), size()`を呼び出すためです。フリー関数や*Hidden Friends*で実装した場合はADLによって用意したものが呼ばれます。
+
+　逆に言うと、このメモリ連続性を持つコンテナのインターフェースを利用する際はそれと同じ条件にする必要があります。どこかで見たコードを書くのです・・・
+
+```cpp
+// メモリ連続性を持つコンテナから先頭ポインタと要素数を引き出す
+template<typename Container>
+auto get_ptr_and_size(Container& c) {
+  using std::data;
+  using std::size;
+
+  return std::make_pair(data(c), size(c));
+}
+```
 
 ## 型特性インターフェース
 
@@ -1827,6 +1879,13 @@ public:
 # タプルインターフェース
 
 タプルインターフェースを備えている型はtuple-likeな型と呼ばれます。`std::tuple`と同じように扱えると言う意味合いです。タプルインターフェースを備えておくことで、`std::apply()`や`std::make_from_tuple()`、そして何より構造化束縛へアダプトすることが出来ます。
+
+標準ライブラリでタプルインターフェースを備える型には以下の様なものがあります
+
+- `std::tuple`
+- `std::pair`
+- `std::array`
+- `std::span`
 
 以下のような簡単な型をアダプトする事を考えてみます。
 
