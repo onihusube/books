@@ -417,9 +417,28 @@ auto frist2 = MyNS::begin(v); // ng
 auto frist3 = begin(v);       // ok
 ```
 
-この不思議な性質によって、名前空間スコープを汚すこともなく、`using namespace`された時などに意図しない関数を呼び出してしまうことを防止することが出来ます。標準ライブラリでも`std::filesystem::path`の非メンバ`operator==(const path&, const path&)`が`using namespace std::filesystem`された時に文字列比較に取って代わるバグが発見され、このイディオムを用いて修正されました。それ以降、クラスのインターフェース、特にオーバーロードされた演算子はこのイディオムを利用するようになり、C++20では規格書に明記されるに至りました。
+　この不思議な性質によって、名前空間スコープを汚すこともなく、`using namespace`された時などに意図しない関数を呼び出してしまうことを防止することが出来ます。
 
-先ほどの`random_access_iterator`クラスで使ってみると例えば次のようになるでしょう。
+　標準ライブラリでも`std::filesystem::path`の非メンバ`operator==(const path&, const path&)`が`using namespace std::filesystem`された時に文字列比較に取って代わるバグが発見され、このイディオムを用いて修正されました。それ以降、クラスのインターフェース、特にオーバーロードされた演算子はこのイディオムを利用するようになり、C++20では規格書に明記されるに至りました。
+
+```cpp
+// LWG Issue 3065より、問題が起きるコード
+#include <assert.h>
+#include <string>
+#include <filesystem>
+
+using namespace std;
+using namespace std::filesystem;
+
+int main() {
+  // 暗黙変換によってoperator==(const path&, const path&)が使われている
+  bool b = L"a//b" == std::string("a/b");
+  assert(b); // stringの比較であればassertで止まるはず・・・
+  return b;  // しかし止まらない（clang 7.0.0以前等）
+}
+```
+
+　これを先ほどの`random_access_iterator`クラスで使ってみると例えば次のような実装になるでしょう。
 
 ```cpp
 template<typename T>
@@ -444,8 +463,11 @@ struct random_access_iterator : bidirectional_iterator<T> {
 }
 ```
 
-クラス外で定義されていた`operator+`/`-`を*Hidden Friends*にし、対応する逆順の演算子も同様にしました。クラス定義内で定義できることによって記述がスッキリしているメリットがここで確認できるでしょう。  
-なお、`friend`であるので非`public`なメンバ全てにアクセスすることができるため、`operator+=`なども含めた全てのメンバ関数を*Hidden Friends*にすることはできます。この塩梅は個人の好みによるかもしれませんが、メンバ関数としてのインターフェースとそうでないものを適切に選り分け、メンバ関数として定義した方がいいものは*Hidden Friends*にはしない方が良いかと思われます。
+クラス外で定義されていた`operator+`/`-`を*Hidden Friends*にし、対応する逆順の演算子も同様にしました。クラス定義内で定義できることによって記述がスッキリしているメリットがここで確認できるでしょう。
+
+　なお、`friend`であるので非`public`なメンバ全てにアクセスすることができるため、この場合の`operator+=`等全てのメンバ関数を*Hidden Friends*にすることができます。この塩梅は個人の好みによるかもしれませんが、メンバ関数としてのインターフェースとそうでないものを適切に選り分け、メンバ関数として定義した方がいいものは*Hidden Friends*にはしない方が良いかと思われます。
+
+　例えば、演算子オーバーロードは多くの場合明示的に関数として呼び出すことは無いので、可能な限り*Hidden Friends*にしても良いかもしれません。逆に普通の関数はメンバとして使用できた方が自然であることが多いので少し慎重に考えた方がいいでしょう。また、カスタマイゼーションポイントとして利用される関数は多くの場合メンバと非メンバ両方が考慮されます。そういうものを備える時も*Hidden Friends*にしても良いでしょう。
 
 ### output itereator
 
@@ -812,7 +834,7 @@ int b = vec.back();   // b = 13
 
 `push_xxx()`関数群はその名の通りコンテナに要素を追加する関数です。既に構築済みの要素を受け取り、対応する内部領域にコピー（ムーブ）構築します。
 
-`pop_xxx()`関数群はその名の通りコンテナから要素を削除する関数です。他のプログラミング言語における同じような関数と異なり、この関数は対応する場所の要素を削除をするだけで要素を取り出す機能は持っていません（例外安全への対応のためにこうなっているという噂があります・・・）。
+`pop_xxx()`関数群はその名の通りコンテナから要素を削除する関数です。他のプログラミング言語における同じような関数と異なり、この関数は対応する場所の要素を削除をするだけで要素を取り出す機能は持っていません（例外安全への配慮のためにこうなっています）。
 
 
 #### `push_back()/push_front()`
@@ -2222,4 +2244,9 @@ constexpr bool b = is_same_v<int, int>; // b = true
 
 # 謝辞
 
-本書を執筆するに当たっては、cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0に基づく)およびcppmap(https://cppmap.github.io/)をとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
+本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
+
+- cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
+- cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
+- yohhoyの日記（https://yohhoy.hatenadiary.jp）
+    - Hidden Friends : https://yohhoy.hatenadiary.jp/entry/20190531/p1
