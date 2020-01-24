@@ -1023,22 +1023,29 @@ res = itos.try_emplace(it, 4, "four");
 // itos = { {1, "one"}, {2, "two"}, {3, "three"}, {4, "four"}, {5, "five"} }
 ```
 
-ここまで紹介した`emplace`系関数は特に顕著ですが、コンテナ間でその関数名が統一されていても関数引数や戻り値までも含めて（このことをシグネチャと言います）統一されてはいない事があります。また、ある関数についていくつかのオーバーロードを備えている事もあります。
+　ここまで紹介した`emplace`系関数は特に顕著ですが、コンテナ間でその関数名が統一されていても関数引数や戻り値までも含めて（このことをシグネチャと言います）統一されてはいない事があります。また、ある関数についていくつかのオーバーロードを備えている事もあります。
 
-| コンテナ種別       | `emplace()`                                                   |
-| ------------ | ------------------------------------------------------------- |
-| シーケンスコンテナ    | `template<calss... Args>`                                     |
-|              | `iterator emplace(const_iterator position, Args&&... args);`  |
-| 連想コンテナ       | `template<calss... Args>`                                     |
-|              | `iterator emplace_hint(const_iterator hint, Args&&... args);` |
-| 重複不可能な連想コンテナ | `template<calss... Args>`                                     |
-|              | `pair<iterator, bool> emplace(Args&&... args);`               |
-| 重複可能な連想コンテナ  | `template<calss... Args>`                                     |
-|              | `iterator emplace(Args&&... args);`                           |
-| `std::forward_list`  | `template<calss... Args>`                                     |
-|              | `iterator emplace_after(const_iterator position, Args&&... args);`                           |
+```cpp
+/// コンテナ毎のemplace()系関数の宣言例
 
-本書におけるインターフェースへの準拠とはほとんど関数名のみを指しています。その意味論さえ同じであればこのように引数や戻り値に多少の差やオーバーロードがあっても構わないでしょう。もちろん、統一できるのならばその方が良いです。
+// シーケンスコンテナ
+template<calss... Args>
+iterator emplace(const_iterator position, Args&&... args);
+
+// 連想コンテナ
+template<calss... Args>
+iterator emplace_hint(const_iterator hint, Args&&... args);
+
+// 重複不可能な連想コンテナ
+template<calss... Args>
+iterator emplace(Args&&... args);
+
+// std::forward_list
+template<calss... Args>
+iterator emplace_after(const_iterator position, Args&&... args);
+```
+
+　本書におけるインターフェースへの準拠とはほとんど関数名のみを指しています。その意味論さえ同じであればこのように引数や戻り値に多少の差やオーバーロードがあっても構わないでしょう。もちろん、統一できるのならばその方が良いです。
 
 #### 標準コンテナ対応表
 
