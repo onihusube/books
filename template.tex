@@ -10,6 +10,15 @@ $if(latex-dir-rtl)$
 $endif$
 $endif$
 %
+
+%%% PDF/X-1a出力用
+\begin{filecontents*}{\jobname.xmpdata}
+  \Title{C++book}
+  \Author{$author$}
+  \Keywords{C++}
+\end{filecontents*}
+%%%
+
 \documentclass[
 $if(fontsize)$
   $fontsize$,
@@ -409,6 +418,9 @@ $endif$
 
 %%% 奥付用
 \usepackage{booktabs}
+
+%%% PDF/X-1a出力
+\usepackage[x-1a1]{pdfx}
 
 \begin{document}
 
