@@ -3,5 +3,5 @@
 cover.*
 backcover.*
 */book.*
-creationdate.lua
+creationdate.*
 *.xmpi

@@ -12,11 +12,13 @@ $endif$
 %
 
 %%% PDF/X-1a出力用
+$if(pdfx1a)$
 \begin{filecontents*}{\jobname.xmpdata}
   \Title{C++book}
   \Author{$author$}
   \Keywords{C++}
 \end{filecontents*}
+$endif$
 %%%
 
 \documentclass[
@@ -420,7 +422,9 @@ $endif$
 \usepackage{booktabs}
 
 %%% PDF/X-1a出力
+$if(pdfx1a)$
 \usepackage[x-1a1]{pdfx}
+$endif$
 
 \begin{document}
 

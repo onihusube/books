@@ -6,7 +6,16 @@ ifeq ($(OS),Windows_NT)
     EMBED_MFONT = "consola.ttf"
 endif
 
-all : book
+pdf : document.md
+	pandoc --toc --toc-depth 4 -N -V titlepage=true -V documentclass=bxjsarticle -V mainfont:$(EMBED_JFONT) -V CJKmainfont:$(EMBED_JFONT) -V monofont:$(EMBED_MFONT) -V CJKmonofont:$(EMBED_JFONT) --pdf-engine=xelatex --highlight-style=tango --template ../template.tex document.md -o book.pdf
 
-book : document.md
-	pandoc --toc --toc-depth 4 -N -V titlepage=true -V documentclass=bxjsarticle -V mainfont:$(EMBED_JFONT) -V CJKmainfont:$(EMBED_JFONT) -V monofont:$(EMBED_MFONT) -V CJKmonofont:$(EMBED_JFONT) -f markdown --pdf-engine=xelatex --highlight-style=tango --template ../template.tex document.md -o book.pdf
+book.tex : document.md ../template.tex
+	pandoc --toc --toc-depth 4 -N -V titlepage=true -V documentclass=bxjsarticle -V mainfont:$(EMBED_JFONT) -V CJKmainfont:$(EMBED_JFONT) -V monofont:$(EMBED_MFONT) -V CJKmonofont:$(EMBED_JFONT) -M pdfx1a=true --highlight-style=tango --template ../template.tex document.md -o book.tex
+
+.PHONY: book
+book : book.tex
+	xelatex -shell-escape -output-driver="xdvipdfmx -V 4 -z 0" book.tex
+
+.PHONY: clean
+clean :
+	rm book.* creationdate.lua *.xmpi *.xmpdata
