@@ -14,7 +14,8 @@ book.tex : document.md ../template.tex
 
 .PHONY: book
 book : book.tex
-	xelatex -shell-escape -output-driver="xdvipdfmx -V 4 -z 0" book.tex
+#-V 4はPDFのバージョン（1.XのX）指定、PDF/X-1a:2001はPDF1.3
+	xelatex -shell-escape -output-driver="xdvipdfmx -V 3 -z 0" book.tex
 
 .PHONY: clean
 clean :
