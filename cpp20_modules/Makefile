@@ -19,4 +19,4 @@ book : book.tex
 
 .PHONY: clean
 clean :
-	rm book.* creationdate.* *.xmpi *.xmpdata
+	rm book.* creationdate.lua *.xmpi *.xmpdata
