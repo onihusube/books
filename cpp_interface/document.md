@@ -387,6 +387,8 @@ cp = 6  - it
 auto distance = cp - it;
 ```
 
+  ただ、1つ進む/戻るという操作は`it + 1, it - 1`のように書くこともできるのですが、インクリメントを使って`++it, --it`と書いた方が*bidirectional iterator*との共通化が図れてよりジェネリックになるでしょう。
+
 #### コラム：Hidden Friendsイディオムのススメ
 
 　
@@ -500,6 +502,59 @@ oit = 'A'; // イテレータの参照先へ出力
 
 　この*output itereator*では、`::iterator_category`以外の入れ子型に`void`を指定して出力専用である事を表明することがあります。そのような場合`++oit`や`*oit`といった操作は意味を持たない事があります。また、そのように実装しても構いません。その場合のイテレータは、ある出力先へ順番に出力するという意味論だけを持つ事になります。
 
+### `std::next()/std::prev(), std::advance()`
+
+　イテレータの進行の操作はそのカテゴリ毎にできる事が異なり、全てを*input iterator*として扱ってしまうと時に効率的ではない事があります。テンプレートメタプログラミングによってカテゴリタグから処理を分けてーとかやれば良いのですが面倒です。そのため、標準ライブラリ`<iterator>`ヘッダにはまさにそれを解決してくれる関数があります。
+
+#### `std::advance()`
+
+　
+
+```cpp
+namespace std {
+  template<class InputIterator, class Distance>
+  constexpr void advance(InputIterator& i, Distance n);
+}
+```
+
+　`std::advance()`は指定した距離`n`だけイテレータを動かす関数です。引数としてイテレータの参照を受け取り、その参照を介して元のイテレータを直接書き換えます。この関数は、受け取ったイテレータの型に応じて処理を切り替えます。典型的には`std::iterator_traits<InputIterator>::iterator_category`から取得したタグを使ったタグディスパッチによって実装されるでしょう。
+
+- *forward iterator* : `n`回のインクリメント
+- *bidirectional iterator* : `n`回のインクリメント/デクリメント
+- *random access iterator* : `i += n`
+
+ このように、各イテレータの特性に応じて最適な処理が選択されるようになっています。
+
+#### `std::next()/std::prev()`
+
+　
+
+```cpp
+namespace std {
+  template<class InputIterator>
+  constexpr InputIterator next(
+    InputIterator x,
+    typename iterator_traits<InputIterator>::difference_type n = 1)
+  {
+    advance(x, n);
+    return x;
+  }
+
+  template<class BidirectionalIterator>
+  constexpr BidirectionalIterator prev(
+    BidirectionalIterator x,
+    typename iterator_traits<BidirectionalIterator>::difference_type n = 1)
+  {
+    advance(x, -n);
+    return x;
+  }
+}
+```
+
+　この2つの関数は指定した距離`n`だけイテレータを進める/戻す関数で、進行方向が固定されています。また、受け取ったイテレータを変更せず、`n`進めた/戻したイテレータのコピーを返します。これらの関数は内部で`std::advance()`に処理を移譲するようになっているので、イテレータ型にあわせた最適な方法で処理されます。
+
+　おそらく、`std::advance()`よりもこちらの関数の方がよく使われるのではないかと思います。
+
 ### 標準ライブラリのクラス・イテレータアダプタとイテレータカテゴリ
 　
 
@@ -517,13 +572,13 @@ oit = 'A'; // イテレータの参照先へ出力
 | `list`                           | -               | ○               | ○         | ○       | △        |
 | `forward_list`                   | -               | -               | ○         | ○       | △        |
 | `set`                            | -               | ○               | ○         | ○       | -        |
-| `multiset`                      | -               | ○               | ○         | ○       | -        |
+| `multiset`                       | -               | ○               | ○         | ○       | -        |
 | `map`                            | -               | ○               | ○         | ○       | △        |
-| `multimap`                      | -               | ○               | ○         | ○       | △        |
+| `multimap`                       | -               | ○               | ○         | ○       | △        |
 | `unordered_set`                  | -               | -               | ○         | ○       | -        |
-| `unordered_multiset`            | -               | -               | ○         | ○       | -        |
+| `unordered_multiset`             | -               | -               | ○         | ○       | -        |
 | `unordered_map`                  | -               | -               | ○         | ○       | △        |
-| `unordered_multimap`            | -               | -               | ○         | ○       | △        |
+| `unordered_multimap`             | -               | -               | ○         | ○       | △        |
 | `regex_iterator`                 | -               | -               | △         | ○       | -        |
 | `(recursive_)directory_iterator` | -               | -               | -         | ○       | -        |
 | `back_insert_iterator`           | -               | -               | -         | ○       | ○        |
@@ -1434,7 +1489,7 @@ auto opt = std::make_optional<myobj>(2, 3.0, "optional");
 
 ## `std::expected<T, E>`
 
-将来この3つに仲間入りしそうなものに、提案中の`std::expected<T, E>`というクラスがあります。これは`std::optional<T>`と似た意味論をもち、有効値`T`とエラー値`E`のどちらかを保持するエラーハンドリングのための型です。これもやはり、ある瞬間にはどちらかの型の値だけを保持しているモナド的な型です。従って、これら3つの型と似た意味論を持ち共通の操作が可能であるため、最初から`any, optional, variant`と共通するインターフェースを備えたうえで提案されています。特に、`std::optional<T>`とは多くのインターフェースを共有しています。
+将来この3つに仲間入りしそうなものに、提案中の`std::expected<T, E>`というクラスがあります。これは`std::optional<T>`と似た意味論をもち、有効値`T`とエラー値`E`のどちらかを保持するエラーハンドリングのための型です。これもやはりモナド的な型だとみなせます。従って、これら3つの型と似た意味論を持ち共通の操作が可能であるため、最初から`any, optional, variant`と共通するインターフェースを備えたうえで提案されています。特に、`std::optional<T>`とは多くのインターフェースを共有しています。
 
 また、この`std::expected<T, E>`は更に*monadic interface*を備えています。これは関数型言語やモダンな言語においてモナドに対する操作で頻出するものをC++のモナド的な型に移植してきたものです。既に`std::optional<T>`に対しての共通の*monadic interface*追加の提案が議論されており、おそらく`std::expected`と同時に導入されるものと思われます。もしかしたら`any`や`variant`にも一部が追加されるかもしれません。
 
@@ -1453,6 +1508,7 @@ Haskell等関数型言語におけるモナドと同じような扱いができ�
 - `std::any`
 - `std::optional`
 - `std::variant`
+- `std::atomic`
 - 各種乱数生成器・分布生成器
     - `std::linear_congruential_engine`
     - `std::mersenne_twister_engine`
@@ -1482,18 +1538,19 @@ int l = *opt; // optionalから中身を取り出す
 
 ただしこれはmaybeモナド的な型にほぼ共通の操作であって、それぞれの型の意味論とC++における都合から別の操作によって内包する値を取り出す口を提供する型もあります。
 
-| 型名         | `operator*()` | `operator()()` | `std::visit()` | `std::any_cast()` | `begin()/end()` |
-| ------------ | :-----------: | :------------: | :------------: | :---------------: | :-------------: |
-| ポインタ型    | ○             | -              | -              | -                 | -               |
-| `shared_ptr` | ○             | -              | -              | -                 | -               |
-| `unique_ptr` | ○             | -              | -              | -                 | -               |
-| `function`   | -             | ○              | -              | -                 | -               |
-| `any`        | -             | -              | -              | ○                 | -               |
-| `optional`   | ○             | -              | -              | -                 | -               |
-| `variant`    | -             | -              | ○              | -                 | -               |
-| 乱数生成器    | -             | ○              | -              | -                 | -               |
-| コンテナ      | -             | -              | -              | -                 | ○               |
-| イテレータ    | ○             | -              | -              | -                 | -               |
+| 型名         | `operator*()` | `operator()()` | その他           |
+| ------------ | :-----------: | :------------: | :-------------: |
+| ポインタ型    | ○             | -              | -               |
+| `shared_ptr` | ○             | -              | -               |
+| `unique_ptr` | ○             | -              | -               |
+| `function`   | -             | ○              | -               |
+| `any`        | -             | -              | `std::any_cast()`|
+| `optional`   | ○             | -              | -               |
+| `variant`    | -             | -              | `std::visit()` |
+| `atomic`     | -             | -              | `load()`       |
+| 乱数生成器    | -             | ○              | -               |
+| コンテナ      | -             | -              | `begin()/end()` |
+| イテレータ    | ○             | -              | -               |
 
 ## 中身の存在チェック
 
@@ -1542,6 +1599,7 @@ namespace std {
 | `any`        | -                 | ○             | -                          | -         |
 | `optional`   | ○                 | ○             | -                          | -         |
 | `variant`    | -                 | -             | ○                          | -         |
+| `atomic`     | -                | -              | -                          | -         |
 | 乱数生成器    | -                 | -             | -                          | -         |
 | コンテナ      | -                 | -             | -                          | ○         |
 | イテレータ    | -                 | -             | -                          | -         |
@@ -1575,6 +1633,7 @@ opt = std::nullopt; // optionalを無効状態に
 | `any`        | -         | -              | ○         | -         |
 | `optional`   | -         | ○              | ○         | -         |
 | `variant`    | -         | -              | -         | -         |
+| `atomic`     | -         | -              | -         | -         |
 | 乱数生成器    | -         | -              | -         | -         |
 | コンテナ      | -         | -              | -         | ○         |
 | イテレータ    | -         | -              | -         | -         |
