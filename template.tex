@@ -429,6 +429,10 @@ $endif$
 \begin{document}
 
 %%% タイトル画像挿入
+%%% 入稿時に表紙と本文が別になる場合は表紙を入れない
+$if(separate_cover)$
+
+$else$
 
 $if(coverimage)$
 
@@ -449,6 +453,8 @@ $endif$
 \clearpage
 　%% 表紙裏の空白ページ
 \clearpage
+
+$endif$
 
 %%% 中表紙
 
@@ -583,11 +589,16 @@ $endif$
 \end{tabular}
 \end{center}
 
+%%% 裏表紙画像挿入
+%%% 入稿時に表紙と本文が別になる場合は表紙を入れない
+$if(separate_cover)$
+
+$else$
+
 \clearpage
 　%% 裏表紙前の空白ページ
 \clearpage
 
-%%% 裏表紙画像挿入
 $if(backcoverimage)$
 
 \enlargethispage{\paperwidth}
@@ -602,6 +613,8 @@ $if(backcoverimage)$
 
 $else$
 裏表紙
+$endif$
+
 $endif$
 
 \end{document}
