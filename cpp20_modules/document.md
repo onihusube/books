@@ -840,7 +840,7 @@ export inline constexpr PI_2 = 2.0 * PI;
 
 　また、エクスポートしていない名前空間内部に`export`宣言が現れることもできます。この時それを囲む名前空間は暗黙的にエクスポートされますが、エクスポートしていない宣言はエクスポートされません。
 
-　ただし、ブロックのエクスポートと同じく、内部に`export`宣言を含んではいけません。
+　ただし、ブロックのエクスポートと同じく内部に`export`宣言を含んではいけません。
 
 ```cpp
 ///Mymodule.cpp
@@ -1999,9 +1999,169 @@ module : private;
 4. `inline`変数・関数の定義はそれが使用されるすべての翻訳単位（の末尾）から到達可能でなければならない
     - 定義が現れるよりも前に使用されていても良い
 
-# モジュールとテンプレート
+    
+　重要なのは1つ目と4つ目の規則で、残りは注意点の様なものです。4つ目の規則は、`inline`なものの名前の（翻訳単位外からの）参照は外部リンケージによる翻訳単位超えではなくその定義に到達する事によって参照される、という事を言っています。
 
-# ADL
+　これらの規則とODRから、モジュール内部で`inline`変数・関数を使用しようとする場合はその定義はそのモジュール内部でなされなければならず、モジュール外部で定義された、もしくは外部にも定義がある、という事は許されない事が分かります。
+
+　`inline`なものがエクスポートされる場合、その定義はそのエクスポート宣言と同じ翻訳単位に無ければなりません。プライベートモジュールフラグメント内部にあってもいけません。
+
+```cpp
+///Mymodule_interfacepart.cpp（インターフェースパーティション
+export module Mymodule:Interface;
+
+// この翻訳単位からのみ可視
+static constexpr double PI = 3.141592;
+
+export inline double g() {
+  return PI;  // ok、PIは参照可能
+}
+```
+```cpp
+///Mymodule.cpp（プライマリインターフェース単位
+export module Mymodule;
+export import :Interface;
+
+export int f(); // 非inlineでエクスポート、この時点ではf()は非inline関数
+
+int f_impl();
+
+// 再宣言、以降f()はinline関数、暗黙エクスポート
+inline int f(){
+  return f_impl(); // ok、参照可能
+}
+```
+```cpp
+///Mymodule_impl.cpp（実装単位
+module Mymodule;
+
+// この実装単位内でのみ参照可能
+inline constexpr int N = 10;
+
+int f_impl() {
+  return N * 10;  // ok、Nは参照可能
+}
+```
+```cpp
+/// OnefileModule.cpp
+export module One;
+
+int h_impl();
+
+export inline int h() {
+  return h_impl();  // ok、h_impl()は参照可能
+}
+
+module : private;
+
+int h_impl() {
+  return 1;
+}
+```
+```cpp
+///main.cpp
+import MyModule;
+import One;
+
+int main() {
+  // ok、全て到達可能
+  int n = f();
+  double pi = g();
+  int m = h();
+}
+```
+
+NGな例
+
+```cpp
+///Mymodule_interfacepart1.cpp（インターフェースパーティション1
+export module Mymodule:Interface1;
+
+export inline double g() {
+  return 3.141592;  // ng! 異なった複数の定義
+}
+```
+```cpp
+///Mymodule_interfacepart2.cpp（インターフェースパーティション2
+export module Mymodule:Interface2;
+
+export inline double g() {
+  return 2.718281;  // ng! 異なった複数の定義
+}
+```
+```cpp
+///Mymodule.cpp（プライマリインターフェース単位
+export module Mymodule;
+export import :Interface1;
+export import :Interface2;
+// ODR違反の発生、おそらくコンパイルエラー
+
+export int f() {
+  return 10;
+}
+
+inline int f(); // ng! f()は既に非inlineとして定義されている
+
+export inline int g(int n); // ng! 同じ翻訳単位内に定義がない
+
+export inline int h() {
+  return 57;
+}
+```
+```cpp
+///Mymodule_impl.cpp（実装単位
+module Mymodule;
+
+// ng! 定義の重複は許されない
+inline int h(int n) {
+  return 57;
+}
+```
+```cpp
+///OnefileModule.cpp
+export module One;
+
+// ng! 定義がプライベートモジュールフラグメントの前に無い
+export inline int h();
+
+module : private;
+
+inline int h() {
+  return 0;
+}
+```
+
+## グローバルモジュールの場合
+
+　グローバルモジュールにおいての`inline`関数・変数の定義については今までとほぼ同様です。ヘッダに書いて複数の翻訳単位でインクルードすればいいです。ただし、その`inline`宣言が名前付きモジュールのものと同じになってしまう（名前・シグネチャが一致する、定義は関係ない）とODR違反になってしまいます、
+
+　逆に言うと、複数のモジュールにわたって定義を1つにしたい場合は、グローバルモジュールフラグメントでその定義の書かれたヘッダをインクルードすればいいわけでもあります。
+
+## 実際のところ・・・
+
+　`inline`はヘッダーファイルに定義を書いたときに、そのヘッダが複数の翻訳単位で`#include`されたとしてもODR違反を起こさないようにするための仕組みです。ここまで見てきたように、モジュールはヘッダーファイルの`#include`相当の事を`import`によって行い、`import`はモジュールのインターフェース内宣言を可視・到達可能とするだけです。`import`はヘッダーファイルのように`#include`した翻訳単位それぞれでコピペされ定義が行われるのではなく、モジュールという1つの翻訳単位に存在してる定義を単に参照可能にするだけです。
+
+　そのため、名前付きモジュールにおいてはあえて`inline`を使用する必要はないでしょう。
+
+# ADL（非テンプレートについて）
+
+　ADLはモジュール内部のエンティティに対しても発動し、
+
+# テンプレートとADL
+
+　ここまでは特に触れていませんでしたが、これまでの宣言と同様にテンプレートをモジュールからエクスポートする事ができます。特に追加の制約はなく、`export`宣言や`inline`の規則に従っていればそのまま利用できるでしょう。
+
+　ただ、テンプレートはインスタンス化が要求されたときにはじめてその本体がコンパイルされます。そして、その際にテンプレート本体から参照できるものはそのインスタンス化を要求したコンテキストによって決定されます。その際、ADLも含めた名前探索がフル活用されることで、テンプレートの魔術がその真価を発揮します。
+
+　モジュール内のテンプレートにおいてもこれに変わりはないのですが、モジュールの仕様によって普通は可視でないはずの宣言がADLにおいては可視になるようになっています。
+
+## インスタンス化地点（*point of instantiation*）
+
+## インスタンス化経路（*path of instantiation*）
+
+## インスタンス化コンテキスト（*instantiation context*）
+
+## 推移的にインポートされたグローバルモジュール
 
 \clearpage
 
@@ -2009,4 +2169,4 @@ module : private;
 
 　本書を執筆するに当たっては、cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0に基づく)をとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
 
-　また、twitter上で私の疑問に回答をくださった方々にも感謝します。
+　また、twitter上で私の疑問に回答をくださった方々もありがとうございました。
