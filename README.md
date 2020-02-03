@@ -1,4 +1,4 @@
-# books
+# 書いた本のMarkdownソースとか
 
 ## ビルド
 
@@ -23,3 +23,7 @@
     ```bash
     $ brew cask install mactex-no-gui
     ```
+## フォルダとの対応
+
+- C++標準的インターフェース : `./cpp_interface`
+- C++20 Modules : `./cpp20_modules`
