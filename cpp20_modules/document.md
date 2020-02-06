@@ -2349,11 +2349,161 @@ int main() {
     - 他のテンプレートとは無関係に独立してインスタンス化した場合など
 5. それ以外のケースの場合、プログラム内のある地点でのインスタンス化コンテキストはその地点を含む
 
-　あるテンプレートのインスタンス化においては、このように決定されたインスタンス化コンテキスト内の各点で可視・到達可能な宣言がそのまま可視・到達可能となります。ただしその際、同じ宣言に対する異なる複数の定義が見つかってしまうと未定義動作の世界に突入します。
+### ADL
+
+　モジュール内テンプレートインスタンス化時には通常のモジュールに対するADLに加えて、依存名に対してのADLにおいて、インスタンス化コンテキスト内の各点で可視・到達可能な宣言がそのまま可視・到達可能となります。ただし、以下のような細則があります。
+
+- インスタンス化コンテキスト内のそれぞれの点における修飾名探索（*qualified name lookup*）で可視となる宣言だけが可視となる
+- 別の翻訳単位にあるグローバルモジュールに属する宣言は、次のどちらかの場合には可視とならない
+    - 破棄されている
+    - 内部リンケージを持つ
+
+　また、インスタンス化コンテキストの別々の点において同じ宣言に対する異なる定義が見つかってしまうと未定義動作の世界に突入します。
+
+
+```cpp
+///Ohtermodule.cpp（プライマリインターフェース単位
+export module Other;
+
+export template<typename T>
+auto f(T* t) -> decltype(T->n) {
+  return t->n;
+}
+
+struct S;
+
+int use_f1(S* s) {
+  return f(s);  //ng
+  /*
+  f<S>()のインスタンス化コンテキストは以下の点
+  0. f<S>()の定義点
+  1. この呼び出し地点
+  2. この翻訳単位内プライベートモジュールフラグメント直前
+  クラスSの定義はプライベートモジュールフラグメント内にあり
+  どの点からも可視でも到達可能でもない
+  */
+}
+
+module : private; //これをコメントアウトするとuse_f1()はコンパイルできる
+
+int use_f2(S* s) {
+  return f(s);  //ok
+  /*
+  f<S>()のインスタンス化コンテキストは以下の点
+  0. f<S>()の定義点
+  1. この呼び出し地点
+  2. この翻訳単位（Ohtermodule.cpp）末尾
+  クラスSの定義は2の点から可視であるので、0の定義点からも可視かつ到達可能となる
+  */
+}
+
+struct S {
+  int n = 10;
+};
+```
+```cpp
+///Mymodule.cpp（プライマリインターフェース単位
+export module Mymodule;
+import Other;
+
+export template<typename T, typename U>
+T* in_f(T* t, U* u) {
+  t->n += f(u);  //u.nをt.nに足しこむ
+  /*
+  ここでのf<T>()のインスタンス化コンテキストは以下の点
+  0. f<T>()の定義点（Ohtermodule.cpp内）
+  1. この呼び出し地点
+  2. in_f<T>()のインスタンス化コンテキスト（複数点）
+  3. in_fがこのファイル以外でインスタンス化されるとき、この翻訳単位（Mymodule.cpp）末尾
+  型引数Tの実引数の定義は、ここのどこかで可視であれば0の定義点から可視かつ到達可能
+  */
+  return t;
+}
+
+//宣言のみ
+struct S2;
+
+double use_f3(S2* s) {
+  return f(s);  //ng
+  /*
+  f<S2>()のインスタンス化コンテキストは以下の点
+  0. f<S2>()の定義点（Ohtermodule.cpp内）
+  1. この呼び出し地点
+  2. この翻訳単位（Mymodule.cpp）末尾
+  クラスS2の定義は実装単位内にあり、どの点からも可視でも到達可能でもない
+  */
+}
+
+export struct C {
+  unsigned short n = 80;
+};
+```
+```cpp
+///Mymodule_impl.cpp（実装単位
+module Mymodule;
+
+double use_f4(S2* s) {
+  return f(s);  //ok
+  /*
+  f<S2>()のインスタンス化コンテキストは以下の点
+  0. f<S2>()の定義点（Ohtermodule.cpp内）
+  1. この呼び出し地点
+  2. この翻訳単位（Mymodule_impl.cpp）末尾
+  クラスS2の定義は2の点から可視であるので、0の定義点からも可視かつ到達可能となる
+  */
+}
+
+struct S2 {
+  double n = 1.0;
+};
+```
+```cpp
+///main.cpp
+import Myodule;
+
+struct S3;
+
+S3* use_in_f(S3* s, C* c) {
+  return in_f(ss, c); //ok
+  /*
+  in_f<S3, C>()のインスタンス化コンテキストは以下の点
+  0. in_f<S3, C>()の定義点（Ohtermodule.cpp内）
+  1. この呼び出し地点
+  2. この翻訳単位（main.cpp）末尾
+  in_f<S3, C>()定義内では1及び2の点からCの定義が、
+  2の点からS3の定義がそれぞれ可視となる
+  
+  その内側のf<C>()のインスタンス化コンテキストは上記を含んだ以下となる
+  0. f<C>()の定義点（Ohtermodule.cpp内）
+  1. in_f<S3, C>()内の呼び出し地点
+  2. in_f<S3, C>()のインスタンス化コンテキスト
+    0. in_f<S3, C>()の定義点（Mymodule.cpp内）
+    1. この呼び出し地点
+    2. この翻訳単位（main.cpp）末尾
+  3. Mymodule.cpp末尾
+  このうち、2.1, 2.2, 3の各点からクラスCの同一の定義が可視となるので
+  f<C>()の定義点からもCの定義が可視となる
+  */
+}
+
+struct S3 {
+  unsigned short n = 443;
+};
+
+int main() {
+  S3 s{};
+  C c{};
+
+  S3 s3 = use_in_f(&s, &c); //ok
+}
+```
+
 
 ## サンプルコード
 
-　規格書より、簡単な例
+　規格書にあるサンプルコードを例として載せておきます。
+
+### 簡単な例
 
 ```cpp
 ///X.h
@@ -2389,6 +2539,105 @@ void g(X x) {
         // この場合はここの呼びだし地点で可視
 }
 ```
+
+### 翻訳単位を飛び越える例
+
+```cpp
+///moduleM.cpp（Mのインターフェース
+export module M;
+
+namespace R {
+  export struct X {};
+
+  export void f(X);
+}
+
+namespace S {
+  export void f(X, X);
+}
+```
+```cpp
+///moduleN.cpp（Nのインターフェース
+export module N;
+import M;
+
+export R::X make();
+
+namespace R {
+  static int g(X);
+}
+
+export template<typename T, typename U>
+void apply(T t, U u) {
+  f(t, u);  // S::f()はこの場所では可視
+  g(t);
+}
+```
+```cpp
+///moduleQ.cpp（Qの実装単位
+module Q;
+import N;
+
+namespace S {
+  struct Z { 
+    // テンプレート型変換演算子
+    template<typename T>
+    operator T();
+  };
+}
+
+void test() {
+  auto x = make();  // 1.ok、decltype(x) = R::XはモジュールMにあり可視ではないが
+                    // 名前を参照していないのでok
+  R::f(x);          // 2.ng、名前空間RもR::f()も可視では無い
+  f(x);             // 3.ok、R::f()がADLによって
+                    // モジュールMのインターフェースから見つかる
+  f(x, S::Z());     // 4.ng、名前空間Sは探索の対象だがモジュールM内まで及ばず
+                    // S::f()は見つからない
+  apply(x, S::Z()); // 5.ok、S::f()はインスタンス化コンテキスト内で可視
+                    // R::g()は内部リンケージを持つが、apply()からは呼び出し可能
+}
+```
+
+　名前空間そのものはグローバルモジュールに属するため、名前空間は翻訳単位を超えて定義できます。そのため、ADLの足掛かりとなった型が直接所属する（あるいはそれを囲むもっとも内側の非`inline`な）名前空間はインスタンス化コンテキストで可視となる限り翻訳単位を超えて探索されます。
+
+　3番目の例は少し驚きの動作ですが、これは非テンプレートに対する通常のADLの振る舞いの範疇です。
+
+　4番目の例では、直接の名前空`R`になく、`S::Z`の関連名前空間`S`内にも見当たらないので、翻訳単位を飛び越えて可視でない名前空間定義を探索はしません。これを探索するためには、3番目の例のように、同じモジュール内で同じ名前空間からエクスポートされているものを利用しなければなりません。
+
+　5番目の例では、モジュール`N`内では`M`内名前空間`S`が可視であり、インスタンス化コンテキスト内で`Q`内名前空間`S`が可視になります。そのため、`apply`のインスタンス化にあたっては両方の翻訳単位の名前空間`S`が探索され、`S::f()`を見つけることができます。
+
+### ADLによるモジュール内部のカスタマイゼーションポイント
+
+```cpp
+//Module interface unit of Std:
+export module Std;
+
+export template<typename Iter>
+void indirect_swap(Iter lhs, Iter rhs)
+{
+  swap(*lhs, *rhs); // このswapは非修飾名探索では見つからない、見つかるとしたらADLでのみ
+}
+
+
+//Module interface unit of M:
+export module M;
+import Std;
+
+// 共に実装省略
+struct S { /* ...*/ };
+void swap(S&, S&);      // #1
+
+void f(S* p, S* q)
+{
+  indirect_swap(p, q);
+  // インスタンス化コンテキストを探索するADLを介して、 #1が見つかる
+  // indirect_swapはインスタンス化コンテキストにこの点とモジュール内の定義点を含む
+  // ここの点においてSに対するswapは可視であるのでindirect_swap内からのADLにおいても可視
+}
+```
+
+　この様に、モジュール内部でカスタマイゼーションポイントを提供し、それを使用するにはテンプレートとADLを用いる必要があります。
 
 ## 推移的にインポートされたグローバルモジュール
 
