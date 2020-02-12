@@ -2,8 +2,8 @@ EMBED_JFONT = "YuMincho"
 EMBED_MFONT = "Monaco"
 
 ifeq ($(OS),Windows_NT)
-    EMBED_JFONT = "yumin.ttf"
-    EMBED_MFONT = "consola.ttf"
+    EMBED_JFONT = "Yu Mincho"
+    EMBED_MFONT = "Consolas"
 endif
 
 COMMON_OPTION = --toc --toc-depth 4 -N -V titlepage=true -V documentclass=bxjsarticle -V mainfont:$(EMBED_JFONT) -V CJKmainfont:$(EMBED_JFONT) -V monofont:$(EMBED_MFONT) -V CJKmonofont:$(EMBED_JFONT) --highlight-style=tango --template ../template.tex document.md
