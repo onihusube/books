@@ -1,11 +1,10 @@
 ---
 title: C++ 標準的インターフェース
 author: onihusube
-date: 2020/02/13
+date: 2020/03/01
 geometry:
-  width: 154cm
-  height: 216cm
-  margin: 1in
+  width: 188mm
+  height: 263mm
 coverimage: cover.png
 backcoverimage: backcover.png
 okuduke:
@@ -946,7 +945,7 @@ deq.pop_back();   // {3, 5, 7}
 
 #### 標準コンテナ対応表
 
-　
+\clearpage
 
 | 型名                   | `push_back()` | `push_front()` | `pop_back()` | `pop_front()` |
 | -------------------- | :-----------: | :------------: | :----------: | :-----------: |
@@ -1880,8 +1879,6 @@ auto& str = std::invoke(&S::str, s); // str = "eleven"
 
 　この`std::invoke()`を利用すれば関数呼び出しインターフェースの範囲を広げる事ができます。典型的には次のような受け口を用意します。
 
-\clearpage
-
 ```cpp
 // 関数呼び出し可能なものとその引数を受け取ってinvokeに転送するだけの例
 template<class F, class... Args>
@@ -2323,9 +2320,11 @@ constexpr bool b = is_same_v<int, int>; // b = true
 
 # 謝辞
 
-本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
+　本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者の方々に厚く御礼申し上げます。
 
 - cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
 - cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - yohhoyの日記（https://yohhoy.hatenadiary.jp）
     - Hidden Friends : https://yohhoy.hatenadiary.jp/entry/20190531/p1
+
+　表紙は友人のKさんに書いていただきました。可愛いキノコをありがとうございました！

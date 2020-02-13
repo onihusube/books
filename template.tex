@@ -30,6 +30,11 @@ $if(lang)$
 $endif$
 $if(papersize)$
   $papersize$paper,
+%%% 長さでの用紙サイズ指定
+$else$
+$if(geometry)$
+  paper={$geometry.width$}{$geometry.height$},
+$endif$
 $endif$
 $if(beamer)$
   ignorenonframetext,
@@ -243,7 +248,7 @@ $if(geometry)$
 $if(beamer)$
 \geometry{$for(geometry)$$geometry$$sep$,$endfor$}
 $else$
-%\usepackage[$for(geometry)$$geometry$$sep$,$endfor$]{geometry}
+%%%\usepackage[$for(geometry)$$geometry$$sep$,$endfor$]{geometry}
 $endif$
 $endif$
 $if(beamer)$
