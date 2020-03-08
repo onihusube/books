@@ -5,7 +5,7 @@ date: 2020/03/01
 geometry:
   width: 188mm
   height: 263mm
-coverimage: cover.png
+coverimage: cover.jpg
 backcoverimage: backcover.png
 okuduke:
   revision: 初版
