@@ -678,6 +678,8 @@ C++11から一様初期化構文が導入され、非集成体のクラスの変
     - `()`による集成体初期化
     - クラステンプレートの実引数推定への適合（推論ガイドなしで推論する）
 
+\clearpage
+
 # 謝辞
 
 　本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者・執筆者の方々に厚く御礼申し上げます。
@@ -686,4 +688,5 @@ C++11から一様初期化構文が導入され、非集成体のクラスの変
 - cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - yohhoyの日記（https://yohhoy.hatenadiary.jp）
     - Designated Initialization @ C++ : https://yohhoy.hatenadiary.jp/entry/20170820/p1
-- C++11 Universal Initialization は、いつでも使うべきなのか - Qita (https://qiita.com/h2suzuki/items/d033679afde821d04af8)
+- C++11 Universal Initialization は、いつでも使うべきなのか - Qita  
+  (https://qiita.com/h2suzuki/items/d033679afde821d04af8)
