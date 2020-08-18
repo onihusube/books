@@ -791,7 +791,84 @@ int main() {
 
 ## 一時オブジェクトの寿命延長
 
-## `()`による初期化・・・
+集成体で参照型メンバを持ち集成体初期化を行う時、初期化子の一時オブジェクトの寿命を延長させることができます。とはいっても、参照型とはこの場合`const`左辺値参照と右辺値参照メンバが対象です。
+
+```cpp
+struct lifetime_extender {
+  std::string&& r_ref;
+  const std::string& cl_ref;
+};
+
+int main() {
+  lifetime_extender le = {std::string{}, "rvalue"}; // OK
+
+  // どちらの参照先も生存期間内であり、安全に参照できる
+  std::cout << le.r_ref << '\n'
+            << le.cl_ref << '\n';
+}
+```
+
+この`le`の初期化式にある二つの`std::string`オブジェクトは右辺値であり、本来その寿命はその一連の式の終端、すなわち最初のセミコロン`;`までです。しかし、右辺値参照型（`std::string&&`）と`const`左辺値参照型（`const std::string&`）のメンバで受けているため、それらの参照に束縛されることでその寿命が延長され初期化後も安全に参照することができます。
+
+このことは普通に変数宣言をして初期化した時の規則と同じです。むしろ、同じことが集成体初期化という仮想的なコンストラクタを通しても起こるという事です。
+
+```cpp
+int main() {
+  // 共にrvalueの寿命が延長される
+  std::string&& r_ref = std::string{};
+  const std::string& = "rvalue";
+}
+```
+
+上記の右辺値は、正確には値カテゴリという規格用語で*prvalue*と呼ばれるカテゴリの状態にあります。*pravlue*の右辺値が右辺値参照あるいは`const`左辺値参照を初期化したときに限って、その参照は*prvalue*なオブジェクトを実体化した*lvalue*に束縛され寿命が延長されます。  
+ところで右辺値にはもう一つ*xvalue*というカテゴリがあります。*xvalue*は`std::move`によって右辺値参照にキャストされた左辺値（*lvalue*）の事です。*xvalue*で上記のような参照を初期化してもコンパイルは通りますが、所有権が移行しないので寿命は元のオブジェクト次第となります。
+
+```cpp
+int main() {
+  // prvalueからの初期化
+  lifetime_extender le = {std::string{}, "rvalue"};
+
+  // lvalueオブジェクトを動的構築
+  std::string* str1 = new std::string{};
+  std::string* str2 = new std::string{"lvalue"};
+    
+  // xvalueから初期化
+  lifetime_extender le2 = {std::move(*str1), std::move(*str2)};
+
+  // 元のオブジェクトを殺す
+  delete str1;
+  delete str2;
+
+  // Undefined Behavior...
+  std::cout << le2.r_ref << '\n'
+            << le2.cl_ref << '\n';
+}
+```
+
+これはかなり恣意的なコードですが、この様なことがライブラリの中に隠れているときなどに思わぬ罠を踏むかもしれません。集成体の参照メンバで寿命延長を狙う時は*prvalue*を意識しましょう。
+
+集成体の右辺値参照メンバというのはまず使わないでしょうが`const`左辺値参照メンバはたまに使うかもしれません。そして、その参照を*prvalue*で初期化するとしたらおそらく関数の戻り値で直接初期化する時ではないかと思います。
+
+```cpp
+// prvalueを返す関数
+std::string f();
+
+// xvalueを返す関数
+std::string&& g();
+
+struct str_cref {
+  const std::string& str;
+};
+
+int main() {
+  str_cref sc1 = {f()}; // OK、安全
+  str_cref sc2 = {g()}; // OK、もしかしたら・・・
+}
+```
+
+この様な場合にこれらのこまごました事を頭の片隅に置いておくと何か役に立たないでもないかもしれません（というか*xvalue*を返す関数なんて作るべきではありません）。
+
+### `()`・・・
 
 # 集成体進化の歴史
 
