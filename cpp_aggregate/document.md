@@ -268,9 +268,9 @@ struct aggregate {
 
 // 集成体初期化
 aggregate agg1 = {20, 3.14, "Aggregate"};
-aggregate agg2 = {20, 3.14};  // strはデフォルトコンストラクタで初期化される（空の文字列となる）
-aggregate agg3 = {20};        // mは2.72で初期化される
-aggregate agg4 = {};          // nはゼロ初期化（0相当の値で初期化）される
+aggregate agg2 = {20, 3.14}; // strはデフォルトコンストラクタで初期化
+aggregate agg3 = {20};       // mは2.72で初期化される
+aggregate agg4 = {};         // nはゼロ初期化（0相当の値で初期化）される
 ```
 
 集成体初期化は基本的にはこのように波かっこによって初期化します。初期化子の数が集成体のメンバの数を超えているとエラーになりますが、足りない場合はデフォルトメンバ初期化によって初期化され、それが無い場合は再帰的に`{}`で初期化されることになります。
@@ -278,10 +278,10 @@ aggregate agg4 = {};          // nはゼロ初期化（0相当の値で初期化
 また、明示的に`{}`によって初期化することもでき、その場合の初期化はそれぞれのメンバを`{}`で初期化したようになります（デフォルトメンバ初期化は無視されます）。ただし、`{}`さえも省略して初期化子をなしにすることはできません。
 
 ```cpp
-aggregate agg1 = {20, 3.14, {}};  // strはデフォルトコンストラクタで初期化される（空の文字列となる）
-aggregate agg2 = {20, {}, {}};    // mはゼロ初期化（0.0相当の値で初期化）される
-aggregate agg3 = {{}, {}, {}};    // nはゼロ初期化（0相当の値で初期化）される
-aggregate agg4 = { , , };         // コンパイルエラー、{}が必要
+aggregate agg1 = {20, 3.14, {}}; // strはデフォルトコンストラクタで初期化
+aggregate agg2 = {20, {}, {}};   // mはゼロ初期化（0.0）される
+aggregate agg3 = {{}, {}, {}};   // nはゼロ初期化（0）される
+aggregate agg4 = { , , };        // コンパイルエラー、{}が必要
 ```
 
 このような初期化は、デフォルトコンストラクタを持つクラス型の場合はデフォルトコンストラクタを呼び出すことに対応しています。
@@ -289,8 +289,11 @@ aggregate agg4 = { , , };         // コンパイルエラー、{}が必要
 このことと同じように、集成体に含まれるクラス型のコンストラクタを`{}`によって呼び出すことができます。
 
 ```cpp
-aggregate agg1 = {20, 3.14, {"string", 3}};              // strは"string"の先頭3文字で初期化
-aggregate agg2 = {20, 3.14, {"string", oreore_alloc{}}}; // strは"string"と渡されたアロケータで初期化
+// strは"string"の先頭3文字で初期化
+aggregate agg1 = {20, 3.14, {"string", 3}};
+
+// strは"string"と渡されたアロケータで初期化
+aggregate agg2 = {20, 3.14, {"string", oreore_alloc{}}};
 ```
 
 この時、`{}`で初期化されているメンバが集成体であれば集成体初期化によって初期化されます。ただ残念ながら、このときに`()`でコンストラクタ呼び出しすることはできません。それは例えば`std::string`の特定のコンストラクタが呼び出せないなどの影響があります。
@@ -312,11 +315,15 @@ struct aggregate2 : base {
   std::string str;
 };
 
-aggregate2 agg1 = {{}, 10, 3.14, "str"};    // 基底クラスはデフォルトコンストラクタで初期化
-aggregate2 agg2 = {{20}, 10, 3.14, "str"};  // 基底クラスはbase::base(int)のコンストラクタで初期化
-aggregate2 agg3 = {20, 10, 3.14, "str"};    // 同上
+// 基底クラスはデフォルトコンストラクタで初期化
+aggregate2 agg1 = {{}, 10, 3.14, "str"};
 
-aggregate2 agg4 = {10, 3.14, "str"};        // コンパイルエラー（初期化対象がずれており、この例では2番目と3番目で変換エラーが出る）
+// 基底クラスはbase::base(int)のコンストラクタで初期化
+aggregate2 agg2 = {{20}, 10, 3.14, "str"};
+aggregate2 agg3 = {20, 10, 3.14, "str"};
+
+// エラー（初期化対象がずれており、この例では2番目と3番目で変換エラーが出る）
+aggregate2 agg4 = {10, 3.14, "str"};
 ```
 
 この3番目の例のように、集成体初期化ではネストしている型の初期化に必要な`{}`を省略することができます。
@@ -332,10 +339,10 @@ struct aggregate3 : base {
   std::string str;
 };
 
-aggregate3 agg1 = {{10}, {{0, 1, 2, 3, 4}}, 20, "string"};  // フル{}
-aggregate3 agg2 = {{10}, { 0, 1, 2, 3, 4 }, 20, "string"};  // 1段省略
-aggregate3 agg3 = { 10 ,   0, 1, 2, 3, 4  , 20, "string"};  // 全省略
-aggregate3 agg4 = { {} , {}               , 20, "string"};  // {}による初期化
+aggregate3 agg1 = {{10}, {{0, 1, 2, 3, 4}}, 20, "string"}; // フル{}
+aggregate3 agg2 = {{10}, { 0, 1, 2, 3, 4 }, 20, "string"}; // 1段省略
+aggregate3 agg3 = { 10 ,   0, 1, 2, 3, 4  , 20, "string"}; // 全省略
+aggregate3 agg4 = { {} , {}               , 20, "string"}; // {}による初期化
 ```
 
 ただし、そのようなクラス型の引数が多かったりすると境界が曖昧になって読みづらくなるので`{}`は入れておいた方がいいでしょう。clangはこの場合の3番目の例の`A`の初期化（2番目の初期化子）に対してそのような警告を発します。
@@ -381,8 +388,8 @@ int main() {
   long double ld = 1.0;
 
   narrow n1 = {20, 0.1f}; // OK
-  narrow n2 = {un, 0.1f}; // unsigned -> int の縮小変換、コンパイルエラ－
-  narrow n3 = {20, ld};   // long double -> floatの縮小変換、コンパイルエラー
+  narrow n2 = {un, 0.1f}; // unsigned -> intの縮小変換、コンパイルエラ－
+  narrow n3 = {20, ld};   // long double -> floatの縮小変換、エラー
   narrow n4 = {un, ld};   // 両方、コンパイルエラー
 }
 ```
@@ -476,11 +483,11 @@ int main() {
 
   // 2. 指示子はあるかないかのどちらか
   point3d v3 = { 1.0, .Y = 2.0, 3.0};       // エラー
-  point3d v3 = { .X = 1.0, .Y = 2.0, 3.0};  // エラー
+  point3d v4 = { .X = 1.0, .Y = 2.0, 3.0};  // エラー
 
   // 3. ネストした集成体に対しては{}をネストさせる
-  nest n1 = { .n = 1, .p.X = 1.0, .p.Y = 1.0, .p.Z = 1.0, .m = 2};    // エラー
-  nest n1 = { .n = 1, .p = { .X = 1.0, .Y = 1.0, .Z = 1.0 }, .m = 2}; // OK
+  nest n1{ .n = 1, .p.X = 1.0, .p.Y = 1.0, .p.Z = 1.0, .m = 2};    // エラー
+  nest n2{ .n = 1, .p = { .X = 1.0, .Y = 1.0, .Z = 1.0 }, .m = 2}; // OK
 }
 ```
 
@@ -594,7 +601,7 @@ int main() {
   std::vector<aggregate> v{};
 
   v.emplace_back(10, 3.14, "emplace");            // C++17まではエラー
-  v.emplace_back(aggregate{10, 3.14, "emplace"}); // C++17でもOK、ムーブ構築
+  v.emplace_back(aggregate{10, 3.14, "emplace"}); // OK、ムーブ構築
 }
 ```
 
@@ -605,7 +612,8 @@ int main() {
 template<typename... Args>
 T& emplace(Args&&... args) {
   // 構築したい領域をstorageとする
-  T* p = new(&storage) T(std::forward<Args>(args)...); // ここで()を使っているために集成体初期化が行われない
+  // ここで()を使っているために集成体初期化が行われない
+  T* p = new(&storage) T(std::forward<Args>(args)...);
 
   // こうすると集成体初期化は行われるが、多くのクラス型で問題が起こる
   T* p = new(&storage) T{std::forward<Args>(args)...};
@@ -889,6 +897,87 @@ int main() {
 
 \clearpage
 
+# `std::array`
+
+集成体の花形？たる`std::array`の実装を見てみます。とはいっても集成体なので難しいことは無く、次のようにほとんどそのまま実装されます。
+
+```cpp
+template<typename T, std::size_t N>
+struct array {
+  T[N] m_array;
+
+  using value_type = T;
+  using reference = T&;
+  using const_reference = const T&;
+  using pointer = T*;
+  using const_pointer = const T*;
+  using difference_type = std::ptrdiff_t;
+  using size_type = std::size_t;
+  using iterator = T*;
+  using const_iterator = const T*;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+};
+```
+
+`std::array`の実装はこれでほとんど終わりです。後は愚直にメンバ関数を実装するだけ。なお、コピー・ムーブコンストラクタ/代入演算子は何もせずとも暗黙の`default`宣言がなされています（型`T`次第では`delete`されますが）。
+
+これをベースにすると、添え字演算子の実装は例えば次のようになります。
+
+```cpp
+template<typename T, std::size_t N>
+struct array {
+  T[N] m_array;
+
+  constexpr reference operator[](size_type i) {
+    return m_array[i];
+  }
+
+  constexpr const_reference operator[](size_type i) const {
+    return m_array[i];
+  }
+
+  constexpr reference at(size_type i) {
+    if (N <= i) throw std::out_of_range{};
+    return m_array[i];
+  }
+
+  constexpr const_reference at(size_type i) const {
+    if (N <= i) throw std::out_of_range{};
+    return m_array[i];
+  }
+};
+```
+
+イテレータインターフェース（`begin()/end()`）は
+
+```cpp
+template<typename T, std::size_t N>
+struct array {
+  T[N] m_array;
+
+  constexpr iterator begin() noexcept {
+    return m_array;
+  }
+
+  constexpr const_iterator begin() const noexcept {
+    return m_array;
+  }
+
+  constexpr iterator end() noexcept {
+    return m_array + N;
+  }
+
+  constexpr const_iterator end() const noexcept {
+    return m_array + N;
+  }
+};
+```
+
+こんな感じで、`std::array`は単に生配列をラップする形で実装されています。
+
+\clearpage
+
 # 集成体進化の歴史
 
 ## C++98/03それ以前
@@ -902,7 +991,7 @@ int main() {
 - 仮想関数を持たない
 - 継承していない
 
-継承が禁止されている以外はC++20とほぼ変わりありません。C++11～C++17で集成体の要件が色々変わりましたが、結局は継承を許可しつつここに戻ってくることになります。
+継承が禁止されている以外はC++20とほぼ変わりありません。C++11～C++20で集成体の要件が色々変わりましたが、結局は継承を許可しつつここに戻ってくることになります。
 
 ## C++11
 
@@ -924,7 +1013,25 @@ C++11での集成体の要件は次のようでした。
 - 継承していない
 - \textcolor{red}{デフォルトメンバ初期化されていない}
 
-デフォルトメンバ初期化はC++11から許可されていたのですが、おそらく議論が間に合わなかったためにC++11集成体ではとりあえず禁止とされていました。
+クラスメンバのデフォルトメンバ初期化はC++11から導入されたのですが、おそらく議論が間に合わなかったためにC++11の集成体ではとりあえず禁止とされました。
+
+#### ユーザー提供のコンストラクタを持たない
+
+「ユーザー宣言のコンストラクタを持たない」とはあらゆるコンストラクタを宣言してはいけないという意味ですが、「ユーザー提供のコンストラクタを持たない」とはユーザーによって定義されたコンストラクタを持たないという意味です。そして、ユーザー提供でないコンストラクタとはC++11から導入されたコンストラクタの`default/delete`指定によって宣言されたコンストラクタの事です。
+
+つまり、（C++11の）集成体においては`default/delete`されたコンストラクタはあってもいいという事です。
+
+```cpp
+struct A {
+  int n;
+  A() = default;
+  A(A&&) = delete;
+};
+
+int main() {
+  A a = {1}; // OK、集成体初期化
+}
+```
 
 ### 縮小変換の禁止/初期化式評価順序の規定
 
@@ -948,6 +1055,17 @@ C++14での集成体の要件は次のようでした。
 - ~~デフォルトメンバ初期化されていない~~
 
 C++11から遅れること3年、デフォルトメンバ初期化が許可されました。これは特に疑問点の無い改善でしょう。
+
+```cpp
+struct A {
+  int n = 10;
+};
+
+int main() {
+  A a1 = {1}; // OK、n == 1
+  A a2 = {};  // OK、n == 10
+}
+```
 
 ### ネストした波かっこ省略の許可
 
@@ -975,8 +1093,135 @@ C++14では多次元配列で許可されていたこの挙動が集成体全般
     - 一部のコンストラクタ宣言の禁止
 - 言語機能
     - 構造化束縛
-    - クラステンプレートの実引数推定
-      - ただし、推論ガイドが必要
+    - クラステンプレートのテンプレート引数推論
+      - ただし、推論補助が必要
+- ライブラリ機能
+    - `std::is_aggregate<T>`
+
+### 集成体の要件
+
+C++17での集成体の要件は次のようでした。
+
+- ~~ユーザー提供のコンストラクタを持たない~~
+- ユーザー提供のコンストラクタ、\textcolor{red}{`explicit`コンストラクタ、継承コンストラクタ}を持たない
+- 非`public`なメンバ変数を持たない
+- 仮想関数を持たない
+- \textcolor{red}{`public`以外の継承をしていない}
+
+#### `explicit`コンストラクタを持たない
+
+コンストラクタの`explicit`指定は暗黙変換を禁止するためのものですが、`default/delete`指定と合わせて指定することができました。集成体でそれをすると、集成体でありながら集成体初期化できない謎の型を生み出すことができてしまいます。
+
+```cpp
+// これは集成体だけど・・・
+struct A {
+  int n;
+  explicit A() = default;
+};
+
+int main() {
+  A a1 = {1}; // NG
+  A a2{1};    // NG
+}
+```
+
+`explicit`コンストラクタの禁止はこれを防止するための要件です。
+
+#### `public`以外の継承をしていない、継承コンストラクタを持たない
+
+`public`継承に限って継承が許可されることとなりました。`public`継承だけならメンバとして持つのとほぼ同義であり集成体初期化を妨げるものではないので許可されたようです。
+
+その際、メンバがそうであるように基底クラスが集成体でなくても構わず、継承コンストラクタがあるとコンストラクタが定義されているのと同義なため継承コンストラクタを禁止しています。
+
+```cpp
+class B {
+  int n;
+public:
+  B(int m) :n(m) {}
+};
+
+// 集成体
+struct A1 : public B {
+  int n2;
+};
+
+// 集成体じゃない
+struct A2 : public B {
+  int n2;
+  using B::B;
+};
+
+int main() {
+  A1 a1 = {1, 2}; // OK
+  A2 a2 = {1, 2}; // NG
+}
+```
+
+### クラステンプレートのテンプレート引数推論
+
+クラステンプレートのテンプレート引数推論はクラステンプレート初期化時の引数の型からそのクラステンプレートのテンプレートパラメータを推定するものです。
+
+```cpp
+template<typename T>
+struct vec3 {
+  T v1, v2, v3;
+};
+
+int main() {
+  // std::vector<int>
+  std::vector vec = {1, 2, 3, 4, 5};
+
+  // std::pair<int, double>
+  std::pair p = {1, 1.0};
+
+  // vec3<double>ってなってほしいが、エラー
+  vec3 v3 = {1.0, 2.0, 1.0};
+}
+```
+
+この様に、主としてコンストラクタの引数からそのテンプレートパラメータを補うことができ、めちゃくちゃ便利な神アプデです。ところが、この`vec3`のようなではテンプレートパラメータが無いぞ！とエラーが出ます。残念なことに集成体初期化ではこの機能を使えません・・・
+
+そこで、同時に導入された推論補助（推論ガイド：*deduction guide*）を書いてやります。推論補助は初期化時の引数から素直にテンプレートパラメータを推定できない場合に、どのようにテンプレートパラメータを導出するかをコンパイラに教えてあげるものです。
+
+```cpp
+template<typename T>
+struct vec3 {
+  T v1, v2, v3;
+};
+
+// 推論補助
+template<typename T>
+vec3(T, T, T) -> vec3<T>;
+
+
+int main() {
+  // vec3<double>
+  vec3 v3 = {1.0, 2.0, 1.0};
+  // vec3<int>
+  vec3 vi3 = {1, 2, 3};
+}
+```
+
+しかし、非集成体クラステンプレートならばこの推論補助と同等な推論を自動で行うので、本来必要のないはずのものです。
+
+ちなみに、この推論補助は`auto`の無い後置戻り値の関数宣言構文なので、関数宣言で出来ることは大体できます。かなり強力です。
+
+###  `std::is_aggregate<T>`
+
+`std::is_aggregate<T>`は型`T`が集成体かどうかを判定するメタ関数です。
+
+```cpp
+struct A {
+  int n;
+};
+
+int main() {
+  std::is_aggregate_v<std::vector<int>>;  // false
+  std::is_aggregate_v<A>;  // true
+}
+```
+
+これと可変長テンプレートを使って集成体型のメンバの数を求める謎のメタ関数を作ることができたりします。
 
 ## C++20
 
@@ -985,9 +1230,139 @@ C++14では多次元配列で許可されていたこの挙動が集成体全般
 - 言語機能
     - 指示付初期化
     - `()`による集成体初期化
-    - クラステンプレートの実引数推定への適合（推論ガイドなしで推論する）
-- ライブラリ機能
-    - `std::is_aggregate<T>/std::is_aggregate_v<T>`
+    - クラステンプレートのテンプレート引数推論への適合（推論補助なしで推論する）
+
+### 集成体の要件
+
+C++20での集成体の要件は次のようです。
+
+- ~~ユーザー提供のコンストラクタ、`explicit`コンストラクタ、継承コンストラクタを持たない~~
+- \textcolor{red}{ユーザー宣言のコンストラクタ、継承コンストラクタを持たない}
+- 非`public`なメンバ変数を持たない
+- 仮想関数を持たない
+- `public`以外の継承をしていない
+
+こうして、継承が可能になったこと以外は結局C++03までの要件に回帰しました。
+
+#### ユーザー宣言のコンストラクタを持たない
+
+結局コンストラクタ宣言は禁止されたわけですが、`default/delete`ならば問題はなさそうに思えます。一体何がダメだったのでしょうか・・・？
+
+まず1つは、非集成体型においてデフォルト構築を禁止するためにコンストラクタの`delete`宣言を行っている場合に、同時に集成体の要件を満たすがために集成体初期化が可能になってしまうという問題がありました。
+
+```cpp
+struct delete_defctor {
+  delete_defctor() = delete;
+};
+
+int main() {
+  delete_defctor x;   // エラー、デフォルトコンストラクタは削除されている
+  delete_defctor x{}; // OK、集成体初期化！？
+}
+```
+
+デフォルト構築を禁止しているのに集成体であることによって空のリストからの初期化が可能となってしまいます。また、この様なクラスがメンバを持っていると同じ理由から問題が起きます。
+
+```cpp
+struct delete_init_int {
+  delete_defctor() = delete;
+  delete_defctor(int) = delete; // intから構築してほしくない
+
+  int n = 10;
+};
+
+int main() {
+  delete_init_int x(3); // エラー、コンストラクタは削除されている
+  delete_init_int x{3}; // OK、集成体初期化！？
+}
+```
+
+これがなぜ起きるのか、起こさないようにするにはどうすればいいのか？は中々難しい話であり、多くのC++ユーザーは別に知る必要もないお話になりがちです（ここまで読んでいれば分かるとは思います）。そんな些末な仕様の隅っこを多くのC++ユーザーが知る必要が無いようにする、というのが動機の一つです。
+
+この問題は丸かっこ集成体初期化を考慮するとより複雑になります・・・
+
+そしてもう一つは、`default/delete`宣言の位置によって集成体であるか無いかが変化してしまっていた問題です。
+
+コンストラクタ（というかメンバ関数全般）はその定義をクラス外で行うことができます。そして、`default/delete`宣言もクラス外で行うことができます。
+
+```cpp
+// C++17までは集成体
+struct aggregate {
+  aggregate() = default;
+
+  int n;
+};
+
+// 集成体ではない
+struct not_aggregate {
+  not_aggregate();
+
+  int n;
+};
+
+not_aggregate::not_aggregate() = default;
+
+
+int main() {
+  aggregate x{10};      // OK
+  not_aggregate y{10};  // NG
+}
+```
+
+この2つのクラスは名前以外は同じ意味のクラスとなる筈ですが、集成体という観点からは同じにはなりません。クラス外のコンストラクタ定義は別の翻訳単位で行われている可能性もあるため、このようなケースを特別扱いすることも難しいです。
+
+主にこれらの問題から、集成体におけるコンストラクタの宣言は禁止されることになりました。これは破壊的変更であり、C++11～17の間に書かれたコンストラクタ宣言を持つ集成体はC++20以降集成体ではなくなることになります。
+
+### 集成体のテンプレート引数推論
+
+先程C++17では推論補助が無いとできなかった集成体に対するテンプレート引数推論が推論補助無しでできるようになります。
+
+```cpp
+template<typename T>
+struct vec3 {
+  T v1, v2, v3;
+};
+
+int main() {
+  // vec3<double>
+  vec3 v3 = {1.0, 2.0, 1.0};  // OK
+  // vec3<int>
+  vec3 vi3 = {1, 2, 3};       // OK
+}
+```
+
+推論補助の仕組みは、初期化子からマッチするコンストラクタと推論補助を関数テンプレートとして抽出しオーバーロード解決によって1つを選んだうえで、コンストラクタの場合はそのテンプレートパラメータ、推論補助の場合はその戻り値型をテンプレート引数として補うものです。C++17までは集成体初期化がそこでは考慮されていなかったため推論補助が必要となっていました。
+
+C++20からは、集成体`C`の初期化時の引数リスト`{x1, ..., xi}`について、対応する`C`の要素`ei`が過不足なくぴったりと存在している場合に、`C`の要素`ei`の型`Ti`によって`C(T1, ..., Ti)`という仮想的なコンストラクタを考慮して同じ手順でテンプレート引数推論を行うようになります。
+
+この時、その集成体のテンプレート引数にメンバとなっているクラステンプレートが依存していると`{}`省略が出来なくなります。
+
+```cpp
+template <typename T>
+struct S {
+  T x;
+  T y;
+};
+
+template <typename T>
+struct C {
+  S<T> s; //テンプレートパラメータTに依存している
+  T t;
+};
+
+C c1 = {1, 2};        // error
+C c2 = {1, 2, 3};     // error、{}省略できない
+C c3 = {{1u, 2u}, 3}; // ok, C<int>
+
+template <typename T>
+struct D { 
+  S<int> s; //テンプレートな集成体だが、型は確定している
+  T t; 
+};
+
+D d1 = {1, 2};    // error、{}省略するなら初期化子は3つ必要
+D d2 = {1, 2, 3}; // ok、{}省略可能
+```
 
 \clearpage
 
