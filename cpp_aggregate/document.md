@@ -1231,6 +1231,7 @@ int main() {
     - 指示付初期化
     - `()`による集成体初期化
     - クラステンプレートのテンプレート引数推論への適合（推論補助なしで推論する）
+    - 一貫比較
 
 ### 集成体の要件
 
@@ -1364,6 +1365,38 @@ D d1 = {1, 2};    // error、{}省略するなら初期化子は3つ必要
 D d2 = {1, 2, 3}; // ok、{}省略可能
 ```
 
+### 一貫比較（*Consistent Comparison*）
+
+一貫比較とは`<=>`（宇宙船演算子）と`==`の2つの演算子から残りの全ての比較演算子を導出する仕組みの事です。その比較が基底クラスとメンバを宣言順に比較するもの（辞書式順序による比較、構造的な比較）であるならば、`default`指定によってコンパイラ任せにすることができます。  
+集成体は多くの場合いくつかのデータをまとめた名前付きタプルの様な使われ方をするので、その比較も構造的な比較で十分です。
+
+```cpp
+struct compareble {
+  int n;
+  double v;
+  char str[5];  // 配列メンバは展開されて要素ごとの比較になる
+
+  // この2つの演算子から残りの5つの演算子が導出される
+  auto operator<=>(const compareble&) const = default;
+  auto operator==(const compareble&) const = default;
+};
+
+int main () {
+  compareble c1 = {1, 3.14, "abcd"};
+  compareble c2 = {1, 3.14, "bcde"};
+
+  c1 <  c2; // true
+  c1 <= c2; // true
+  c1 >  c2; // false
+  c1 >= c2; // false
+  c1 == c2; // false
+  c1 != c2; // true
+}
+```
+
+一貫比較仕様による比較演算子自動生成によって、集成体のコードをさらに削減することができるようになります。
+
+
 \clearpage
 
 # 謝辞
@@ -1372,6 +1405,7 @@ D d2 = {1, 2, 3}; // ok、{}省略可能
 
 - cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
 - cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
+- cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
 - Designated Initialization @ C++ - yohhoyの日記  
   https://yohhoy.hatenadiary.jp/entry/20170820/p1
 - aggregateと初期化リストの不思議 - 本の虫  
