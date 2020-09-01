@@ -1827,7 +1827,7 @@ export void g() {
 
 ## グローバルモジュールの推移的なインポート
 
-　あるモジュールのインターフェース`I`内でエクスポートせずにインポートしている`M`は、`I`をインポートする先に推移的にインポートされます。推移的にインポートされた`M`のインターフェース内宣言は可視にはなりません。ただし、`M`が名前付きモジュールならそのインターフェース内宣言は到達可能になります。`M`がヘッダーユニットである場合のエクスポートされている宣言、もしくは`M`のインターフェース内のグローバルモジュールフラグメントに破棄されず残った宣言が、推移的にインポートされた先で到達可能となるかは未規定であり実装は到達可能とする事が許されています。
+　あるモジュールのインターフェース`I`内でエクスポートせずにインポートされている翻訳単位`M`は、`I`をインポートする先に推移的にインポートされます。推移的にインポートされた`M`のインターフェース内宣言は可視にはなりません。ただし、`M`が名前付きモジュールならそのインターフェース内宣言は到達可能になります。`M`がヘッダーユニットである場合のエクスポートされている宣言、もしくは`M`のインターフェース内のグローバルモジュールフラグメントに破棄されず残った宣言が、推移的にインポートされた先で到達可能となるかは未規定であり実装は到達可能とする事が許されています。
 
 　ただし、そのような宣言は可視である時には到達可能になります。
 
@@ -2035,9 +2035,7 @@ inline int h() {
 
 ## 実際のところ・・・
 
-　`inline`はヘッダーファイルに定義を書いたときに、そのヘッダが複数の翻訳単位で`#include`されたとしてもODR違反を起こさないようにするための仕組みです。ここまで見てきたように、モジュールはヘッダーファイルの`#include`相当の事を`import`によって行い、`import`はモジュールのインターフェース内宣言を可視・到達可能とするだけです。`import`はヘッダーファイルのように`#include`した翻訳単位それぞれでコピペされ定義が行われるのではなく、モジュールという1つの翻訳単位に存在している定義を単に参照可能にするだけです。
-
-　そのため、名前付きモジュールにおいてはあえて`inline`を使用する必要はないでしょう。
+　`inline`はヘッダーファイルに定義を書いたときに、そのヘッダが複数の翻訳単位で`#include`されたとしてもODR違反を起こさないようにするための仕組みです。ここまで見てきたように、モジュールはヘッダーファイルの`#include`相当の事を`import`によって行い、`import`はモジュールのインターフェース内宣言を可視・到達可能とするだけです。`import`はヘッダーファイルのように`#include`した翻訳単位それぞれでコピペされ定義が行われるのではなく、モジュールという1つの翻訳単位に存在している定義を単に参照可能にするだけです。そのため、名前付きモジュールにおいてはあえて`inline`を使用する必要はないでしょう。
 
 \clearpage
 
@@ -2648,6 +2646,36 @@ int main() {}
 　このうち、`S`の宣言は2番目の地点（モジュール`M2`の末尾）からは可視ですが、定義はどこからも可視ではありません。ただ、1番目の地点（main.cpp内）からは`M1`のインポートを通じて`S`の定義はヘッダーユニットから推移的にインポートされており、これに到達可能となるかは未規定です。そのため、このインスタンス化コンテキスト全体として`S`の定義が到達可能となるかも未規定となります。
 
 　どちらのケースも実装はこのような宣言を到達可能としても良いことになっています。ポータブルなコードを書くのであれば、これに依存しないように気を付ける必要があります。
+
+\clearpage
+
+# 関連する提案文書の一覧
+
+　C++20正式策定に至るまでの間に追加された変更を含めた提案文書の一覧を残しておきます。
+
+- N4720 Working Draft, Extensions to C++ for Modules (https://wg21.link/n4720)
+- P0947R1 Another take on Modules (http://wg21.link/p0947)
+    - *ATOM Proposal*と呼ばれている
+- P1103R3 Merging Modules (https://wg21.link/p1103)
+    - C++20に導入された最初のモジュール仕様。上2つの仕様をマージしたもの。
+- P1811R0 Relaxing redefinition restrictions for re-exportation robustness  
+  (https://wg21.link/p1811)
+- P1766R1 Mitigating minor modules maladies  (https://wg21.link/p1766)
+- P1703R1 Recognizing Header Unit Imports Requires Full Preprocessing  
+  (https://wg21.link/p1703)
+- P1502R1 Standard library header units for C++20 (https://wg21.link/p1502) 
+- P1971R0 Core Language Changes for NB Comments at the November, 2019 (Belfast) meeting  
+  (https://wg21.link/p1971) 
+- P1979R0 Resolution to US086 (https://wg21.link/p1979) 
+- P1874R1 Dynamic Initialization Order of Non-Local Variables in Modules  
+  (https://wg21.link/p1874) 
+- P1779R3 ABI isolation for member functions (https://wg21.link/p1779) 
+- P1857R3 Modules Dependency Discovery (https://wg21.link/p1857) 
+- P2115R0 US069: Merging of multiple definitions for unnamed unscoped enumerations  
+  (https://wg21.link/p2115) 
+- P1815R2 Translation-unit-local entities (https://wg21.link/p1815)
+
+P1779R3, P2115R0, P1815R2の内容は本書には未追記です。次の版で対応予定・・・
 
 \clearpage
 
