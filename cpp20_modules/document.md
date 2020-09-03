@@ -2669,8 +2669,13 @@ int main() {}
 - P1979R0 Resolution to US086 (https://wg21.link/p1979) 
 - P1874R1 Dynamic Initialization Order of Non-Local Variables in Modules  
   (https://wg21.link/p1874) 
+- P2103R0 Core Language Changes for NB Comments at the February, 2020 (Prague) meeting  
+  (http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2103r0.html)
+    - NB US 033: Allow import inside linkage-specifications
 - P1779R3 ABI isolation for member functions (https://wg21.link/p1779) 
 - P1857R3 Modules Dependency Discovery (https://wg21.link/p1857) 
+- P2109R0 US084: Disallow "export import foo" outside of module interface  
+  (http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2109r0.html)
 - P2115R0 US069: Merging of multiple definitions for unnamed unscoped enumerations  
   (https://wg21.link/p2115) 
 - P1815R2 Translation-unit-local entities (https://wg21.link/p1815)
