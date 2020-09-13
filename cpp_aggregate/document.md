@@ -108,7 +108,7 @@ struct A2 : base {};
 ```cpp
 // これは集成体ではない
 class A1 {
-  int n;  // classのデフォルトアクセス指定ははprivate
+  int n;  // classのデフォルトアクセス指定はprivate
 };
 
 // これも集成体ではない
