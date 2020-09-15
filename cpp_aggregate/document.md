@@ -625,8 +625,8 @@ int main() {
   long double d = 1.0;
 
   // 1. 縮小変換の許可
-  narrow n1{10u, 1.0l}; // 2つともエラー
-  narrow n2(10u, 1.0l); // OK
+  narrow n1{n, d}; // 2つともエラー
+  narrow n2(n, d); // OK
 
   // 2. 波かっこ省略できない
   wrap w1{10, 1.0f, 20};    // OK
