@@ -27,3 +27,4 @@
 
 - C++標準的インターフェース : `./cpp_interface`
 - C++20 Modules : `./cpp20_modules`
+- C++ 集成体 : `./cpp_aggregate`
