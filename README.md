@@ -2,7 +2,7 @@
 
 ## ビルド
 
-環境ごとの準備をした上で対象のフォルダに移動し、`cover.png, backcover.png`の2枚の適当な画像を用意してから`make`を実行。同じフォルダにpdfファイルが生成される。
+環境ごとの準備をした上で対象のフォルダに移動し、`cover.jpg, backcover.jpg`の2枚の適当な画像を用意してから`make`を実行。同じフォルダにpdfファイルが生成される。
 
 ### Windows
 
@@ -27,3 +27,4 @@
 
 - C++標準的インターフェース : `./cpp_interface`
 - C++20 Modules : `./cpp20_modules`
+- C++ 集成体 : `./cpp_aggregate`
