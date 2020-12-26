@@ -1,15 +1,15 @@
 ---
 title: C++ 集成体
 author: onihusube
-date: 2020/09/12
+date: 2020/12/26
 geometry:
   width: 188mm
   height: 263mm
 coverimage: cover.jpg
 backcoverimage: backcover.jpg
 okuduke:
-  revision: 初版
-  printing: 日光企画
+  revision: 第2版
+  #printing: 日光企画
 ---
 \clearpage
 

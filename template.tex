@@ -486,6 +486,9 @@ $endif$
 
 \clearpage  %%中表紙改ページ
 
+%%% ページスタイル変更
+\pagestyle{headings}
+
 $for(include-before)$
 $include-before$
 
@@ -566,7 +569,9 @@ $endfor$
 
 %% 奥付
 \clearpage
-%% \backmatter
+
+%%% ページスタイル変更
+\pagestyle{empty}
 
 \begin{itemize}
   \item 表紙・裏表紙のイラストを除いて、この本の内容はCC-BY4.0に基づくパブリックドメインです。ただし、必要である範囲において他の著作物を引用していることがあります。
@@ -595,7 +600,10 @@ $endif$
   twitter  & \verb|@onihusube9| \\
   Githubリポジトリ  & \verb|https://github.com/onihusube/books| \\
   Webサイト & \verb|https://onihusube.hatenablog.com/| \\
-  印刷      & $okuduke.printing$  \\ \bottomrule
+  $if(okuduke.printing)$
+  印刷      & $okuduke.printing$  \\
+  $endif$
+  \bottomrule
 \end{tabular}
 \end{center}
 
