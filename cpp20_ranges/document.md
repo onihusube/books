@@ -63,9 +63,11 @@ concept range =
 これは、同じオブジェクトから取得したイテレータと番兵は、同じ範囲についてのイテレータと番兵である事という意味です。ここでの範囲とは、配列やコンテナなどの要素の列となっているものを指します。  
 例えば、`begin`と`end`がそれぞれ異なる配列のイテレータを返すような実装になっている場合、`range`コンセプトを構文的には満たしますがモデルとはなりません。
 
-> `begin(t), end(t)`の計算量は償却定数
+> `begin(t), end(t)`の計算量は償却定数であり、範囲を変更しない
 
 ここでの計算量とはシーケンス`t`の要素数に基づくものです。すなわち、`t`の要素数が幾つであれ`begin/end`の呼び出しは一定時間で完了しなければなりません。償却とあるのは、繰り返し呼んだ時に結果的に一定時間となれば良いという意味で、例えば最初の呼び出しだけ何か処理をして結果をキャッシュしておいて、2回目以降の呼び出しはキャッシュから直ぐに返す、という実装が許されます。
+
+範囲を変更しないとはそのままで、`t`の表す範囲を`begin/end`の呼び出しに伴って何か変更（要素を消したり、並び替えたり）してはいけません。
 
 > `begin(t)`が`std::forward_iterator`コンセプトのモデルであるならば、`begin(t)`は等さを保持する（*equality-preserving*）
 
@@ -100,6 +102,65 @@ concept range =
 等しさの保持（および安定）に関しては、「等しさを保持することを要求しない（*not required to be equality-preserving*）」のように指定される場合があり、この時は満たしている必要はありません。先ほどの`range`コンセプトでは条件付きで満たさなくても良いという指定でした。
 
 ## `borrowed_range`
+
+`borrowed_range`は借りてきた`range`を表すコンセプトです。
+
+```cpp
+template<class T>
+concept borrowed_range =
+  range<T> &&
+  (std::is_lvalue_reference_v<T> || enable_borrowed_range<remove_cvref_t<T>>);
+```
+
+意味論的な要件は
+
+- 型`T`のオブジェクト`t`がある時、`t`から取得したイテレータの有効期間が`t`の生存期間（*lifetime*）に関連づけられていない
+ 
+この`borrowed_range`のモデルとなるような型`T`は、関数の引数として受け取る時に参照（`T&`）ではなく値（`T`）で受け取り、その引数から取り出したイテレータをそのまま戻り値として返す事を安全に行う事ができます。
+
+定義に現れているように範囲を示す型`R`に対する左辺値参照（`R&`）がそうですが、そのほかにも例えば`std::string_view`のようなものが該当します。
+
+```cpp
+auto strview(std::string_view sv) {
+  // 文字列のイテレータはsvの寿命とは無関係に有効
+
+  return sv.begin();  // OK、有効なイテレータを返す
+}
+
+auto str_ref(std::string& sr) {
+  // 文字列のイテレータはsrの寿命とは無関係に有効
+
+  return sr.begin();  // OK、有効なイテレータを返す
+}
+
+auto str(std::string s) {
+  // 文字列のイテレータはsの寿命とリンクしている
+
+  return s.begin();  // NG、ダングリングイテレータを返す
+}
+```
+
+つまり、`borrowed_range`のモデルとなるような型`T`は範囲を参照しているが所有しておらず、そのオブジェクトの寿命が尽きたとしても元の範囲にはなんの影響も与えないという事です。このようなものは一般的に*View*と呼ばれます。
+
+ただし、実際には`std::string_view`は`borrowed_range`のモデルではありません。`borrowed_range`はオプトインで有効化するものであり、そのスイッチは定義中に現れている`enable_borrowed_range`によって行います。
+
+```cpp
+namespace std::ranges {
+  // デフォルトの定義
+  template<class>
+  inline constexpr bool enable_borrowed_range = false;
+}
+
+
+// 自作string_viewクラス
+struct my_string_view;
+
+// 例えばこのように有効化（変数テンプレートの明示的特殊化）
+inline constexpr bool std::ranges::enable_borrowed_range<my_string_view> = true;
+```
+
+`enable_borrowed_range`はデフォルトでは全ての型に対して無効化されており、現在のところ`std::string_view`に対してはこのような明示的特殊化がないため`std::string_view`は`borrowed_range`のモデルではありません。
+
 ## `sized_range`
 
 ## `input_range`
