@@ -17,6 +17,8 @@ okuduke:
 
 Rangeライブラリのものは`std::ranges`名前空間にありますが、この本では基本的に省略します。ただし、Rangeライブラリ以外のものは`std::`を省略しません。
 
+範囲とは配列などの様に要素の列となっているものを指します。この本では、範囲の事をシーケンスとも呼んでいます。
+
 ## Rangeライブラリとは
 
 # コンセプト
@@ -103,7 +105,7 @@ concept range =
 
 ## `borrowed_range`
 
-`borrowed_range`は借りてきた`range`を表すコンセプトです。
+`borrowed_range`は別のオブジェクトが所有するシーケンスを参照しているだけの`range`を定義するコンセプトです。
 
 ```cpp
 template<class T>
@@ -115,8 +117,10 @@ concept borrowed_range =
 意味論的な要件は
 
 - 型`T`のオブジェクト`t`がある時、`t`から取得したイテレータの有効期間が`t`の生存期間（*lifetime*）に関連づけられていない
- 
-この`borrowed_range`のモデルとなるような型`T`は、関数の引数として受け取る時に参照（`T&`）ではなく値（`T`）で受け取り、その引数から取り出したイテレータをそのまま戻り値として返す事を安全に行う事ができます。
+
+`borrowed_range`の役割の多くの部分はこの意味論的要件が担っています。
+
+`borrowed_range`のモデルとなるような型`T`は、関数の引数として受け取る時に参照（`T&`）ではなく値（`T`）で受け取り、その引数から取り出したイテレータをそのまま戻り値として返す事を安全に行う事ができます。
 
 定義に現れているように範囲を示す型`R`に対する左辺値参照（`R&`）がそうですが、そのほかにも例えば`std::string_view`のようなものが該当します。
 
@@ -162,6 +166,54 @@ inline constexpr bool std::ranges::enable_borrowed_range<my_string_view> = true;
 `enable_borrowed_range`はデフォルトでは全ての型に対して無効化されており、現在のところ`std::string_view`に対してはこのような明示的特殊化がないため`std::string_view`は`borrowed_range`のモデルではありません。
 
 ## `sized_range`
+
+`sized_range`はシーケンスの要素数（長さ）が一定時間で求められる`ranga`を定義するコンセプトです。
+
+```cpp
+template<class T>
+concept sized_range =
+  range<T> &&
+  requires(T& t) { ranges::size(t); };
+```
+
+`T`から参照を取り除いた型のオブジェクト`t`について
+
+- `ranges::size(t)`の計算量は償却定数であり`t`を変更せず、結果は`ranges::distance(t)`と等しくなる
+- `iterator_t<T>`が`std::forward_iterator`のモデルであるとき、`ranges::size(t)`は`ranges::begin(t)`の評価と関係なく呼び出し可能
+
+2つ目の意味論要件以外は意味が分かると思います。
+
+> `iterator_t<T>`が`std::forward_iterator`のモデルであるとき、`ranges::size(t)`は`ranges::begin(t)`の評価と関係なく呼び出し可能
+
+前半は`T`から`begin`で取れるイテレータが*forward iterator*であるとき、という事です。後半のこれは何を言っているのでしょうか・・・
+
+`range`コンセプトを思い返してみると、その`begin`の呼び出しは償却定数であることが求められており、例えば最初の`begin`の呼び出し時に何かをしてそれをキャッシュし2回目以降はキャッシュから返すような実装が許される、という事を言っていました。ここでの何かをするというのは殆どの場合シーケンスを生成する事だと思われます。その場合、そのクラスの表現するシーケンスというものは`begin`を最初に呼び出すまでは生成されておらず、そのクラスが`sized_range`であったとしても`begin`の呼び出し前にはシーケンスの長さを求めることは出来ないわけです。
+
+この2つ目の要件は、そのような`range`はイテレータが*input iterator*であるときにのみ許可されることを意味しています。そして、そのような`range`は後々紹介するRangeライブラリが備える各種`view`の中に見ることができます。
+
+
+この`sized_range`コンセプトはオプトアウトすることができます。そのメカニズムは`enable_borrowd_range`と同様です。
+
+```cpp
+namespace std::ranges {
+  // デフォルトの定義
+  template<class>
+  inline constexpr bool disable_sized_range = false;
+}
+
+
+// 自作の何かrange
+struct non_sized_range;
+
+// 例えばこのように有効化（変数テンプレートの明示的特殊化）
+inline constexpr bool std::ranges::disable_sized_range<non_sized_range> = true;
+```
+
+この様にしておくと`non_sized_range`に対して`ranges::size`が呼び出されなくなり、`sized_range`コンセプトを無効化できます。
+
+`ranges::size`はCPOとして様々な手段でその引数から長さを取得しようとします。結果として、`sized_range`コンセプトを構文的には満たしても意味論的な要件まで満たせない型が出て来てしまいます。これは、そのような場合に`sized_range`を無効化するためのものです。  
+
+例えば`std::forward_list`のように、サイズを求めることは（イテレータを用いて）出来るけれど計算量が都度`O(N)`かかってしまうような実装になっている場合に活用できます。
 
 ## `input_range`
 ## `output_range`
