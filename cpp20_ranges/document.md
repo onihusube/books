@@ -205,15 +205,15 @@ namespace std::ranges {
 // 自作の何かrange
 struct non_sized_range;
 
-// 例えばこのように有効化（変数テンプレートの明示的特殊化）
+// 例えばこのように無効化（変数テンプレートの明示的特殊化）
 inline constexpr bool std::ranges::disable_sized_range<non_sized_range> = true;
 ```
 
-この様にしておくと`non_sized_range`に対して`ranges::size`が呼び出されなくなり、`sized_range`コンセプトを無効化できます。
+この様にしてオプトアウトした型に対しては`ranges::size`が呼び出されなくなり、`sized_range`コンセプトを無効化できます。
 
 `ranges::size`はCPOとして様々な手段でその引数から長さを取得しようとします。結果として、`sized_range`コンセプトを構文的には満たしても意味論的な要件まで満たせない型が出て来てしまいます。これは、そのような場合に`sized_range`を無効化するためのものです。  
 
-例えば`std::forward_list`のように、サイズを求めることは（イテレータを用いて）出来るけれど計算量が都度`O(N)`かかってしまうような実装になっている場合に活用できます。
+例えば、`std::forward_list`のようにサイズを求めることは（イテレータを用いて）出来るけれど計算量が償却定数にならないような実装になっている場合に活用できます（ただ、`std::forward_list`そのものは`ranges::size`でサイズを求められません）。
 
 ## `input_range`
 ## `output_range`
