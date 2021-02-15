@@ -157,7 +157,7 @@ namespace std::ranges {
 
 
 // 自作string_viewクラス
-struct my_string_view;
+struct my_string_view { ... };
 
 // 例えばこのように有効化（変数テンプレートの明示的特殊化）
 inline constexpr bool std::ranges::enable_borrowed_range<my_string_view> = true;
@@ -167,7 +167,7 @@ inline constexpr bool std::ranges::enable_borrowed_range<my_string_view> = true;
 
 ## `sized_range`
 
-`sized_range`はシーケンスの要素数（長さ）が一定時間で求められる`ranga`を定義するコンセプトです。
+`sized_range`はシーケンスの要素数（長さ）が一定時間で求められる`range`を定義するコンセプトです。
 
 ```cpp
 template<class T>
@@ -216,7 +216,74 @@ inline constexpr bool std::ranges::disable_sized_range<non_sized_range> = true;
 例えば、`std::forward_list`のようにサイズを求めることは（イテレータを用いて）出来るけれど計算量が償却定数にならないような実装になっている場合に活用できます（ただ、`std::forward_list`そのものは`ranges::size`でサイズを求められません）。
 
 ## `input_range`
+
+`input_range`はそのイテレータが*input iterator*であるような*range*を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept input_range =
+    range<T> && input_iterator<iterator_t<T>>;
+```
+
+意味論的な要件は指定されていません。
+
+`input_iterator`コンセプトはその名の通り*input iterator*を定義するコンセプトです。
+
+```cpp
+template<class I>
+  concept input_iterator =
+    input_or_output_iterator<I> &&
+    indirectly_readable<I> &&
+    requires { typename ITER_CONCEPT(I); } &&
+    derived_from<ITER_CONCEPT(I), input_iterator_tag>;
+```
+
+ここにも、意味論的な要件は指定されていません。
+
+各種コンセプトを深掘りしていくとページ数がいくらあっても足りないので簡単な紹介に留めます。
+
+`input_or_output_iterator`コンセプトは前置/後置インクリメントや間接参照、デフォルト構築とムーブが可能であるなど、イテレータとしての基本的な要件を指定するものです。`indirectly_readable`コンセプトは間接参照によって値を読み取る事ができる事を表すものです。
+
+`ITER_CONCEPT(I)`というのは説明のためのエイリアステンプレートのようなもので、イテレータ型`I`から最も適切な`iterator_category`を取得してくるものです。そして、`derived_from`コンセプトでそれが`input_iterator_tag`から派生しているかをチェックしています。
+
+C++17までの*input iterator*と意味は同じなのですが、求められる事が若干変化しているため、C++17までの*input iterator*はこのコンセプトを満たす事ができない場合があります。
+
 ## `output_range`
+
+`output_range`はそのイテレータが*output iterator*であるような*range*を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept output_range =
+    range<T> && output_iterator<iterator_t<T>>;
+```
+
+意味論的な要件は指定されていません。
+
+`output_iterator`コンセプトはその名の通り*output iterator*を定義するコンセプトです。
+
+```cpp
+template<class I, class T>
+  concept output_iterator =
+    input_or_output_iterator<I> &&
+    indirectly_writable<I, T> &&
+    requires(I i, T&& t) {
+      *i++ = std::forward<T>(t);  // 等しさを保持することを要求しない
+    };
+```
+
+- 型`T`のオブジェクト`t`（値カテゴリは任意）、間接参照可能な型`I`のオブジェクト`i`）について、`*i++ = v;`は次の式と等価
+  ```cpp
+  *i = E;
+  ++i;
+  ```
+
+`indirectly_readable`コンセプトは間接参照によって値を読み取る事ができる事を表すものです。
+
+意味論的な要件は何を言っているのか一見わかりませんが、要はイテレータへの出力と進行の操作を1行で書いても分けて書いても同じ結果となる事を要求しています。
+
+C++17までの*output iterator*と意味は同じですが求められる事が若干厳しくなっており、C++17までの*output iterator*はこのコンセプトを満たす事ができない場合があります。
+
 ## `forward_range`
 ## `bidirectional_range`
 ## `random_access_range`
