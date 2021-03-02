@@ -15,7 +15,7 @@ okuduke:
 
 # はじめに
 
-Rangeライブラリのものは`std::ranges`名前空間にありますが、この本では基本的に省略します。ただし、Rangeライブラリ以外のものは`std::`を省略しません。
+Rangeライブラリのものは`std::ranges`名前空間にありますが、この本では基本的に省略します。ただし、Rangeライブラリ以外のものは`std::`を基本的には省略しません。
 
 範囲とは配列などの様に要素の列となっているものを指します。この本では、範囲の事をシーケンスとも呼んでいます。
 
@@ -242,11 +242,11 @@ template<class I>
 
 各種コンセプトを深掘りしていくとページ数がいくらあっても足りないので簡単な紹介に留めます。
 
-`input_or_output_iterator`コンセプトは前置/後置インクリメントや間接参照、デフォルト構築とムーブが可能であるなど、イテレータとしての基本的な要件を指定するものです。`indirectly_readable`コンセプトは間接参照によって値を読み取る事ができる事を表すものです。
+`std::input_or_output_iterator`コンセプトは前置/後置インクリメントや間接参照、デフォルト構築とムーブが可能であるなど、イテレータとしての基本的な要件を指定するものです。`std::indirectly_readable`コンセプトは間接参照によって値を読み取る事ができる事を表すものです。
 
-`ITER_CONCEPT(I)`というのは説明のためのエイリアステンプレートのようなもので、イテレータ型`I`から最も適切な`iterator_category`を取得してくるものです。そして、`derived_from`コンセプトでそれが`input_iterator_tag`から派生しているかをチェックしています。
+`ITER_CONCEPT(I)`というのは説明のためのエイリアステンプレートのようなもので、イテレータ型`I`から最も適切な*iterator category*を取得してくるものです。そして、`derived_from`コンセプトでそれが`std::input_iterator_tag`から派生しているかをチェックしています。
 
-C++17までの*input iterator*と意味は同じなのですが、求められる事が若干変化しているため、C++17までの*input iterator*はこのコンセプトを満たす事ができない場合があります。
+C++17までの*input iterator*と意味は同じなのですが、求められる事が若干変化しているため、C++17とC++20の*input iterator*には相互に互換性がありません。
 
 ## `output_range`
 
@@ -278,13 +278,54 @@ template<class I, class T>
   ++i;
   ```
 
-`indirectly_readable`コンセプトは間接参照によって値を読み取る事ができる事を表すものです。
+`std::indirectly_readable`コンセプトは間接参照によって値を読み取る事ができる事を表すものです。
 
-意味論的な要件は何を言っているのか一見わかりませんが、要はイテレータへの出力と進行の操作を1行で書いても分けて書いても同じ結果となる事を要求しています。
+`std::output_iterator`の意味論的な要件は何を言っているのか一見わかりませんが、要はイテレータへの出力と進行の操作を1行で書いても分けて書いても同じ結果となる事を要求しています。
 
-C++17までの*output iterator*と意味は同じですが求められる事が若干厳しくなっており、C++17までの*output iterator*はこのコンセプトを満たす事ができない場合があります。
+C++17までの*output iterator*と意味は同じですが求められる事が若干厳しくなっており、C++17までの*output iterator*はこのコンセプトを満たす事ができない場合があります。逆にC++20*output iterator*はC++17*output iterator*に対して後方互換性があります。
 
 ## `forward_range`
+
+`forward_range`はそのイテレータが*forward iterator*であるような*range*を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept forward_range =
+    input_range<T> && forward_iterator<iterator_t<T>>;
+```
+
+意味論的な要件は指定されていません。
+
+`range`ではなく`input_range`を用いているのは、イテレータカテゴリ間の関係性を表現するためです。すなわち、`forward_range`は`input_range`であり、より強く制約されています。
+
+`forward_iterator`コンセプトはその名の通り*forward iterator*を定義するコンセプトです。
+
+```cpp
+template<class I>
+  concept forward_iterator =
+    input_iterator<I> &&
+    derived_from<ITER_CONCEPT(I), forward_iterator_tag> &&
+    incrementable<I> &&
+    sentinel_for<I, I>;
+```
+
+- `forward_iterator`の`==`は、同じ範囲を参照しているイテレータの全てと（異なる型も含めて）比較可能である。
+    - イテレータの型が同じである場合、デフォルト構築されたイテレータとの比較が可能である。
+    - そのようなデフォルト構築されたイテレータ同士の比較は常に`true`となる（同じ空の範囲の終端を指しているかのように振る舞う）。
+- 範囲`[i, s)`を参照する`forward_iterator`から取得された`[i, s)`への参照やポインタは、`[i, s)`が範囲として有効である限り有効であり続ける。
+- マルチパス保証。
+
+意味論要件は少し難解ですが、デフォルト構築されたイテレータが範囲の終端を指すようになり、かつ他のイテレータはそれと常に比較可能であることや、イテレータの参照する要素の有効性は範囲の生存期間に従う（イテレータの操作と無関係になる）など、普通のイテレータに普通に期待されることを要求しています。
+
+3つ目のマルチパス保証とはコードで書くと次のような要件です。
+
+- `a == b`ならば`++a == ++b`
+- `((void)[](X x){++x;}(a), *a)`は`*a`と等しい
+
+特に2つ目は何言ってるのか分かり辛いですが、「同じ範囲を指すイテレータは同じ範囲を同じ順番でイテレートする」「イテレータをコピーしてから何かをしても、コピー元のイテレータに影響はない」という普通の事を言っています。これは*input iterator*には要求されていないもので、`forward_iterator`の最大の特徴です。
+
+マルチパス保証があることで、ある範囲を別々のイテレータから複数回走査するような、マルチパスアルゴリズムをイテレータを用いて書くことができます。
+
 ## `bidirectional_range`
 ## `random_access_range`
 ## `contiguous_range`
@@ -338,3 +379,16 @@ C++17までの*output iterator*と意味は同じですが求められる事が�
 ## `common_view`
 ## `reverse_view`
 ## `element_view`
+
+# Rangeアルゴリズム
+
+## 基本形
+## 射影（*Projection*）
+## ADLの無効化
+
+# Range CPO
+
+## CPO（*Customization Point Object*）
+## `ranges::swap`
+## `ranges::iter_move`
+## `ranges::iter_swap`
