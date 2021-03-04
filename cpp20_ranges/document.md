@@ -441,7 +441,6 @@ template<class I>
     - `+=`は`*this`を返す
 - `(a + n)`は`(a += n)`と等値
 - `D`の2つの正の値`x, y`について`(a + D(x + y))`が有効ならば、`(a + D(x + y))`は`((a + x) + y)`と等値
-    - 結合則
 - `(a + D(0))`は`a`と等値
 - `(a + D(n - 1))`が有効ならば、`(a + n) `は`[](I c){ return ++c; }(a + D(n - 1))`と等値
 - `(b += D(-n))`は`a`と等値
@@ -459,6 +458,54 @@ template<class I>
 C++17からは求められる事が若干厳しくなっており、C++17までの*random access iterator*はこのコンセプトを満たす事ができない場合があります。逆にC++20*random access iterator*はC++17*random access iterator*に対してほぼ後方互換性があります。
 
 ## `contiguous_range`
+
+`contiguous_range`はそのイテレータが*contiguous iterator*であるような*range*を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept contiguous_range =
+    random_access_range<T> && contiguous_iterator<iterator_t<T>> &&
+    requires(T& t) {
+      { ranges::data(t) } -> same_as<add_pointer_t<range_reference_t<T>>>;
+    };
+```
+
+型`T&`の値`t`について
+- `to_address(​ranges​::​begin(t)) == ranges​::​data(t)`
+
+
+`contiguous_range`は`random_access_iterator`でありそのイテレータが`contiguous_iterator`であることに加えて、`ranges::data(t)`という操作によってその範囲の存在するメモリ領域を指すポインタを取得することができます。そして、そのようなポインタ型はイテレータの要素型と一貫しており、取得されるポインタ値は先頭イテレータのアドレスと一致します。
+
+*random access iterator*までは知っていると思われますが、*contiguous iterator*というものを初めて聞く人もいるかもしれません。これはイテレータの指す範囲がメモリ上で連続している場合のイテレータを表すものです（普通の配列におけるポインタなど）。概念だけがC++17で導入され、C++20でコンセプト導入とともに実体を持ちました。
+
+*contiguous iterator*はそのまま`contiguous_iterator`コンセプトが定義しています。
+
+```cpp
+template<class I>
+  concept contiguous_iterator =
+    random_access_iterator<I> &&
+    derived_from<ITER_CONCEPT(I), contiguous_iterator_tag> &&
+    is_lvalue_reference_v<iter_reference_t<I>> &&
+    same_as<iter_value_t<I>, remove_cvref_t<iter_reference_t<I>>> &&
+    requires(const I& i) {
+      { to_address(i) } -> same_as<add_pointer_t<iter_reference_t<I>>>;
+    };
+```
+
+`a, b`を間接参照可能なイテレータ、`c`を間接参照不可能なイテレータとして、`b`は`a`から、`c`は`b`からそれぞれ到達可能であるとする。そのような型`I`のイテレータ`a, b, c`と`D = iter_difference_t<I>`について
+
+- `to_address(a) == addressof(*a)`
+- `to_address(b) == to_address(a) + D(b - a)`
+- `to_address(c) == to_address(a) + D(c - a)`
+
+構文的要件は、間接参照の結果が左辺値参照となることとイテレータの値型と参照型が一貫していることを要求し、新しい操作としてイテレータに対する`to_address()`を定義しています。
+
+意味論要件は`to_address()`による操作の意味を定義していて、`to_address()`によってイテレータから得られるポインタ値はその参照する要素のアドレスであり、そのポインタ値を使った範囲の移動とイテレータによる進行とが一致することを定義します。
+
+`std::addressof()`は引数のオブジェクトのアドレスを取得するものであり、`std::to_address()`はポインタも含めたポインタとみなせるもの（ファンシーポインタと呼ばれる）から格納するポインタ値（アドレス）を取得するものです。逆説的に、`std::to_address()`が適用可能であるという事はそれはほとんどポインタとみなせるものであるので、*contiguous iterator*とはほとんどポインタそのものの事を指しています。
+
+ただし、`std::to_address()`は`pointer_traits`か`operator->`のどちらかを利用して格納するポインタ値を取得するものなので、`operator->`を備えた非ポインタの自作イテレータを作成することは出来ます。とはいえその時でも、*contiguous iterator*はポインタの極薄いラッパとなるでしょう。
+
 ## `common_range`
 
 ## `view`
