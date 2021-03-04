@@ -397,13 +397,67 @@ template<class I>
         - `bool(++(--a) == b)`
     - `a, b`がインクリメント可能ならば、`bool(--(++a) == b)`
 
-ここに来ると、構文的要件は見たままで分かりやすいです。デクリメント（`--`）が可能であり自身と同じ型のイテレータを返すことを要求しています。
+ここに来ると、構文的要件は見たままで分かりやすいです。デクリメント（`--`）という操作が可能であることを要求しています。
 
-これだけだとデクリメントが何をするものなのか不明瞭ですので、意味論要件によってデクリメントによるイテレータの後退という操作を定義しています。一つ前の要素が無いと後退できないとか、デクリメントしてもイテレータそのもののアドレスが変わるわけではないとか、デクリメントしてインクリメントすれば元に戻る、など*bidirectional iterator*に期待される振る舞いを定義しています。
+それれだけだとデクリメントが何をするものなのか不明瞭ですので、意味論要件によってデクリメントによるイテレータの後退という操作を定義しています。一つ前の要素が無いと後退できないとか、デクリメントしてもイテレータそのもののアドレスが変わるわけではないとか、デクリメントしてインクリメントすれば元に戻る、など*bidirectional iterator*に期待される振る舞いを定義しています。
 
 これも*forward iterator*と同様意味は同じですが求められる事が若干厳しくなっており、C++17までの*bidirectional iterator*はこのコンセプトを満たす事ができない場合があります。逆にC++20*bidirectional iterator*はC++17*bidirectional iterator*に対してほぼ後方互換性があります。
 
 ## `random_access_range`
+
+`random_access_range`はそのイテレータが*random access iterator*であるような*range*を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept random_access_range =
+    bidirectional_range<T> && random_access_iterator<iterator_t<T>>;
+```
+
+意味論要件はなく、構文的には見たままです。
+
+`random_access_iterator`コンセプトはその名の通り*random access iterator*を定義するコンセプトです。
+
+```cpp
+template<class I>
+  concept random_access_iterator =
+    bidirectional_iterator<I> &&
+    derived_from<ITER_CONCEPT(I), random_access_iterator_tag> &&
+    totally_ordered<I> &&
+    sized_sentinel_for<I, I> &&
+    requires(I i, const I j, const iter_difference_t<I> n) {
+      { i += n } -> same_as<I&>;
+      { j +  n } -> same_as<I>;
+      { n +  j } -> same_as<I>;
+      { i -= n } -> same_as<I&>;
+      { j -  n } -> same_as<I>;
+      {  j[n]  } -> same_as<iter_reference_t<I>>;
+    };
+```
+
+`iter_reference_t<I>`の示す型`D`、`D`の値`n`、型`I`の有効なイテレータ`a`と`++a`を`n`回適用したイテレータ`b`について
+
+- `(a += n)`は`b`と等値（*equal*）
+- `addressof(a += n)`は`addressof(a)`と等値
+    - `+=`は`*this`を返す
+- `(a + n)`は`(a += n)`と等値
+- `D`の2つの正の値`x, y`について`(a + D(x + y))`が有効ならば、`(a + D(x + y))`は`((a + x) + y)`と等値
+    - 結合則
+- `(a + D(0))`は`a`と等値
+- `(a + D(n - 1))`が有効ならば、`(a + n) `は`[](I c){ return ++c; }(a + D(n - 1))`と等値
+- `(b += D(-n))`は`a`と等値
+- `(b -= n)`は`a`と等値
+- `addressof(b -= n)`は`addressof(b)`と等値
+    - `-=`は`*this`を返す
+- `(b - n)`は`(b -= n)`と等値
+- `b`が間接参照可能ならば、`a[n]`は有効であり`*b`と等値
+- `bool(a <= b) == true`
+
+`totally_ordered`は全順序による比較を、`sized_sentinel_for`はイテレータと番兵の引き算によって範囲の長さを求められることをそれぞれ定義しているコンセプトです。`requires`式内では*random access iterator*に通常期待される整数値との足し引きによる進行操作を定義しています。
+
+そして、新しく加わったそれらの進行操作がどういう意味を持つのか、どう振る舞うのかを意味論要件が定義します。`+=`による進行は同じ数インクリメントしたのと同じであるとか、`+`と`+=`は進行という意味では同じであるとか、同様の事が`- -=`とデクリメントの間にも言えるだとか、イテレータの大小比較はイテレータの参照位置に基づくということなどを言っています。
+
+C++17からは求められる事が若干厳しくなっており、C++17までの*random access iterator*はこのコンセプトを満たす事ができない場合があります。逆にC++20*random access iterator*はC++17*random access iterator*に対してほぼ後方互換性があります。
+
 ## `contiguous_range`
 ## `common_range`
 
