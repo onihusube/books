@@ -44,7 +44,7 @@ concept range =
 
 ここに表れている`requires(引数){式...}`は`requires`式と呼ばれる制約式で、そこに記述された式が全てコンパイルエラーを起こさない（使用可能である）場合に`true`を返すものです。コンセプトは複数の制約式から構成され、それらを論理積（`&&`）や論理和（`||`）で繋げて構成します。具体的な型が渡されると、制約式1つ1つは`true/false`のどちらかを返し、全体として`true`となるときにそのコンセプトはその型について満たされます。
 
-`range`コンセプトは1つの`requires`式だけから構成されています。その意味は単純で、型`T`のオブジェクト`t`に対して`std::ranges::begin(t)/std::ranges::end(t)`がどちらも呼び出し可能である事です。`std::ranges::begin()/std::ranges::end()`はそれぞれ範囲の先頭イテレータと終端を表す番兵を取得するものなので、`range`コンセプトを満たす型は`std::ranges::begin()/std::ranges::end()`が指定する手段によって範囲の先頭と終端を取得できることを表しています。
+`range`コンセプトは1つの`requires`式だけから構成されています。その意味は単純で、型`T`のオブジェクト`t`に対して`std::ranges::begin(t)/std::ranges::end(t)`がどちらも呼び出し可能である事です。`std::ranges::begin()/std::ranges::end()`はそれぞれ範囲の先頭イテレータと終端イテレータ（番兵）を取得するものなので、`range`コンセプトを満たす型は`std::ranges::begin()/std::ranges::end()`が指定する手段によって範囲の先頭と終端を取得できることを表しています。
 
 長いので、以降`std::ranges::begin()/std::ranges::end()`を単に`begin/end`と書くことにします。
 
@@ -175,7 +175,7 @@ auto str(std::string s) {
 
 つまり、`borrowed_range`のモデルとなるような型`T`は範囲を参照しているが所有しておらず、そのオブジェクトの寿命が尽きたとしても元の範囲にはなんの影響も与えないという事です。このようなものは一般的に*View*とも呼ばれます。
 
-ただし、実際には`std::string_view`は`borrowed_range`のモデルではありません。`borrowed_range`はオプトインで有効化するものであり、そのスイッチは定義中に現れている`enable_borrowed_range`によって行います。
+`borrowed_range`の役割の大部分は意味論要件にあり、構文的には`range`コンセプトを満たすだけの型でも満たせてしまうため、`borrowed_range`はデフォルトでは全ての型に対して無効化されています。アダプトするためにはオプトインで有効化する必要があり、そのスイッチは定義中に現れている`enable_borrowed_range`によって行います。
 
 ```cpp
 namespace std::ranges {
@@ -185,14 +185,14 @@ namespace std::ranges {
 }
 
 
-// 自作string_viewクラス
-struct my_string_view { ... };
+// 自作viewクラス
+struct my_view { ... };
 
 // 例えばこのように有効化（変数テンプレートの明示的特殊化）
-inline constexpr bool std::ranges::enable_borrowed_range<my_string_view> = true;
+inline constexpr bool std::ranges::enable_borrowed_range<my_view> = true;
 ```
 
-`enable_borrowed_range`はデフォルトでは全ての型に対して無効化されており、現在のところ`std::string_view`に対してはこのような明示的特殊化がないため`std::string_view`は`borrowed_range`のモデルではありません。
+`enable_borrowed_range`はRangeライブラリの一部の*View*と`std::string_view`、`std::span`に対してはこのような特殊化が用意されており、それらの型は`borrowed_range`のモデルとなることができます。
 
 ## `sized_range`
 
@@ -346,7 +346,7 @@ template<class I>
 - 範囲`[i, s)`を参照する`forward_iterator`から取得された`[i, s)`への参照やポインタは、`[i, s)`が範囲として有効である限り有効であり続ける。
 - マルチパス保証。
 
-`incrementable`はインクリメント（`++`）によるイテレータの進行を定義するコンセプトで、同時にコピー/ムーブ構築と代入、デフォルト構築を要求します。`sentinel_for`はイテレータ型に対する番兵型を定義するコンセプトで、`sentinel_for<I1, I2>`は型`I1`がイテレータ型`I2`の番兵であることを表しています。すなわち、`forward_iterator`である`I`は自分自身がその範囲の番兵とならなければなりません。
+`incrementable`はインクリメント（`++`）によるイテレータの進行を定義するコンセプトで、同時にコピー/ムーブ構築と代入、デフォルト構築を要求します。`sentinel_for`はイテレータ型に対する番兵型を定義するコンセプトで、`sentinel_for<I1, I2>`は型`I1`がイテレータ型`I2`の番兵であることを表しています。すなわち、`forward_iterator`である`I`は自分自身がその範囲の終端を表現できなければなりません。
 
 意味論要件は少し難解ですが、デフォルト構築されたイテレータが範囲の終端を指すようになり、かつ他のイテレータはそれと常に比較可能であることや、イテレータの参照する要素の有効性は範囲の生存期間に従う（イテレータの操作と無関係になる）など、普通のイテレータに期待される振る舞いを定義しています。
 
@@ -507,6 +507,22 @@ template<class I>
 ただし、`std::to_address()`は`pointer_traits`か`operator->`のどちらかを利用して格納するポインタ値を取得するものなので、`operator->`を備えた非ポインタの自作イテレータを作成することは出来ます。とはいえその時でも、*contiguous iterator*はポインタの極薄いラッパとなるでしょう。
 
 ## `common_range`
+
+`common_range`はその先頭イテレータと終端を指すイテレータ（番兵）とが同じ型となる`range`を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept common_range =
+    range<T> && same_as<iterator_t<T>, sentinel_t<T>>;
+```
+
+意味論要件はなく、見たままです。
+
+C++17までは、イテレータに対してその範囲の終端を指すのは同じ型のイテレータだったので、当たり前のことを言っているように思えるかもしれません。
+
+しかしC++20からはむしろ逆で、`ranges::begin`で得られる先頭イテレータと`ranges::end`で得られる終端イテレータは別の型となっている事が前提とされるようになっています。そして、終端を指すものの事を番兵（*Sentinel*）と呼びます。”もの”と言っているように、番兵はイテレータとして扱える必要すらありません。
+
+C++17の世界ではあらゆるものが`common_range`でしたが、C++20の世界ではそうではなく、`common_range`は定義通りに単なる`range`よりも厳しい要求となっているのです。
 
 ## `view`
 ## `viewable_range`
