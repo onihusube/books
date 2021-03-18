@@ -588,6 +588,67 @@ inline constexpr bool std::ranges::enable_view<my_view> = true;
 
 ## `viewable_range`
 
+`viewable_range`コンセプトは、`view`に安全に変換できる`range`を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept viewable_range =
+    range<T> &&
+    (borrowed_range<T> || view<remove_cvref_t<T>>);
+```
+
+意味論要件はなく、`viewable_range`コンセプトのキモは後半の`or`で繋がれた2つの制約式にあります。簡単には、この制約式は右辺値の`range`を弾くためにあります。
+
+```cpp
+// どちらも、なにかview型であるとする
+template<range R>
+class unsafe_view { ... };
+
+template<viewable_range R>
+class safe_view { ... };
+
+int main() {
+  /// 右辺値からの構築
+
+  // 構築できてしまう、v1の利用は未定義動作
+  unsafe_view v1{std::vector<int>{1, 2, 3, 4, 5}};
+  // コンパイルエラー！
+  safe_view v2{std::vector<int>{1, 2, 3, 4, 5}};
+
+
+  /// 左辺値からの構築
+  std::vector vec = {1, 2, 3, 4, 5}; 
+
+  // ともにok、安全に利用できる
+  unsafe_view v1{vec};
+  safe_view   v2{vec};
+}
+```
+
+この様に、自身で範囲を所有しているタイプの`range`の右辺値から`view`を構築してしまうと、構築直後に範囲は寿命を迎え、以降未定義動作の世界に突入します。ただし、右辺値の`range`が`view`もしくは`borrowed_range`であるならば、それらの寿命と参照している範囲の寿命は無関係なので、問題なく`view`を構築し利用できます。「`view`に安全に変換できる」とは、こうした意味合いです。
+
+`view`とは`range`を受けて別の`range`へ変換するものであることが、この`viewable_range`の役割からも読み取ることができます。
+
+ただし、構築しようとする`view`の参照しようとしている`borrowed_range`（あるいは`view`）が参照している大本の`range`の寿命が別の所で終了する（している）ような場合は、このコンセプトでもどうしようもありません。
+
+```cpp
+auto f() {
+  std::vector vec = {1, 2, 3, 4, 5}; 
+  
+  // 問題なく構築できる
+  safe_view v1{vec};
+
+  // 問題なく構築できる、が・・・
+  return safe_view{std::move(v1)};
+}
+
+int main() {
+  // 未定義動作の世界へようこそ！
+  auto view = f();
+}
+```
+
+この様な恣意的な例以外でも、たとえば並列処理において大本の`range`が別のスレッドに所有されていたりする場合などにも起こり得ます。Rustならば型レベルでこのような問題を阻止できますが、C++ではこれを防ぐことはできません。コンパイラのコード分析や各種サニタイザなどを用いれば検出できるかもしれませんが・・・
 
 # Rangeライブラリの構成部品
 
