@@ -529,15 +529,279 @@ C++17の世界ではあらゆるものが`common_range`でしたが、C++20の�
 
 # Rangeライブラリの構成部品
 
-## Rangeアクセス関数
+Rangeライブラリのメインではありませんが、Rangeライブラリを構成するために標準ライブラリに導入された各種部品となるものを見てみます。これらのものはイテレータや`range`を扱う時に利用可能なものです。
 
-### イテレータ/番兵の取得
+# Rangeアクセス関数
 
-### 範囲サイズの取得
+C++17においてコンテナアクセスの共通操作として`std`名前空間の下に追加されていたグローバル関数テンプレートに対応するものが、Rangeライブラリにも`std::ranges`名前空間の下に用意されています。これは一見すると同じものが重複して存在しているように見えてしまいますがそうではなく、コンセプトによって制約され、同じ意味を持ついくつかの操作をさらに統一化している、よりジェネリックで安全かつ簡単にその操作の目的を達成するものです。
 
-### 範囲のポインタ取得
+ここではそれらのものをRangeアクセス関数として纏めて扱います。Rangeアクセス関数の実態は関数ではなく関数オブジェクトであり、カスタマイゼーションポイントオブジェクト（*Customization Point Object* : CPO）と呼ばれます。
 
-## Range情報取得
+カスタマイゼーションポイントオブジェクトはADLを阻害することで意図しない関数呼び出しを防止し、その内部で複雑な判定とディスパッチを行ってその目的を果たす非常にテクニカルなものです。
+
+## 従来のカスタマイゼーションポイント関数の問題点
+
+C++17までにカスタマイゼーションポイントとなっていた関数（例えば`std::begin()/std:::end(), std::swap()`など）にはアダプトして動作をカスタマイズするためのいくつかの方法が用意されており、より柔軟に自分が定義した型を適合できるようになっています。しかしその一方で、それによって使用するときに少し複雑な手順を必要としていました。例えば`std::begin()/std::end()`で見てみると
+
+```cpp
+// イテレータのペアを取り出したい
+template<typename Range>
+auto my_algo(Range&& range_obj) {
+  // stdのものをusingしてから
+  using std::begin;
+  using std::end;
+
+  // 修飾なしで呼び出す
+  auto it = begin(range_obj);
+  auto end = end(range_obj);
+
+  ...
+}
+```
+
+真にジェネリックに書くためにはこのように「`std::begin()/std::end()`を`using`してから、`begin()/end()`を名前空間修飾なしで呼び出す」という風に書くことで、`std`名前空間のもの及び配列には`std::begin()`が、ユーザー定義型に対してはADLで使用可能な`begin()`あるいは`std::begin()`を通してメンバ関数の`begin()`が呼び出されるようになります。しかし、手順1つ間違えただけでこのコードはたちまち汎用性を失います。
+
+C++17まではイテレータペアをジェネリックに取得するにはこうする事がベストでした。しかし、このコードがなぜ必要なのかは難しい問題であり、理解せずに書いていると書き忘れたり消してしまったりしかねません。このようなよく使う操作に罠が潜んでいることは、C++諸学者にも優しくありません。
+
+この問題は、標準ライブラリにおいてカスタマイゼーションポイントとして定義されている関数すべてに共通することです。例えば、`std::size`や`std::data`などがあります。
+
+`range`ライブラリで新しく導入されたRangeアクセス関数と呼ばれる関数群は、この問題を解決するために導入されています。つまり、Rangeアクセス関数では先程のような呼び出しは1行で書くことができます。
+
+```cpp
+// イテレータのペアを取り出したい
+template<typename Range>
+auto my_algo(Range&& range_obj) {
+  // 先程と同じことを達成し、よりジェネリック、かつ安全！
+  auto it = std::ranges::begin(range_obj);
+  auto end = std::ranges::end(range_obj);
+
+  ...
+}
+```
+
+## 従来のカスタマイゼーションポイント関数の問題点2
+
+従来のカスタマイゼーションポイント関数の問題点はもう一つあります。それは、実質的に名前を予約してしまっていることです。
+
+カスタイマイゼーションポイントは標準ライブラリをよりジェネリックにするために不可欠な存在ですが、標準ライブラリはそのカスタマイゼーションポイントの名前（関数名）だけに着目して呼び出しを行うため、同名の全く異なる意味を持つ関数が定義されていると未定義動作に陥ります。特に、ADLが絡むとこれは発見しづらいバグを埋め込む事になるかもしれません。したがって、カスマイゼーションポイントを増やすと言う事は実質的に予約されている名前が増える事になり、ユーザーは注意深く関数名を決めなければならないなど負担を負うことになります。
+
+C++20からのコンセプトはそのような問題を解決します。その呼び出しにおいてコンセプトを用いて対象の型が制約を満たしているかを構文的にチェックするようにし、カスタマイゼーションポイントに不適合な場合はオーバーロード候補から外れるようにする事で、ユーザーがカスタマイゼーションポイントとの名前被りを気にしなくても良くなります。結果的に、標準ライブラリにより多くのカスタマイゼーションポイントを設ける事ができるようにもなります。
+
+しかし、コンセプトによって制約されたC++20カスタマイゼーションポイント関数の下では、先程のC++17までのベストプラクティスコードがむしろ最悪のコードになってしまうのです。
+
+```cpp
+namespace std {
+
+  // rangeコンセプトを満たす型だけが呼べるように制約してある新しいbegin()関数とする
+  template<std::ranges::range C>
+  constexpr auto begin(C& c) -> decltype(c.begin());  // (1)
+}
+
+namespace myns {
+
+  struct my_struct {};
+
+  // イテレータを取得するものではないbegin()関数
+  bool begin(my_struct&);  // (2)
+}
+
+
+template<typename Container>
+void my_algo(Container&& rng) {
+  using std::begin;
+
+  // 先頭イテレータを得る、はずが・・・
+  auto first = begin(rng);  // my_structに対しては(2)が呼び出される
+}
+
+int main() {
+  myns::my_struct st{};
+
+  my_algo(st);  // ok、呼び出しは適格
+}
+```
+
+このように、大本の関数がコンセプトで制約されていたとしてもADL経由で制約を満たさない`begin()`が呼ばれています。別の見方をすれば、コンセプトによる制約を簡単に迂回できてしまっています。これはADLを用いる以上仕方のない事ではあるのですが、この場合にADLで呼び出される関数にまで制約を強制しようとすると少し込み入った実装が必要となります。また、コンセプトによる制約を行うことで、C++17との互換性の問題が発生しえます。
+
+結局、ユーザーはカスタマイゼーションポイントの名前をきちんと意識してコードを書かなければならなくなってしまいます。
+
+Rangeアクセス関数はこの問題も同時に解決しています。
+
+```cpp
+namespace std {
+  // Rangeアクセス関数（オブジェクト）
+  inline constexpr begin_t begin{}; // (1)
+}
+
+namespace myns {
+
+  struct my_struct {};
+
+  // イテレータを取得するものではないbegin()関数
+  bool begin(my_struct&);  // (2)
+}
+
+
+template<typename Container>
+void my_algo(Container&& rng) {
+  using std::ranges::begin;
+
+  auto first = begin(rng);  // (1)が呼び出されコンパイルエラー
+}
+```
+
+## カスタマイゼーションポイントオブジェクト（CPO）
+
+まとめると、問題点は次の3点です。
+
+1. 正しい呼び出しが難しい、煩雑
+2. 名前を予約してしまっている
+3. コンセプトによる制約を行うことが難しい
+
+カスタマイゼーションポイントオブジェクトはこれらの問題をすべて解決するソリューションであり、Rangeアクセス関数は全てカスタマイゼーションポイントオブジェクトです。
+
+1. 正しい呼び出しが難しい、煩雑
+      - その内部で厳密なチェックと共に最適な関数を呼び出すため、ユーザーは気にしなくていい
+2. 名前を予約してしまっている
+      - コンセプトによるチェックが行われることで軽減される
+3. コンセプトによる制約を行うことが難しい
+      - 自身が関数オブジェクトであることによってADLを阻害するため、チェックを回避できない
+
+1番目の問題の解決の詳細は、以降で個別に見ていきます。2番目の問題は3番目の問題が解決されることで解決されています。
+
+3番目の解決は少し複雑です。  
+名前探索では、修飾名探索と非修飾名探索の二つがまず実行され、そこで名前に対応するものが見つからない場合に、ADLが実行されます。ADLは関数と思われる名前に対しての名前探索方法で、一番最後に適用されます。ある名前が関数ではないことが分かっているとき、すなわちADLの前に名前に対応する関数ではないものが見つかっているとき、ADLは行われません。
+
+カスタマイゼーションポイントオブジェクトは関数オブジェクトであり、その名前は変数名です。最初の2つの名前探索でCPOが発見されると、ADLは行われなくなります。これによって、CPOの呼び出しは迂回することができなくなり、その内部のあらゆるチェックは常に機能するようになります。
+
+Rangeアクセス関数はCPOとして、従来のカスタマイゼーションポイント関数とは別に`std::ranges`名前空間に定義されています。これによって互換性の問題もおこらず、このようなCPOの利点を享受することができるようになっています。
+
+## イテレータ/番兵の取得
+
+コンテナなどからその要素の先頭イテレータと終端イテレータを取得する操作は、通常メンバ関数の`.begin()/.end()`で行います。配列も含めてよりジェネリックに扱いたいときは、`std::begin()/std::end()`を用いていました。
+
+Rangeライブラリではこれらの操作に対応するものとして、`std::ranges::begin/std::ranges::end`を利用することができます。
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified begin = unspecified;
+    inline constexpr unspecified end = unspecified;
+  }
+}
+```
+
+`unspecified`というのは文字通り名前空間名やクラス名、初期化の方法が未規定という意味です。利用する時はこれらの事に依存しないようにする必要があります。
+
+この`std::ranges::begin/std::ranges::end`はカスタマイゼーションポイントオブジェクトと呼ばれる関数オブジェクトであり、呼び出しは通常の関数と同じように行えます。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+  int arr[] = {1, 2, 3, 4};
+
+  // 範囲の先頭イテレータを取得する
+  auto vit = std::ranges::begin(vec);
+  auto ait = std::ranges::begin(arr);
+
+  // 範囲の先頭イテレータ（番兵）を取得する
+  auto vend = std::ranges::end(vec);
+  auto aend = std::ranges::end(arr);
+}
+```
+
+これだけだと`std::begin()/std::end()`と何が違うのかわかりませんが、その効果には大きな違いがあります。
+
+型`T`のオブジェクト`r`によって`std::ranges::begin(r)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1. `r`が右辺値であり、かつ`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
+2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
+3. `T`が配列型なら、`r + 0`
+      - 先頭のポインタを返す
+4. `decay-copy(r.begin())`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(r.begin())`
+      - メンバ関数の`begin()`を呼び出す 
+5. `T`はクラス型か列挙型であり、`decay-copy(begin(r))`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(begin(r))`
+      - ADLによって`begin()`を呼び出す
+      - その際のオーバーロード解決は、`std`名前空間にある`std::begin()`を候補に含まないように行われる
+6. それ以外の場合、*ill-formed*
+
+とても複雑ですが、何か結果を返すのは3, 4, 5番目に該当する場合です。そこでは確実にイテレータを返すようになっており、`std::ranges::begin(r)`の呼び出しが有効であるときの戻り値型は`input_or_output_iterator`コンセプトのモデルとなります（`input_or_output_iterator`は何らかのイテレータとしての最小要件を定義するコンセプトです）。
+
+そして、同じように`std::ranges::end(r)`と呼び出されたとき、その効果は次のいずれかになります
+
+1. `r`が右辺値であるか、`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
+2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
+3. `T`が要素数不明の配列型である場合、*ill-formed*
+4. `T`が配列型なら、`r + std::extent_v<T>`
+      - 終端のポインタを返す
+5. `decay-copy(r.end())`が呼び出し可能であり、その戻り値型`E`が`sentinel_for<E, iterator_t<T>>`コンセプトのモデルとなるなら、`decay-copy(r.end())`
+      - メンバ関数の`end()`を呼び出す 
+6. `T`はクラス型か列挙型であり、`decay-copy(end(r))`が呼び出し可能であり、その戻り値型`E`が`sentinel_for<E, iterator_t<T>>`コンセプトのモデルとなるなら、`decay-copy(end(r))`
+      - ADLによって`end()`を呼び出す
+      - その際のオーバーロード解決は、`std`名前空間にある`std::end()`を候補に含まないように行われる
+7. それ以外の場合、*ill-formed*
+
+ほとんど`ranges::begin()`に対応する効果になっていることが分かるでしょう。`std::ranges::end(r)`の呼び出しが有効であるときの戻り値型`S`は、`std::ranges::begin(r)`の戻り値型を`I`として`sentinel_for<S, I>`コンセプトのモデルとなります（`sentinel_for<S, I>`はイテレータ型`I`に対する番兵型`S`を定義するコンセプトです）。
+
+結局、`std::ranges::begin/std::ranges::end`はイテレータと番兵を様々な方法で取得してくるものです。その試行範囲は、従来の`std::begin/std::end`よりも広く、そしてコンセプトによって確実にイテレータ/番兵を取得するようになっています。
+
+以降紹介するRangeアクセス関数もこれと同様、より探索範囲を広くしつつコンセプトによって確実に目的を達成できるように、従来あったものからリファインされています。C++20以降、特に後方互換の問題が無ければ、Rangeアクセス関数を優先的に使用することが推奨されます。
+
+### `cbegin/cend`
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified cbegin = unspecified;
+    inline constexpr unspecified cend = unspecified;
+  }
+}
+```
+### `rbegin/rend`
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified rbegin = unspecified;
+    inline constexpr unspecified rend = unspecified;
+  }
+}
+```
+### `crbegin/crend`
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified crbegin = unspecified;
+    inline constexpr unspecified crend = unspecified;
+  }
+}
+```
+
+## 範囲サイズの取得
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified size = unspecified;
+    inline constexpr unspecified ssize = unspecified;
+    inline constexpr unspecified empty = unspecified;
+  }
+}
+```
+
+## 範囲の領域のポインタ取得
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified data = unspecified;
+    inline constexpr unspecified cdata = unspecified;
+  }
+}
+```
+
+# Range情報取得エイリアス
 
 ### `iterator_t/sentinel_t`
 ### `range_difference_t`
@@ -546,6 +810,7 @@ C++17の世界ではあらゆるものが`common_range`でしたが、C++20の�
 ### `range_reference_t`
 ### `range_rvalue_reference_t`
 
+# その他rangeユーティリティ
 ## `subrange`
 ## `view_interface`
 ## `dangling`
