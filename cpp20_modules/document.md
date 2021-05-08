@@ -1727,7 +1727,7 @@ void f(Import *import) {
 
 ```cpp
 // このファイルは常に非モジュールファイルとして扱われる
-#ifdef INCLUDE_GUARD
+#ifndef INCLUDE_GUARD
 #define INCLUDE_GUARD
 
 // プリプロセッシングディレクティブとして認識されるが
