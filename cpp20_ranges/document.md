@@ -773,7 +773,7 @@ void my_algo(Container&& rng) {
 }
 ```
 
-## カスタマイゼーションポイントオブジェクト（CPO）
+## カスタマイゼーションポイントオブジェクト（*Customization Point Object* : CPO）
 
 まとめると、問題点は次の3点です。
 
@@ -781,7 +781,7 @@ void my_algo(Container&& rng) {
 2. 名前を予約してしまっている
 3. コンセプトによる制約を行うことが難しい
 
-カスタマイゼーションポイントオブジェクトはこれらの問題をすべて解決するソリューションであり、Rangeアクセス関数は全てカスタマイゼーションポイントオブジェクトです。
+カスタマイゼーションポイントオブジェクトはこれらの問題をすべて解決するソリューションであり、Rangeアクセス関数は全てカスタマイゼーションポイントオブジェクトとして実装されます。
 
 1. 正しい呼び出しが難しい、煩雑
       - その内部で最適な関数を呼び出すため、ユーザーは気にしなくていい
@@ -794,9 +794,9 @@ void my_algo(Container&& rng) {
 
 3番目の解決は少し複雑です。
 
-C++における名前探索では、修飾名探索と非修飾名探索の二つがまず実行され、そこで名前に対応するものが見つからない場合にADLが実行されます。ADLは関数と思われる名前に対しての名前探索方法で、一番最後に適用されます。ある名前が関数ではないことが分かっているとき、すなわちADLの前に名前に対応する関数ではないものが見つかっているとき、ADLは行われません。
+C++における名前探索では修飾名探索と非修飾名探索の二つがまず実行され、そこで名前に対応するものが見つからない場合にADLが実行されます。ADLは関数と思われる名前に対しての名前探索方法で、一番最後に適用されます。ある名前が関数ではないことが分かっているとき、すなわちADLの前に名前に対応する関数ではないものが見つかっているとき、ADLは行われません。
 
-カスタマイゼーションポイントオブジェクトは関数オブジェクトであり、その名前は変数名です。最初の2つの名前探索でCPOが発見されると、ADLは行われなくなります。これによって、CPOの呼び出しは迂回することができなくなり、その内部のあらゆるチェックは常に機能するようになります。
+カスタマイゼーションポイントオブジェクトは関数オブジェクトであり、その名前は変数名です。最初の2つの名前探索でCPOが発見されると、ADLは行われなくなります。これによって、CPOの呼び出しはADLによって迂回することができなくなり、その内部のあらゆるチェックは常に機能するようになります。
 
 Rangeアクセス関数はCPOとして、従来のカスタマイゼーションポイント関数とは別に`std::ranges`名前空間に定義されています。従来のカスタマイゼーションポイント関数はそのままに新しく用意されているため互換性の問題もおこらず、CPOの利点を享受することができるようになっています。
 
@@ -855,7 +855,7 @@ int main() {
 
 そして、同じように`std::ranges::end(r)`と呼び出されたとき、その効果は次のいずれかになります
 
-1. `r`が右辺値であるか、`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
+1. `r`が右辺値であり、かつ`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
 2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
 3. `T`が要素数不明の配列型である場合、*ill-formed*
 4. `T`が配列型なら、`r + std::extent_v<T>`
@@ -869,7 +869,7 @@ int main() {
 
 こちらも`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
 
-ほとんど`ranges::begin()`と対応する効果になっていることが分かるでしょう。`std::ranges::end(r)`の呼び出しが有効であるときの戻り値型`S`は、`std::ranges::begin(r)`の戻り値型を`I`として`sentinel_for<S, I>`コンセプトのモデルとなります（`sentinel_for<S, I>`はイテレータ型`I`に対する番兵型`S`を定義するコンセプトです）。
+ほとんど`ranges::begin()`と対になっており、`std::ranges::end(r)`の呼び出しが有効であるときの戻り値型`S`は、`std::ranges::begin(r)`の戻り値型を`I`として`sentinel_for<S, I>`コンセプトのモデルとなります（`sentinel_for<S, I>`はイテレータ型`I`に対する番兵型`S`を定義するコンセプトです）。
 
 このように、`std::ranges::begin/std::ranges::end`はイテレータと番兵を様々な方法で取得してくるものです。その試行範囲は従来の`std::begin/std::end`よりも広く、そしてコンセプトによって確実かつ安全にイテレータと番兵を取得できるようになっています。
 
@@ -877,7 +877,7 @@ int main() {
 
 ### `cbegin/cend`
 
-`begin/end`に対する`cbegin/cend`は、`const`イテレータ/番兵を取得するものです。
+`begin/end`に対する`cbegin/cend`は、`const`イテレータ/番兵を取得するものです。`const`イテレータではその参照先の要素も`const`となるため変更することができなくなります。
 
 ```cpp
 namespace std::ranges {
@@ -908,7 +908,7 @@ namespace std::ranges {
 
 `ranges::cbegin/ranges::cend`は受け取った引数を`const`化したうえで、その`const`オブジェクトによる`ranges::begin/ranges::end`によって`const`イテレータを取得しようとします。このため、`const`版の`begin/end`が`const`イテレータを返さない場合、`ranges::cbegin/ranges::cend`は`const`イテレータではなく通常の可変イテレータを返してしまいます。
 
-とはいえ、標準ライブラリのコンテナ型にはそのような型はありませんし、コンテナ型では問題にはならないはずです。問題となるのは、型に対する`const`性とその要素の`const`性が同期しないタイプの`range`、`view`と呼ばれる`range`に対してであり、特に`std::span`で問題になります。
+とはいえ標準ライブラリのコンテナ型にはそのような型はありませんし、コンテナ型では問題にはならないはずです。問題となるのは、型に対する`const`性とその要素の`const`性が同期しないタイプの`range`、`view`と呼ばれる`range`に対してであり、特に`std::span`で問題になります。
 
 まさに、`std::span`に対する`ranges::cbegin/ranges::cend`は、`std::span`の参照する要素列の可変イテレータを返します。
 
@@ -925,11 +925,15 @@ for (auto it = std::ranges::cbegin(sp);
 
 Rangeライブラリで追加された`view`の中には`const`で反復可能ではないために`begin()`の`const`オーバーロードを提供しないものや、場合によっては利用できないものがあり、それらでも同じことが起き得ます。
 
-`std::span`も`view`であり、`view`は単に`range`を参照するだけのもので、`view`オブジェクト自信に対する`const`は参照先の`range`要素の`const`を意味しません。一方、コンテナ型は`range`を所有しているため、自信に対する`const`はすなわち要素の`const`となります。
+`std::span`も`view`であり、`view`は単に`range`を参照するだけのもので、`view`オブジェクト自身に対する`const`は参照先の`range`要素の`const`を意味しません。一方、コンテナ型は`range`を所有しているため、自身に対する`const`はすなわち要素の`const`となります。
 
 とはいえこの事は直感的ではなく、気付き辛く使いづらい挙動です。この問題は標準化委員会にも認識されておりいくつか改善のための提案は出ていますが、今の所採択に至った改善案はありません。`view`に対する`const`イテレート時には、少し気を払う必要があります。
 
 ### `rbegin/rend`
+
+`begin/end`に対する`rbegin/rend`は、逆イテレータ/番兵を取得するものです。逆イテレータは範囲を逆順で走査するためのイテレータです。
+
+範囲を逆順に走査するためには、引数となる`range`は`bidirectional_range`でなければなりません。
 
 ```cpp
 namespace std::ranges {
@@ -939,7 +943,44 @@ namespace std::ranges {
   }
 }
 ```
+
+型`T`のオブジェクト`r`によって`ranges::rbegin(r)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1. `r`が右辺値であり、かつ`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
+2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
+3. `decay-copy(r.rbegin())`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(r.rbegin())`
+      - メンバ関数の`rbegin()`を呼び出す 
+4. `T`はクラス型か列挙型であり、`decay-copy(rbegin(r))`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(rbegin(r))`
+      - ADLによって`rbegin()`を呼び出す
+      - その際のオーバーロード解決は、`std`名前空間にある`std::rbegin()`を候補に含まないように行われる
+5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges​::​end(r))`
+6. それ以外の場合、*ill-formed*
+
+そして、同じように`ranges::rend(r)`と呼び出されたとき、その効果は次のいずれかになります
+
+1. `r`が右辺値であり、かつ`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
+2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
+3. `decay-copy(r.rend())`が呼び出し可能であり、その戻り値型`E`が`sentinel_for<E, decltype(ranges::rbegin(r))>`コンセプトのモデルとなるなら、`decay-copy(r.rend())`
+      - メンバ関数の`rend()`を呼び出す 
+4. `T`はクラス型か列挙型であり、`decay-copy(rend(r))`が呼び出し可能であり、その戻り値型`E`が`sentinel_for<E, decltype(ranges::rbegin(r)>`コンセプトのモデルとなるなら、`decay-copyr(end(r))`
+      - ADLによって`rend()`を呼び出す
+      - その際のオーバーロード解決は、`std`名前空間にある`std::rend()`を候補に含まないように行われる
+5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges​::begin(r))`
+6. それ以外の場合、*ill-formed*
+
+どちらにおいても`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
+
+`ranges::rbegin(r)`の呼び出しが有効であるときの戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::rend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
+
+基本的には`ranges::begin/ranges::end`とほとんど同じように`rbegin()/rend()`を探してきます。異なるのは配列型のケアを`ranges::begin/ranges::end`に委譲していることと、5番目のケースです。
+
+5番目のケースはメンバに`rbegin/rend`を備えていないような`range`型に対するケアです。標準ライブラリではRangeライブラリにある各種`view`型が該当し、  それが`common_range`であり`bidirectional_range`であれば、そのイテレータペアと`std::make_reverse_iterator()`を利用して逆イテレータのペアを取得します。
+
 ### `crbegin/crend`
+
+`crbegin/crend`は、`const`逆イテレータ/番兵を取得するものです。`const`逆イテレータは`const`イテレータかつ逆イテレータであるイテレータです。
+
+範囲を逆順に走査するために、引数となる`range`は`bidirectional_range`でなければなりません。
 
 ```cpp
 namespace std::ranges {
@@ -949,6 +990,22 @@ namespace std::ranges {
   }
 }
 ```
+
+型`T`のオブジェクト`r`によって`ranges::crbegin(r)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1. `r`が左辺値ならば、`ranges::rbegin(static_cast<const T&>(r))`
+2. それ以外の場合、`ranges::rbegin(static_cast<const T&&>(r))`
+
+同じように`ranges::crend(r)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1. `r`が左辺値ならば、`ranges::rend(static_cast<const T&>(r))`
+2. それ以外の場合、`ranges::rend(static_cast<const T&&>(r))`
+
+どちらにおいても`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
+
+`ranges::crbegin(r)`の呼び出しが有効であるときの戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::crend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
+
+`ranges::cbegin/ranges::cend`と同様に、`const`化した引数に対して`ranges::rbegin/ranges::rend`を呼び出すことで`const`逆イテレータ/番兵を取得します。したがって、`ranges::cbegin/ranges::cend`同様に`const`イテレータを必ずしも得ることができない場合があります。
 
 ## 範囲サイズの取得
 
@@ -969,6 +1026,39 @@ namespace std::ranges {
   inline namespace unspecified {
     inline constexpr unspecified data = unspecified;
     inline constexpr unspecified cdata = unspecified;
+  }
+}
+```
+
+# その他のRange CPO
+
+分類としてはRangeアクセス関数ではありませんが、Rangeライブラリにおいて新しいカスタマイゼーションポイントとして追加されたCPOを見てみます。
+
+## `ranges::swap`
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified swap = unspecified;
+  }
+}
+```
+
+## `ranges::iter_move`
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified iter_move = unspecified;
+  }
+}
+```
+## `ranges::iter_swap`
+
+```cpp
+namespace std::ranges {
+  inline namespace unspecified {
+    inline constexpr unspecified iter_swap = unspecified;
   }
 }
 ```
@@ -1015,10 +1105,3 @@ namespace std::ranges {
 ## 基本形
 ## 射影（*Projection*）
 ## ADLの無効化
-
-# Range CPO
-
-## CPO（*Customization Point Object*）
-## `ranges::swap`
-## `ranges::iter_move`
-## `ranges::iter_swap`
