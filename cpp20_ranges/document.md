@@ -1009,6 +1009,8 @@ namespace std::ranges {
 
 ## 範囲サイズの取得
 
+`ranges::size`は範囲のサイズ、すなわち長さを取得するものです。`ranges::ssize`はその長さを符号付整数型で取得し、`ranges::empty`は範囲が空かどうかを`bool`値で取得するものです。
+
 ```cpp
 namespace std::ranges {
   inline namespace unspecified {
@@ -1018,6 +1020,30 @@ namespace std::ranges {
   }
 }
 ```
+
+型`T`のオブジェクト`r`によって`ranges::size(r)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1.  `T`が要素数不明の配列型である場合、*ill-formed*
+2.  `T`が配列型である場合、`decay-copy(std::extent_v<T>)`
+3.  `disable_sized_range<remove_cv_t<T>> == false`かつ`decay-copy(r.size())`が呼び出し可能であり、その戻り値型が整数型である場合、`decay-copy(r.size())`
+        - メンバ関数の`size()`を呼び出す
+4.  `T`はクラス型か列挙型であり、`disable_sized_range<remove_cv_t<T>> == false`かつ`decay-copy(size(r))`が呼び出し可能であり、その戻り値型が整数型である場合、`decay-copy(size(r))`
+      - ADLによって`size()`を呼び出す
+      - その際のオーバーロード解決は、`std`名前空間にある`std::size()`を候補に含まないように行われる
+5. `to-unsigned-like(ranges::end(r) - ranges::begin(r))`が有効な式であり、`ranges::begin(r)`の戻り値型`I`と`ranges::end(r)`の戻り値型`S`が`sized_sentinel_for<S, I>`と`forward_iterator<I>`のモデルとなる場合、`to-unsigned-like(ranges::end(r) - ranges::begin(r))`
+6. それ以外の場合、*ill-formed*
+
+基本的には`ranges::begin/ranges::end`と同様になんとか長さを求めようとします。特殊なのは5番目の場合で、これは`size()`を持たないけれどイテレータの引き算によってその距離を求めることができるような範囲を想定しています。ちょうど、標準ライブラリにある`forward_list`が該当します。
+
+5番目のケースが特にそうですが、`std::size`とは異なり`ranges::size`は計算量が定数時間であることを求めていません。範囲の長さを`N`として`O(N)`、あるいは呼び出される`size()`の実装によってはそれ以外の計算量となることがあり得、また許可されます。
+
+### *integer-like*
+
+`ranges::size(r)`の呼び出しが有効であるとき、その戻り値型は*integer-like*な型となります。実は、上記4,5のケースで呼ばれる`size()`の戻り値型も整数型ではなく*integer-like*な型であればOKです。
+
+*integer-like*な型の定義は複雑ですが、簡単に言えば組み込みの整数型と殆ど同等に扱える型の事を指します。殆どの場合これは`int`型をはじめとする組み込みの整数型となるはずですが、`iota_view`など一部の`view`やユーザー定義の`range`では必ずしも整数型を返すとは限りません。たとえば、多倍長整数を返すことが許されます。
+
+そして、`to-unsigned-like(i)`は規格書において説明のために用いられている操作で、`i`の型`X`と同じ幅を持つ符号なし整数型に変換する操作です。つまりは5番目のケースは必ず符号なしの整数型で結果が得られるということです。
 
 ## 範囲の領域のポインタ取得
 
