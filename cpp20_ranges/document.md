@@ -1043,13 +1043,13 @@ namespace std::ranges {
 
 `ranges::size(r)`の呼び出しが有効であるとき、その戻り値型は*integer-like*な型となります。実は、上記4,5のケースで呼ばれる`size()`の戻り値型も整数型ではなく*integer-like*な型であればOKです。
 
-*integer-like*な型の定義は複雑ですが、簡単に言えば組み込みの整数型と殆ど同等に扱える型の事を指します。殆どの場合これは`int`型をはじめとする組み込みの整数型となるはずですが、`iota_view`など一部の`view`やユーザー定義の`range`では必ずしも整数型を返すとは限りません。たとえば、多倍長整数を返すことが許されます。
+*integer-like*な型の定義は複雑ですが、簡単に言えば組み込みの整数型と殆ど同等に扱える型の事を指します。殆どの場合これは`int`型をはじめとする組み込みの整数型となるはずですが、`iota_view`など一部の`view`やユーザー定義の`range`では必ずしも整数型を返すとは限りません。たとえば、適切に実装された多倍長整数を返すことが許されます。
 
 そして、`to-unsigned-like(i)`は規格書において説明のために用いられている操作で、`i`の型`X`と同じ幅を持つ符号なし整数型に変換する操作です。つまりは5番目のケースは必ず符号なしの整数型で結果が得られるということです。
 
 ### `ssize/empty`
 
-`ranges::ssize`は`ranges::size`に対して、結果を符号付整数型で返すようにしたものです。
+`ranges::ssize`は`ranges::size`に対して、結果を必ず符号付整数型で得られるものです。
 
 型`T`のオブジェクト`r`によって`ranges::ssize(r)`のように呼び出されたとき、その効果は次のいずれかになります
 
@@ -1058,10 +1058,31 @@ namespace std::ranges {
 
 多くの場合は`sized_range`な`r`に対して、1つ目の処理によって結果を返すことになるでしょう。
 
-`range_difference_t<T>`が示す型が符号付整数型でなければならないという要請はどうやらどこにもないのですが、`range_difference_t<T>`はイテレータ間の距離を表す型であるはずなので、当然符号付整数型となるはずです。従って、2つ目のケースでも結果は符号付整数型となります。
+`range_difference_t<T>`が示す型が符号付整数型でなければならないという要請は直接的には見えていませんが、`range_difference_t<T>`はイテレータ間の距離を表す型であり符号付整数型となります。従って、2つ目のケースでも結果は符号付整数型となります。
+
+`range_difference_t<T>`からコンセプトをたどっていくと`weakly_incrementable`コンセプトによって符号付整数型であることが制約されています。
+
+`ranges::empty`は範囲が空かどうか、すなわちその長さが`0`かどうかを`bool`値で得るものです。
+
+型`T`のオブジェクト`r`によって`ranges::empty(r)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1.  `T`が要素数不明の配列型である場合、*ill-formed*
+2.  `bool(r.empty())`が呼び出し可能であ場合、`bool(r.empty())`
+        - メンバ関数の`empty()`を呼び出す
+3.  `ranges::size(r) == 0`が呼び出し可能であ場合、`ranges::size(r) == 0`
+4. `bool(ranges::begin(r) == ranges::end(r))`が有効な式であり、`ranges::begin(r)`の戻り値型`I`が`forward_iterator`のモデルとなる場合、`bool(ranges::begin(r) == ranges::end(r))`
+5. それ以外の場合、*ill-formed*
+
+3番目のや4番目のケースで分かるように、`ranges::empty`は範囲が空（サイズが`0`）の時に`true`を返します。そして、`ranges::empty(r)`の呼び出しが有効である時の戻り値型は`bool`となります。
+
+なお、`begin/end`や`size`などのCPOと異なり、`ranges::empty`はメンバ関数の`empty`は探してくれますが、ADLによって非メンバ`empty`を探しに行きません。自作の型をアダプトする場合などに注意が必要です。
 
 
 ## 範囲の領域のポインタ取得
+
+`ranges::data`は範囲の存在するメモリ上の領域へのポインタを取得するものです。
+
+範囲の存在する領域が飛び飛びだとポインタを取得する意味がないため、引数となる`range`は`contiguous_range`でなければなりません。
 
 ```cpp
 namespace std::ranges {
@@ -1071,6 +1092,43 @@ namespace std::ranges {
   }
 }
 ```
+
+型`T`のオブジェクト`r`によって`ranges::data(r)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1. `r`が右辺値であり、かつ`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
+2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
+3. `decay-copy(r.data())`が呼び出し可能であり、その戻り値型がオブジェクトポインタ型である場合、`decay-copy(r.data())`
+      - メンバ関数の`data()`を呼び出す 
+4. `ranges::begin(r)`が呼び出し可能であり、その戻り値型が`contiguous_iterator`のモデルであるなら、`to_address(ranges​::begin(r))`
+5. それ以外の場合、*ill-formed*
+
+4番目のケースでは`to_address`を使用していることによって、`contiguous_iterator`となる非ポインタ型のイテレータラッパからでもアドレスを取得可能です。
+
+`ranges::cdata`は`ranges::data`のポインタを`const`ポインタで取得するものです。
+
+1. `r`が左辺値ならば、`ranges::data(static_cast<const T&>(r))`
+2. それ以外の場合、`ranges::data(static_cast<const T&&>(r))`
+
+`ranges::data(r)/ranges::cdata(r)`の呼び出しが有効である時の戻り値型はオブジェクトポインタ型となります。
+
+`ranges::cbegin`のやっていることは`cbegin/cend`と全く同じであるため、`const`ポインタが常に得られるかどうかについて同じ問題があります。
+
+```cpp
+#include <ranges>
+#include <span>
+
+int main () {
+  int arr[5]{};
+  std::span s{arr};
+  
+  auto* ap = std::ranges::cdata(arr);
+  // decltype(ap) == const int*;
+  auto* sp = std::ranges::cdata(s);
+  // decltype(sp) == int*;
+}
+```
+
+`std::span`がまさにそうですが、自身の`const`性と要素の`const`性が同期しない`range`型では、この関数が有効でも`const`ポインタが得られるとは限りません。
 
 # その他のRange CPO
 
