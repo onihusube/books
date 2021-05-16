@@ -846,7 +846,7 @@ int main() {
       - メンバ関数の`begin()`を呼び出す 
 5. `T`はクラス型か列挙型であり、`decay-copy(begin(r))`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(begin(r))`
       - ADLによって`begin()`を呼び出す
-      - その際のオーバーロード解決は、`std`名前空間にある`std::begin()`を候補に含まないように行われる
+      - その際、ADLより前に`std`名前空間にある`std::begin()`を発見しないように名前解決が行われる
 6. それ以外の場合、*ill-formed*
 
 `r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
@@ -864,7 +864,7 @@ int main() {
       - メンバ関数の`end()`を呼び出す 
 6. `T`はクラス型か列挙型であり、`decay-copy(end(r))`が呼び出し可能であり、その戻り値型`E`が`sentinel_for<E, iterator_t<T>>`コンセプトのモデルとなるなら、`decay-copy(end(r))`
       - ADLによって`end()`を呼び出す
-      - その際のオーバーロード解決は、`std`名前空間にある`std::end()`を候補に含まないように行われる
+      - その際、ADLより前に`std`名前空間にある`std::end()`を発見しないように名前解決が行われる
 7. それ以外の場合、*ill-formed*
 
 こちらも`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
@@ -896,6 +896,69 @@ int main() {
 これはむしろ4番目と5番目の場合のように、ユーザーが定義した関数（と型）を呼び出す際に特に重要です。そのような場合の`ranges::begin(r)`は`r`で使用可能な`begin`の呼び出しとイテレータ型のコピーが例外を投げるかどうか、定数式で使用可能かどうか、に準じる形でそれらの事が決まります。
 
 CPOの効果は全て*expression-equivalent*で指定されていますが、本書では*expression-equivalent*という言葉は常に省略しています。そのため、以降CPOを見ていく場合に`constepxr`で使用可能かどうかと例外を投げるかどうかが気になった時は、*expression-equivalent*を思い出して、どんな型について使用したいのかによって処理を追いかけてチェックしてみてください。
+
+### Poison-pillオーバーロード
+
+> その際、ADLより前に`std`名前空間にある`std::begin()`を発見しないように名前解決が行われる
+
+ADLによって関数を探すケースのこの条件は`std::begin`を常に使用しないように読めてしまいますがそうではありません。CPOは`std`名前空間内にあるため、`begin(r)`という呼び出しは`std::begin`を一番最初に発見してしまいます。それだとユーザー定義の`begin`の仕様を妨げることになりかねないため、ADLの前に`std::begin`を隠蔽する候補を含んでおくことで、`std::begin`はADLによって発見されたときのみ使用されることとなります。
+
+簡易な実装で見てみると、次のようになります
+
+```cpp
+namespace std {
+
+  // std::begin (1)
+  template <class C>
+  constexpr auto begin(C& c) -> decltype(c.begin()); 
+
+  namespace ranges {
+    namespace begin_impl {
+
+      // Poison-pillオーバーロード (2)
+      void begin(auto&) = delete;
+      void begin(const auto&) = delete;
+
+      // ranges::begin（簡易）実装クラス
+      struct begin_fn {
+
+        // ADLケースのオーバーロード
+        template<typename T>
+        constexpr auto operator()(T&& r) const noexcept(noexcept(begin(std::forward<T>(r))))
+          // 後置requires節による制約
+          requires input_or_output_iterator<decay_t<decltype(begin(std::forward<T>(r)))>>
+        {
+          // 非修飾名探索では(2)が見つかり、(1)を隠蔽する
+          // その後、std名前空間に対するADLでは(1)が見つかる
+          return begin(std::forward<T>(r));  // (3)
+        }
+
+      };
+    }
+
+    inline namespace cpo_begin {
+      // ranges::begin CPO定義
+      inline constexpr begin_impl::begin_fn begin{};
+    }
+  }
+}
+```
+
+(3)の地点での`begin(r)`の呼び出しでは、修飾名探索と非修飾名探索の後でADLが発動します。修飾名探索は何も見つからないはずで、非修飾名探索では(2)を発見しますが(1)を発見しません。その後ADLによって更なる探索が行われ、`T`が`std::`の型（たとえば`std::vector`）であるときにのみ(1)を発見し、オーバーロード解決によって(1)を使用します。
+
+この様なテクニックをPoison-pillオーバーロードと呼びます。
+
+また、この簡易な例ではCPOの実装の一部を垣間見ることができます。関数呼び出し演算子オーバーロードとコンセプトによる制約によって引数型に応じて最適な処理を選択し、*expression-equivalent*は`constexpr`関数と`noexcept(noexcept(...))`によって自動的に判定され、`auto`戻り値型によって`decay_copy`が処理されています。
+
+ここで用いられている後置`requires`節は関数を制約するための方法の一つて、`requires`式を関数宣言の一番最後（例では`noexcept`の後）に置くものです。この方法のメリットは後置戻り値型と同様に関数の仮引数を使用することができることと、クラステンプレートのテンプレートではないメンバ関数に対して制約することができることです。
+
+```cpp
+// 後置requiresの単純な形式例
+template<typename T>
+auto f(T t) const & noexcept -> auto requires{/* ... */};
+```
+
+`requires`節としての扱いは変わらないため、この中で`requires`式を定義することや任意の`bool`型の定数式を使用することなどができます。
 
 ### `cbegin/cend`
 
@@ -974,7 +1037,7 @@ namespace std::ranges {
       - メンバ関数の`rbegin()`を呼び出す 
 4. `T`はクラス型か列挙型であり、`decay-copy(rbegin(r))`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(rbegin(r))`
       - ADLによって`rbegin()`を呼び出す
-      - その際のオーバーロード解決は、`std`名前空間にある`std::rbegin()`を候補に含まないように行われる
+      - その際、ADLより前に`std`名前空間にある`std::rbegin()`を発見しないように名前解決が行われる
 5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges​::​end(r))`
 6. それ以外の場合、*ill-formed*
 
@@ -986,7 +1049,7 @@ namespace std::ranges {
       - メンバ関数の`rend()`を呼び出す 
 4. `T`はクラス型か列挙型であり、`decay-copy(rend(r))`が呼び出し可能であり、その戻り値型`E`が`sentinel_for<E, decltype(ranges::rbegin(r)>`コンセプトのモデルとなるなら、`decay-copyr(end(r))`
       - ADLによって`rend()`を呼び出す
-      - その際のオーバーロード解決は、`std`名前空間にある`std::rend()`を候補に含まないように行われる
+      - その際、ADLより前に`std`名前空間にある`std::rend()`を発見しないように名前解決が行われる
 5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges​::begin(r))`
 6. それ以外の場合、*ill-formed*
 
@@ -1051,7 +1114,7 @@ namespace std::ranges {
         - メンバ関数の`size()`を呼び出す
 4.  `T`はクラス型か列挙型であり、`disable_sized_range<remove_cv_t<T>> == false`かつ`decay-copy(size(r))`が呼び出し可能であり、その戻り値型が整数型である場合、`decay-copy(size(r))`
       - ADLによって`size()`を呼び出す
-      - その際のオーバーロード解決は、`std`名前空間にある`std::size()`を候補に含まないように行われる
+      - その際、ADLより前に`std`名前空間にある`std::size()`を発見しないように名前解決が行われる
 5. `to-unsigned-like(ranges::end(r) - ranges::begin(r))`が有効な式であり、`ranges::begin(r)`の戻り値型`I`と`ranges::end(r)`の戻り値型`S`が`sized_sentinel_for<S, I>`と`forward_iterator<I>`のモデルとなる場合、`to-unsigned-like(ranges::end(r) - ranges::begin(r))`
 6. それ以外の場合、*ill-formed*
 
@@ -1126,7 +1189,7 @@ namespace std::ranges {
 
 4番目のケースでは`to_address`を使用していることによって、`contiguous_iterator`となる非ポインタ型のイテレータラッパからでもアドレスを取得可能です。
 
-`ranges::cdata`は`ranges::data`のポインタを`const`ポインタで取得するものです。
+`ranges::cdata`は`ranges::data`のポインタを`const`ポインタで取得するもので、その効果は次のようになります
 
 1. `r`が左辺値ならば、`ranges::data(static_cast<const T&>(r))`
 2. それ以外の場合、`ranges::data(static_cast<const T&&>(r))`
@@ -1154,9 +1217,11 @@ int main () {
 
 # その他のRange CPO
 
-分類としてはRangeアクセス関数ではありませんが、Rangeライブラリにおいて新しいカスタマイゼーションポイントとして追加されたCPOを見てみます。
+分類としてはRangeアクセス関数ではありませんが、Rangeライブラリにおいて新しいカスタマイゼーションポイントとして追加されたCPOが他にもあります。
 
 ## `ranges::swap`
+
+`ranges::swap`は値の交換を行うものです。これは従来の`std::swap`をリファインしたものです。
 
 ```cpp
 namespace std::ranges {
@@ -1165,6 +1230,44 @@ namespace std::ranges {
   }
 }
 ```
+
+型`T, U`のオブジェクト`a, b`によって`ranges::swap(a, b)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1. `T, U`が共にクラス型か列挙型であり、`void(swap(a, b))`が呼び出し可能であれば、`void(swap(a, b))`
+      - ADLによって`swap()`を呼び出す
+      - その際、ADLより前に`std`名前空間にある`std::swap()`を発見しないように名前解決が行われる
+2. `T, U`が共に同じ長さの配列型で`a, b`はともに左辺値であり、`ranges::swap(*a, *b)`が呼び出し可能ならば、`void(ranges::swap_ranges(a, b))`
+      - ただし、例外を投げるかどうかは`noexcept(ranges::swap(*a, *b))`による
+3. `a, b`は同じ型`T`の左辺値であり、`T`が`move_constructible<T>`と`assignable_from<T&, T>`のモデルである場合、ムーブ代入とムーブ構築を用いた交換操作によって、`a, b`の値を交換する
+      - ただし、例外を投げるかどうかは`is_nothrow_move_constructible_v<T> && is_nothrow_move_assignable_v<T>`による
+4. それ以外の場合、*ill-formed*
+
+標準ライブラリのコンテナ型などはメンバ`.swap()`を持っており、1のケースによって`std::swap`経由でメンバの`.swap()`が呼び出されます。
+
+2のケースで用いられる`ranges::swap_ranges`は新しいアルゴリズムであり、範囲の各要素を一つづつ`swap`していくものです。そこでは各要素について`ranges::swap`を順番に適用していくことで、配列全体を交換します。
+
+3のケースは最後の手段であり、ムーブ代入・構築を用いた次のような操作によって値を交換します
+
+```cpp
+template<typename T>
+void swap(T& a, T& b) {
+  T t(std::move(b));
+  b = std::move(a);
+  a = std::move(t);
+}
+```
+
+この様な操作のためには、型`T`がムーブ構築とムーブ代入が可能である必要があり、`move_constructible`と`assignable_from<T&, T>`コンセプトによってそれを制約しています。
+
+3のケースでは定数式で使用可能かどうかが別に指定されており、次の条件を満たす必要があります
+
+- `T`はリテラル型
+- `a = std::move(b), b = std::move(a)`が共に定数式で使用可能
+- `T t1(std::move(a)); T t2(std::move(b));`の様な初期化が定数式で使用可能
+
+`ranges::swap(a, b)`の呼び出しが有効であるとき、`a, b`の値を交換し戻り値型は`void`となります。
+
+### `swappable/swappable_with`コンセプト
 
 ## `ranges::iter_move`
 
