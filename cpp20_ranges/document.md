@@ -1233,10 +1233,10 @@ namespace std::ranges {
 
 型`T, U`のオブジェクト`a, b`によって`ranges::swap(a, b)`のように呼び出されたとき、その効果は次のいずれかになります
 
-1. `T, U`が共にクラス型か列挙型であり、`void(swap(a, b))`が呼び出し可能であれば、`void(swap(a, b))`
+1. `T, U`が共にクラス型か列挙型であり、`(void)swap(a, b)`が呼び出し可能であれば、`(void)swap(a, b)`
       - ADLによって`swap()`を呼び出す
       - その際、ADLより前に`std`名前空間にある`std::swap()`を発見しないように名前解決が行われる
-2. `T, U`が共に同じ長さの配列型で`a, b`はともに左辺値であり、`ranges::swap(*a, *b)`が呼び出し可能ならば、`void(ranges::swap_ranges(a, b))`
+2. `T, U`が共に同じ長さの配列型で`a, b`はともに左辺値であり、`ranges::swap(*a, *b)`が呼び出し可能ならば、`(void)ranges::swap_ranges(a, b)`
       - ただし、例外を投げるかどうかは`noexcept(ranges::swap(*a, *b))`による
 3. `a, b`は同じ型`T`の左辺値であり、`T`が`move_constructible<T>`と`assignable_from<T&, T>`のモデルである場合、ムーブ代入とムーブ構築を用いた交換操作によって、`a, b`の値を交換する
       - ただし、例外を投げるかどうかは`is_nothrow_move_constructible_v<T> && is_nothrow_move_assignable_v<T>`による
@@ -1271,7 +1271,7 @@ void swap(T& a, T& b) {
 
 ## `iter_move`
 
-`ranges::iter_move`はイテレータの指す要素をムーブするためのものです。イテレータ`it`に対して`std::move(*it)`の様な事をよりジェネリックにやってくれます。
+`ranges::iter_move`はイテレータの指す要素をムーブするためのものです。イテレータ`it`に対して`std::move(*it)`の様な事をやってくれます。
 
 ```cpp
 namespace std::ranges {
@@ -1298,6 +1298,8 @@ namespace std::ranges {
 
 ## `iter_swap`
 
+`ranges::iter_swap`は2つのイテレータの指す要素を交換するものです。イテレータ`i1, i2`に対して`ranges::swap(*i1, *i2)`の様な事をやってくれます。イテレータを介した`swap`操作と見ることもできます。
+
 ```cpp
 namespace std::ranges {
   inline namespace unspecified {
@@ -1305,6 +1307,50 @@ namespace std::ranges {
   }
 }
 ```
+
+型`I1, I2`のオブジェクト`i1, i2`によって`ranges::iter_swap(i1, i2)`のように呼び出されたとき、その効果は次のいずれかになります
+
+1. `I1`と`I2`のどちらかがクラス型か列挙型であり、`iter_swap(i1, i2)`が呼び出し可能である場合、`(void)iter_move(it)`
+      - ADLによって`iter_swap()`を呼び出す
+      - その際、ADLより前に`std::iter_swap()`を発見しないように名前解決が行われる
+2. `I1, I2`が共に`indirectly_readable`コンセプトのモデルであり、それぞれの（要素の）参照型が`swappable_with`コンセプトのモデルとなる場合、`ranges::swap(*i1, *i2)`
+3. `I1, I2`が`indirectly_movable_storable<T1, T2>`と`indirectly_movable_storable<T2, T1>`のモデルとなる場合、`(void)(*i1 = iter-exchange-move(i2, i1))`
+4. それ以外の場合、*ill-formed*
+
+1のケースは`ranges::iter_move`と同様にイテレータラッパなどで内部イテレータに直接作用させるためのカスタマイゼーションポイントです。`ranges::iter_swap`の主たる効果は2,3番目のケースでしょう。
+
+2番目は単純に、`operator*`によって間接参照しつつ`ranges::swap`で`i1`と`i2`参照先の要素を交換します。その際、`i1, i2`が最低限間接参照可能であることと、その参照先のものが交換可能であることをコンセプトによってチェックします。
+
+3番目は知らないものばかり登場していて複雑です。`indirectly_movable_storable<In, Out>`コンセプトは、`In`の値型（`iter_value_t<In>`）の中間オブジェクトを介した`In`から`OUt`への要素のムーブ操作を定義するコンセプトです
+
+型`In, Out`のオブジェクトをそれぞれ`in, out`とすると次のような操作が可能であることを表します。
+
+```cpp
+iter_value_t<In> tmp = std::move(*in);
+*out = std::move(tmp);
+```
+
+3番目のケースの条件全体は、`T1 -> tmp -> T2`とその逆方向の`T2 -> tmp -> T1`のような要素の移動が可能であることをコンセプトによってチェックします。これは`ranges::swap`で似たような話を聞いたかもしれません。
+
+そして、`iter-exchange-move`とは次のように定義された説明専用の操作です
+
+```cpp
+template<class X, class Y>
+constexpr iter_value_t<X> iter-exchange-move(X&& x, Y&& y)
+  noexcept(noexcept(iter_value_t<X>(iter_move(x))) &&
+           noexcept(*x = iter_move(y)))
+{
+  iter_value_t<X> old_value(iter_move(x));
+  *x = iter_move(y);
+  return old_value;
+}
+```
+
+`std::exchange`の挙動に近いことをしており、第二引数の要素を第一引数へ、第一引数の要素を戻り値としてそれぞれムーブします。`*i1 = iter-exchange-move(i2, i1)`の式全体では、`i1 -> i2 -> i1`の様に玉突き的に要素の値が流れます。つまりは、ムーブによって力業で2つのイテレータの要素を入れ替えています。
+
+このように、3番目のケースは`ranges::swap`によって要素の交換が出来ない場合に最後の手段として働くものです。
+
+ところで、`ranges::iter_move`も`ranges::iter_swap`もよく見るとイテレータ型だけでなく、間接参照可能な（`indirectly_readable`な）型に対して使用することができます。
 
 # Range情報取得エイリアス
 
