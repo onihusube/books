@@ -1354,12 +1354,55 @@ constexpr iter_value_t<X> iter-exchange-move(X&& x, Y&& y)
 
 # Range情報取得エイリアス
 
-### `iterator_t/sentinel_t`
-### `range_difference_t`
-### `range_size_t`
-### `range_value_t`
-### `range_reference_t`
-### `range_rvalue_reference_t`
+イテレータで`iterator_traits`を介してイテレータの性質などの情報を取得出来ていたように、`range`でも同じことをしたいことが多々あります。`iterator_traits`でできていたことをはC++20で使いやすく改修されましたが、イテレータ用のものを利用しようとすると、`range`からイテレータを取り出してその型を取り出して...の様な事をすることになります。
+
+それを避けるために、`range`から直接そのイテレータの各種情報を引き出すためのものがエイリアステンプレートとして用意されています。
+
+## `iterator_t/sentinel_t`
+
+`ranges::iterator_t`と`ranges::sentinel_t`は`range`型からそのイテレータ型と番兵型を得るものです。
+
+```cpp
+template<class T>
+using iterator_t = decltype(ranges::begin(declval<T&>()));
+
+template<range R>
+using sentinel_t = decltype(ranges::end(declval<R&>()));
+```
+
+実装は見たままで、`ranges::begin/ranges::end`を使用して入力の`range`型からイテレータ/番兵を取り出し、`decltype`でその型を取得しています。とはいえこれが無いと同等のものを一々定義するか、これと同じことを書くかすることになるため、これは便利なものです。C++20からは`typename`を省略できるコンテキストが増えているため、あまり難しいことを考えなくてもこれを使用できます。
+
+```cpp
+template<ranges::range R>
+  // イテレータ型に対する制約を書くときに使う
+  requires same_as<ranges::iterator_t<R>, int*>
+void f(R&& r) {
+  // イテレータ型が欲しい時に使う
+  ranges::iterator_t<R> it = ranges::begin(r);
+  ranges::sentinel_t<R> se = ranges::end(r);
+
+}
+```
+
+目ざとい人は`iterator_t`だけ`range`コンセプトで制約されていない事に気付くでしょう。これはバグではなくあえての事で、`range`ではないが`ranges::begin`が適用可能な型が存在しており、そのような型からでもイテレータ型を取得できるように考慮されての事です。特に要素数不明の配列型を想定しているようです。
+
+```cpp
+// 要素数不明の配列
+extern int arr[];
+
+int main() {
+  ranges::iterator_t<decltype(arr)> p1;  // ok
+  ranges::sentinel_t<decltype(arr)> p2;  // ng
+}
+```
+
+この様な配慮は`ranges::begin`および`ranges::data`においてこの2つだけに行われており、それを受けて`iterator_t`にも表れているものです。その他の`ranges::end`や`ranges::size`ではこの配慮の必要はないため、要素数不明の配列型を明示的に禁止しています。そのため`sentinel_t`では入力の型を`range`コンセプトによって制約することができています。
+
+## `range_difference_t`
+## `range_size_t`
+## `range_value_t`
+## `range_reference_t`
+## `range_rvalue_reference_t`
 
 # その他rangeユーティリティ
 ## `subrange`
