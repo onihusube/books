@@ -1364,10 +1364,10 @@ constexpr iter_value_t<X> iter-exchange-move(X&& x, Y&& y)
 
 ```cpp
 template<class T>
-using iterator_t = decltype(ranges::begin(declval<T&>()));
+  using iterator_t = decltype(ranges::begin(declval<T&>()));
 
 template<range R>
-using sentinel_t = decltype(ranges::end(declval<R&>()));
+  using sentinel_t = decltype(ranges::end(declval<R&>()));
 ```
 
 実装は見たままで、`ranges::begin/ranges::end`を使用して入力の`range`型からイテレータ/番兵を取り出し、`decltype`でその型を取得しています。とはいえこれが無いと同等のものを一々定義するか、これと同じことを書くかすることになるため、これは便利なものです。C++20からは`typename`を省略できるコンテキストが増えているため、あまり難しいことを考えなくてもこれを使用できます。
@@ -1398,7 +1398,77 @@ int main() {
 
 この様な配慮は`ranges::begin`および`ranges::data`においてこの2つだけに行われており、それを受けて`iterator_t`にも表れているものです。その他の`ranges::end`や`ranges::size`ではこの配慮の必要はないため、要素数不明の配列型を明示的に禁止しています。そのため`sentinel_t`では入力の型を`range`コンセプトによって制約することができています。
 
-## `range_difference_t`
+## `range_difference_t/iter_difference_t`
+
+`ranges::range_difference_t`は`range`型からそのイテレータ間距離を表すための型を得るものです。そのような型はイテレータの`difference_type`と呼ばれます。
+
+```cpp
+template<class I>
+  using iter_difference_t = /*...*/;
+
+template<range R>
+  using range_difference_t = iter_difference_t<iterator_t<R>>;
+```
+
+`ranges::range_difference_t`は`iter_difference_t`を用いてイテレータ型からその距離を表す型を取得します。`remove_cvref`したイテレータ型を`I`とすると、`iter_difference_t`の示す型は次のどちらかです
+
+- `iterator_traits<I>`がプライマリテンプレートの特殊化となる場合、`incrementable_traits<I>::difference_type`
+- それ以外の場合、`iterator_traits<I>::difference_type`
+
+`iterator_traits<I>`がプライマリテンプレートの特殊化となる場合というのは、`I`が`iterator_traits`を明示的に特殊化していない時を指します。そして、`incrementable_traits`はC++20から追加された型特性クラスで、コンセプトを活用してイテレータの`difference_type`を何とか求めてくれるものです。
+
+```cpp
+namespace std {
+  // プライマリテンプレート
+  template<class>
+  struct incrementable_traits {};
+
+  // ポインタ型についての特殊化
+  template<class T>
+    requires is_object_v<T>
+  struct incrementable_traits<T*> {
+    using difference_type = ptrdiff_t;
+  };
+
+  // constを外すための特殊化
+  template<class I>
+  struct incrementable_traits<const I>
+    : incrementable_traits<I> { };
+
+  // difference_typeを定義している型についての特殊化
+  template<class T>
+    requires requires { typename T::difference_type; }
+  struct incrementable_traits<T> {
+    using difference_type = typename T::difference_type;
+  };
+
+  // difference_typeを定義していないが、差分を取ることができる型についての特殊化
+  template<class T>
+    requires (!requires { typename T::difference_type; } &&
+              requires(const T& a, const T& b) { { a - b } -> integral; })
+  struct incrementable_traits<T> {
+    using difference_type = make_signed_t<decltype(declval<T>() - declval<T>())>;
+  };
+}
+```
+
+この様に、メンバ型`difference_type`がなかったとしても取得しようとしてくれます。`incrementable_traits`は自作のイテレータ型を`iter_difference_t`で使用可能とするときにアダプトするために使用します。特に、イテレータラッパにおいてベースのイテレータ型の`difference_type`を直接取得できるようにする際に特殊化して利用されるようです。単に`difference_type`が欲しい場合は`range_difference_t/iter_difference_t`を使用した方がよりジェネリックかつ確実に`difference_type`を取得することができます。
+
+直接的には制約されていないのですが、`range_difference_t/iter_difference_t`の示す型は常に符号付整数型になります。コンセプトを辿っていくと、`weakly_incrementable`コンセプトで制約されています。自分でイテレータを定義する際も`difference_type`は符号付整数型にしなければなりません。多くの場合`ptrdiff_t`が利用されます。
+
+```cpp
+// n番目の要素を取り出す簡易な例
+template<ranges::random_access_range R>
+auto pick(R& r, ranges::range_difference_t n) {
+  auto it = ranges::begin(r);
+  it += n;
+
+  return *it;
+}
+```
+
+この様に、イテレータをいくつ進める、あるいは範囲の何番目の、などの位置に関する情報を数値で受け取りたいときにその引数型として利用することができます。なお、この例では範囲の終端チェックを省いていることに注意が必要です。
+
 ## `range_size_t`
 ## `range_value_t`
 ## `range_reference_t`
