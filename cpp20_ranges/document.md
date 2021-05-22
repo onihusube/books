@@ -403,6 +403,25 @@ template<class I>
 
 これも*forward iterator*と同様意味は同じですが求められる事が若干厳しくなっており、C++17までの*bidirectional iterator*はこのコンセプトを満たす事ができない場合があります。逆にC++20*bidirectional iterator*はC++17*bidirectional iterator*に対してほぼ後方互換性があります。
 
+### 戻り値型の制約
+
+ここでは、`requires`式の新しい構文が出現しています。
+
+```cpp
+requires(I i) {
+  { --i } -> same_as<I&>;
+  { i-- } -> same_as<I>;
+};
+```
+
+`requires`式内部の`{ expr } -> C ;`のような構文で、これは`expr`に指定される式が利用可能であることをまずチェックし、利用可能であるならばその戻り値型がコンセプト`C`を満たすかをチェックします。その際特徴的なのは、`expr`の結果型を`C`に対して自動的に補ってくれることで、`->`の後ろの`C`は実際には`C<decltype((expr))>`のように呼ばれることになります。
+
+ここで現れている`same_as<T, U>`コンセプトは`T, U`が共に同じ型であることを定義するコンセプトで、本来は2引数のコンセプトですが引数は1つしか指定されていません。この場合、その第1引数に補完が行われ、例えば1つ目の制約式では`same_as<decltype((--i)), I&>`のようになっています。`decltype((expr))`は`expr`の結果型を式として参照するために`()`を重ねており、これによって結果の型は参照型あるいは`void`となります。
+
+このような制約式の構文を、戻り値型の制約と呼びます。
+
+戻り値型の制約で行われるようなコンセプト制約の略記法は他のところでもほぼ同様に行われることがあるため、多くのコンセプトは第1引数にチェックしたい型を取るように定義されていることが多いです。例えば、変換可能性を定義する`convertible_to<From, To>`コンセプトは`{ --i } -> convertible_to<int>;`のように、`From -> To`への変換を制約します。このことを意識すると、コンセプトを書くときにより使いやすく書くことができるでしょう。
+
 ## `random_access_range`
 
 `random_access_range`はそのイテレータが*random access iterator*であるような*range*を定義するコンセプトです。
@@ -1452,7 +1471,13 @@ namespace std {
 }
 ```
 
-この様に、メンバ型`difference_type`がなかったとしても取得しようとしてくれます。`incrementable_traits`は自作のイテレータ型を`iter_difference_t`で使用可能とするときにアダプトするために使用します。特に、イテレータラッパにおいてベースのイテレータ型の`difference_type`を直接取得できるようにする際に特殊化して利用されるようです。単に`difference_type`が欲しい場合は`range_difference_t/iter_difference_t`を使用した方がよりジェネリックかつ確実に`difference_type`を取得することができます。
+要するに、イテレータ型を`I`として次の3つの経路で`difference_type`を探します
+
+- `I::difference_type`
+- `I`の`oeprator-`（2項演算）の戻り値型
+- `std::incrementable_traits<I>`の明示的/部分特殊化
+
+メンバ型`difference_type`がなかったとしても取得しようとしてくれます。`incrementable_traits`は自作のイテレータ型を`iter_difference_t`で使用可能とするときにアダプトするために特殊化して使用します。特に、イテレータラッパにおいてベースのイテレータ型の`difference_type`を直接取得できるようにする際に特殊化して利用されるようです。単に`difference_type`が欲しい場合は`range_difference_t/iter_difference_t`を使用した方がよりジェネリックかつ確実に`difference_type`を取得することができます。
 
 直接的には制約されていないのですが、`range_difference_t/iter_difference_t`の示す型は常に符号付整数型になります。コンセプトを辿っていくと、`weakly_incrementable`コンセプトで制約されています。自分でイテレータを定義する際も`difference_type`は符号付整数型にしなければなりません。多くの場合`ptrdiff_t`が利用されます。
 
@@ -1470,9 +1495,206 @@ auto pick(R& r, ranges::range_difference_t n) {
 この様に、イテレータをいくつ進める、あるいは範囲の何番目の、などの位置に関する情報を数値で受け取りたいときにその引数型として利用することができます。なお、この例では範囲の終端チェックを省いていることに注意が必要です。
 
 ## `range_size_t`
-## `range_value_t`
-## `range_reference_t`
-## `range_rvalue_reference_t`
+
+`ranges::range_size_t`は`range`型からその長さの型を取得するものです。
+
+```cpp
+template<sized_range R>
+  using range_size_t = decltype(ranges::size(declval<R&>()));
+```
+
+つまりは、`ranges::size`の戻り値型を取得するものです。
+
+当然入力となる`range`型はサイズを求めることができなくてはならないので、`sized_range`コンセプトで制約されています。
+
+```cpp
+template<ranges::sized_range R>
+void f(R&& r, int n) {
+  // この型が符号なし整数型とすると
+  auto len = ranges::size(r);
+  
+  // 安全のため明示的に型を合わせる
+  if (ranges::range_size_t<R>(n) < len) {
+    // ...
+  }
+}
+```
+
+あまり有用そうな使い方は思いつかないですが、このように`ranges::size`の戻り値が欲しい時に使用できます。ちなみに、C++20よりこの例のような整数型の比較を安全に行ってくれる便利な関数が`<utility>`に追加されています。
+
+```cpp
+// n < lenを安全かつ確実に比較する
+if (std::cmp_less(n, len)) {
+  // ...
+}
+```
+
+整数型の符号有無で警告が発せられたり、比較が意図通りにならなかったりと困ることは多かったので、この関数はとても便利です。
+
+## `range_value_t/iter_value_t`
+
+`ranges::range_value_t`は`range`型の要素の値型を取得するものです。そのような型はイテレータの`value_type`と呼ばれます。
+
+```cpp
+template<class I>
+  using iter_value_t = /*...*/;
+
+template<range R>
+  using range_value_t = iter_value_t<iterator_t<R>>;
+```
+
+`ranges::range_value_t`は`iter_value_t`を用いてイテレータ型からその距離を表す型を取得します。`remove_cvref`したイテレータ型を`I`とすると、`iter_value_t`の示す型は次のどちらかです
+
+- `iterator_traits<I>`がプライマリテンプレートの特殊化となる場合、`indirectly_readable_traits<I>::value_type`
+- それ以外の場合、`iterator_traits<I>::value_type`
+
+`iter_difference_t`と似たような感じです。`indirectly_readable_traits`はC++20から追加された型特性クラスで、コンセプトを活用してイテレータの`value_type`を何とか求めてくれるものです。
+
+```cpp
+namespace std {
+
+  // 素の型を取得しvalue_typeという名前に変換する、説明専用型特性
+  template<class>
+  struct cond-value-type { };
+
+  template<class T>
+    requires is_object_v<T>
+  struct cond-value-type<T> {
+    using value_type = remove_cv_t<T>;
+  };
+
+
+  // プライマリテンプレート
+  template<class>
+  struct indirectly_readable_traits { };
+
+  // ポインタ型についての特殊化
+  template<class T>
+  struct indirectly_readable_traits<T*>
+    : cond-value-type<T> { };
+
+  // 配列型についての特殊化
+  template<class I>
+    requires is_array_v<I>
+  struct indirectly_readable_traits<I> {
+    using value_type = remove_cv_t<remove_extent_t<I>>;
+  };
+
+  // constを外すための特殊化
+  template<class I>
+  struct indirectly_readable_traits<const I>
+    : indirectly_readable_traits<I> { };
+
+  // 説明専用コンセプト
+  template<class T>
+  concept has-member-value-type = requires { typename T::value_type; };
+  template<class T>
+  concept has-member-element-type = requires { typename T::element_type; };
+
+  // value_typeを定義している型についての特殊化
+  template<has-member-value-type T>
+  struct indirectly_readable_traits<T>
+    : cond-value-type<typename T::value_type> { };
+
+  // element_typeを定義している型についての特殊化
+  template<has-member-element-type T>
+  struct indirectly_readable_traits<T>
+    : cond-value-type<typename T::element_type> { };
+
+  // value_typeとelement_typeを両方定義している型についての特殊化
+  template<has-member-value-type T>
+    requires has-member-element-type<T> &&
+             same_as<remove_cv_t<typename T::element_type>, 
+                     remove_cv_t<typename T::value_type>>; }
+  struct indirectly_readable_traits<T>
+    : cond-value-type<typename T::value_type> { };
+}
+```
+
+定義はなかなか複雑ですが、イテレータ型を`I`として主次の3つの経路で`value_type`を取得します
+
+- `I::value_type`
+- `I::element_type`
+- `std::indirectly_readable_traits<I>`の明示的/部分特殊化
+
+メンバ型`value_type`がなかったとしても取得しようとしてくれます。`indirectly_readable_traits`は自作のイテレータ型を`iter_value_t`で使用可能とするときにアダプトするために特殊化して使用します。単に`value_type`が欲しい場合は`range_value_t/iter_value_t`を使用した方がよりジェネリックかつ確実に`value_type`を取得することができます。
+
+```cpp
+template<ranges::range R>
+void f(R& r, ranges::range_value_t<R> v) {
+  bool b = std::ranges::find_if(r, v);
+  // ...
+}
+```
+
+このように、関数の引数などで`range`の要素の参照型ではなく値型が欲しい時に使用できます。例にある`ranges::find_if`はRangeライブラリと共に追加されたRangeアルゴリズムの一つで`std::find_if`を`range`に対応させたものです。
+
+## `range_reference_t/iter_reference_t`
+
+`range_reference_t`は`range`の要素を指す参照型を取得します。そのような型はイテレータの`reference_type`（参照型）と呼ばれます。
+
+```cpp
+template<dereferenceable I>
+  using iter_reference_t = decltype(*declval<I&>());
+
+template<range R>
+  using range_reference_t = iter_reference_t<iterator_t<R>>;
+```
+
+`iter_reference_t`はとても潔い定義になっています。この通り、`range`のイテレータの間接参照の結果の型がイテレータの参照型です。参照型と呼ばれてはいますが、イテレータの間接参照の結果は左辺値参照である必要はなく、右辺値（*prvalue*）であっても構いません。参照型というのは歴史的な呼び名です。
+
+この定義からも分かるように、`range`あるいはイテレータと呼ばれるものであれば自然にこれらを利用できるはずです。
+
+`iter_reference_t`を制約している`dereferenceable`コンセプトは、間接参照の結果型が`void`ではないことを表す説明専用のコンセプトです（`std::dereferenceable`コンセプトは存在しません）。とても簡易な制約なため、`iter_reference_t`はスマートポインタ型や`std::optional`などでも利用できます。
+
+```cpp
+template<ranges::range R>
+void f(R& r, ranges::range_reference_t<R> v) {
+  bool b = std::ranges::find_if(r, v);
+  // ...
+
+  // 可能なら参照する
+  ranges::range_reference_t<R> e = *ranges::begin(r);
+}
+```
+
+これは比較的よく使いそうな気がします。`range`のイテレータの間接参照の型そのものが使いたい時や、イテレータから要素を取り出すときに受ける型が欲しい時などに使用できます。
+
+## `range_rvalue_reference_t/iter_rvalue_reference_t`
+
+`range_reference_t`は`range`の要素を指す右辺値参照型を取得します。
+
+```cpp
+template<dereferenceable I>
+    requires requires(I& i) {
+      { ranges::iter_move(i) } -> can-reference;
+    }
+  using iter_rvalue_reference_t = decltype(ranges::iter_move(declval<I&>()));
+
+template<range R>
+  using range_rvalue_reference_t = iter_rvalue_reference_t<iterator_t<R>>;
+```
+
+従来のイテレータにはこれに対応する型はありませんでした。
+
+`iter_rvalue_reference_t`は少し複雑な定義をされていますが、`ranges::iter_move`CPOの戻り値型を取得しており、行われている制約は`ranges::iter_move`CPOが利用可能であるかをチェックしています。`ranges::iter_move`はイテレータ`i`に対して`*i`が左辺値なら`std::move(*i)`を、右辺値なら`*i`をそのまま得るものなので、その型を得るということは要素を参照する右辺値参照型もしくは*prvalue*である要素の素の型を取得することになります。
+
+ここでの制約式は初めて見る構文もあり少し複雑です。`dereferenceable`コンセプトに加えて、`requires`節の中で`requires`式を使用して制約されています。`requires`節では`bool`を返す任意の式を制約式として`&& ||`でつないでいくことしかできず、そのままだと表現力が足りません。`requires`式も1つの式としては`bool`を返す式であり`requires`節の中で使用することができて、`requires`式の中ではより柔軟な制約を行うことができます。そのため、`requires`節と`requires`式を組み合わせて制約を行うことは良く行われます。`requires requires`と並ぶのは違和感がありますが、慣れましょう・・・。
+
+`requires`式の中では戻り値型の制約構文で`ranges::iter_move`が使用可能であることと、その戻り値型を`can-reference`コンセプトによってチェックしています。`can-reference`コンセプトは型が`void`ではないことをチェックする説明専用のものです。つまり全体では`ranges::iter_move`が使用可能であり何かしら結果を返すことを制約しています。
+
+これは例えば次のように、`range`の要素を上書きしてムーブ代入したいとき、そのような処理を行う関数の引数型として使用できます。
+
+```cpp
+template<ranges::range R>
+void replace(R& r, ranges::range_rvalue_reference_t<R> rv) {
+  auto it = ranges::begin(r);
+  *it = std::move(rv);
+  // ...
+}
+```
+
+## `iter_common_reference_t`
 
 # その他rangeユーティリティ
 ## `subrange`
