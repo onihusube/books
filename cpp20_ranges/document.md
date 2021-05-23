@@ -1697,8 +1697,114 @@ void replace(R& r, ranges::range_rvalue_reference_t<R> rv) {
 ## `iter_common_reference_t`
 
 # その他rangeユーティリティ
-## `subrange`
 ## `view_interface`
+
+`view_interface`は`view`を定義するときに必要となる物の共通部分を集めたクラスです。`view`型はこのクラスを継承して利用することが推奨されます。
+
+```cpp
+template<class D>
+  requires is_class_v<D> && same_as<D, remove_cv_t<D>>
+class view_interface : public view_base ;
+```
+
+コンセプトが示すのは、`D`がクラス型でありCV修飾されていないという事です。
+
+`view_interface`利用時は、CRTPによって自身の型を渡しつつ継承することで利用します。
+
+```cpp
+// 自作のviewを定義するとき、CRTPして継承する
+template<ranges::range R>
+class my_view : ranges::view_interface<my_view<R>> {
+  // ...
+}
+```
+
+`view_interface`が`ranges::view_base`を基底に持つことによって、`view_interface`を継承した型は自動的に`ranges::enable_view`が`true`になるようになり、ほかの条件を満たしていれば`view`コンセプトのモデルとなることができます。
+
+これだけではなく、`view_interface<D>`では型`D`が満たす性質によって、利用可能となるコンテナインターフェースを自動的に有効化してくれます。
+
+```cpp
+template<class D>
+  requires is_class_v<D> && same_as<D, remove_cv_t<D>>
+class view_interface : public view_base {
+public:
+  constexpr bool empty() requires forward_range<D>;
+
+  constexpr explicit operator bool()
+    requires requires { ranges::empty(derived()); };
+
+  constexpr auto data() requires contiguous_iterator<iterator_t<D>>;
+
+  constexpr auto size()
+    requires forward_range<D> &&
+             sized_sentinel_for<sentinel_t<D>, iterator_t<D>>;
+
+  constexpr decltype(auto) front() requires forward_range<D>;
+
+  constexpr decltype(auto) back() requires bidirectional_range<D> && common_range<D>;
+
+  template<random_access_range R = D>
+  constexpr decltype(auto) operator[](range_difference_t<R> n);
+};
+```
+
+省略していますが、全て`const`オーバーロードも用意されています。
+
+ここでは後置`requires`節によって、クラステンプレートの非テンプレートメンバ関数の制約が行われています。そこでは主に、`D`がどのタイプの`range`なのかによってそれぞれの関数を有効化するか否かが決定されています。
+
+- `empty()`
+    - `D`が`forward_range`であるとき
+- `operator bool`
+    - `D`のオブジェクト`d`に対して、`ranges::empty(d)`が利用可能であるとき
+- `data()`
+    - `D`イテレータが`contiguous_iterator`であるとき
+- `size()`
+    - `D`が`forward_range`であり
+    - `D`のイテレータと番兵の引き算によってサイズを求められる時
+- `front()`
+    - `D`が`forward_range`であるとき
+- `back()`
+    - `D`が`bidirectional_range`であり`common_range`であるとき
+- `operator[]`
+    - `D`が`random_access_range`であるとき
+
+```cpp
+// 自作のview
+template<ranges::range R>
+class my_view : ranges::view_interface<my_view<R>> {
+  // ...
+}
+
+int main() {
+  int arr[] = {1, 2, 3, 4};
+  my_view mv{arr};
+
+  // 基底のrange型がranges::emptyを利用可能なら
+  bool(mv);
+
+  // my_viewがforward_rangeなら
+  mv.empty();
+  mv.front();
+
+  // さらに、 my_viewのイテレータがsized_sentinel_forのモデルであるなら
+  mv.size();
+
+  // さらに、bidirectional_rangeかつcommon_rangeなら
+  mv.back();
+
+  // random_access_rangeなら
+  mv[1];
+
+  // さらに、contiguous_rangeなら
+  mv.data();
+}
+```
+
+このように、`view_interface`は`view`の定義の一部を自動化してくれるものです。自分で`view`を作る場合に利用しないという選択肢はないかと思われます。
+
+また、`view_interface<D>`は`D`が不完全型であっても特殊化することができ、その場合は`view_interface`のメンバ関数を参照する前に`D`の定義が完了する必要があります。
+
+## `subrange`
 ## `dangling`
 
 # Rangeファクトリ
