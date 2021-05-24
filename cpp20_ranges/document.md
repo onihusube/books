@@ -1696,7 +1696,8 @@ void replace(R& r, ranges::range_rvalue_reference_t<R> rv) {
 
 ## `iter_common_reference_t`
 
-# その他rangeユーティリティ
+# `subrange`
+
 ## `view_interface`
 
 `view_interface`は`view`を定義するときに必要となる物の共通部分を集めたクラスです。`view`型はこのクラスを継承して利用することが推奨されます。
@@ -1805,7 +1806,44 @@ int main() {
 また、`view_interface<D>`は`D`が不完全型であっても特殊化することができ、その場合は`view_interface`のメンバ関数を参照する前に`D`の定義が完了する必要があります。
 
 ## `subrange`
+
+`ranges::subrange`は任意のイテレータペアをラップすることのできる`range`型です。`std::span`が連続したメモリ領域のポインタと長さをラップして参照するものであるように、`subrange`は任意の範囲についてのイテレータ2つあるいはイテレータと番兵から、その範囲を参照する`range`を作成します。
+
+その性質から`subrange`は明らかに`view`であり、常に`view`コンセプトのモデルとなります。
+
+```cpp
+// イテレータペアを受け取る旧来のインターフェース
+template<typename I>
+void old_range_algo(I i1, I i2) {
+  // イテレータペア -> range へ変換
+  ranges::subrange sr{i1, i2};
+
+  // 範囲forでイテレートできる
+  for (const auto& v : sr) {
+    // ...
+  }
+
+  // Rangeアルゴリズムで使用可能にする
+  ranges::find_if(sr, [](const auto& v) { /*...*/ });
+
+  // Range Adopterで使用可能にする
+  for (const auto& v : sr | views::filter( /*...*/ )
+                          | views::transform( /*...*/ ))
+  {
+    // ...
+  }
+}
+```
+
+`subrange`は主に、旧来のイテレータペアによる範囲の取り回しとC++20 Rangeライブラリとの橋渡しをしてくれるものです。上記例の様に、イテレータペアを`range`（`view`）へ変換することで、Rangeライブラリの多くの機能を利用できるようになります。
+
+# dangling iterator handling
+
 ## `dangling`
+
+## `borrowed_iterator_t`
+
+## `borrowed_subrange_t`
 
 # Rangeファクトリ
 
