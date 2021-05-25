@@ -1839,7 +1839,97 @@ void old_range_algo(I i1, I i2) {
 
 # dangling iterator handling
 
+関数の引数などとして`range`を取りまわす時、`range`をコピーして取りまわすなんてことをするはずはなく、`view`や`borrowed_range`の様な範囲を参照する形でやり取りすることになります。その際に問題となるのは、参照先の範囲の寿命が先に尽きて、その範囲への参照あるいはイテレータが無効になってしまう事です。これは未定義動作に繋がり、そのような参照やイテレータの事をダングリング参照/イテレータと呼びます。
+
+Rangeライブラリでは安全のためにダングリングとなる場合を可能な範囲でコンパイル時に検出しようとします。たとえば`viewable_range`コンセプトは入力となる`range`がダングリングとならない事を保証しようとするコンセプトでした。基本的には`viewable_range`同様に、入力となる`range`が右辺値であり自身の処理の結果ダングリングなものを返しうるとき、コンパイルエラーとなるようになっています。
+
+他にも、入力`range`から取得したイテレータ/`subrange`を返す処理において、戻り値の利用が安全でない場合に代わりの型を返す仕組みが用意されています。
+
 ## `dangling`
+
+`ranges::dangling`は出力となるイテレータがダングリングとなる場合に代わりに返されるタグ型です。
+
+```cpp
+struct dangling {
+  constexpr dangling() noexcept = default;
+
+  template<class... Args>
+  constexpr dangling(Args&&...) noexcept { }
+};
+```
+
+C++20でリファインされるRangeアルゴリズムと呼ばれる関数のうち、`range`を受け取りそのイテレータを返すタイプの関数において利用されます。
+
+```cpp
+// prvalueなrangeを返す関数
+auto f() -> std::vector<int>;
+
+int main() {
+  // f()の戻り値はこの行で寿命が尽きる
+  auto result1 = ranges::find(f(), 42);
+  // decltype(result1) == ranges::dangling
+}
+```
+
+`ranges::find`は`std::find`と同じことをイテレータ範囲ではなく`range`オブジェクトの指す範囲に対して行います。この様に、入力となる`range`が右辺値であるとき`ranges::find`の処理終了後に返されるイテレータはダングリングイテレータとなります。
+
+しかし、C++20のRangeアルゴリズムはこれをコンパイル時に認識し、結果としてのイテレータを返す代わりに`ranges::dangling`のオブジェクトを返します。`dangling`は当然イテレータとして利用可能なものではないので、これをイテレータとして利用しようとするとコンパイルエラーになり、気付くことができます。
+
+このような入力`range`のイテレータ/`subrange`を返すようなRangeアルゴリズムでは、入力の範囲型が`borrowed_range`のモデルとならない場合に`dangling`を返します。一方、入力の範囲型が`borrowed_range`のモデルとなり、戻り値の利用が安全であるときは通常の期待される結果を返します。
+
+```cpp
+// prvalueなrangeを返す関数
+auto f() -> std::vector<int>;
+
+int main() {
+  auto result1 = ranges::find(f(), 42);
+  // decltype(result1) == ranges::dangling
+
+  auto vec = f();
+
+  // 共に入力rangeはborrowed_rangeである
+  auto result2 = ranges::find(vec, 42);
+  auto result3 = ranges::find(subrange{vec}, 42);
+}
+```
+
+この場合の`result2/result3`は正しく`std::vector<int>::iterator`が返されます。`subrange`は`enable_borrowed_range`が`true`となるように特殊化されているため、右辺値であっても`borrowed_range`のモデルとなります。
+
+ただ、イテレータとして利用しようとしなければ、上記`result1`の様な`dangling`の初期化そのものはエラーとなりません。コードによっては実際に使用する所と初期化位置が離れてしまって、コンパイルエラーメッセージの読み解きが辛くなることもあるでしょう。なるべくその場で気付き、またエラーが起きてほしいものです。とはいえ一々`static_assert`するのも面倒です・・・
+
+そこで、コンセプトによる変数の制約を利用すると、返された`dangling`のオブジェクトを利用する前に`dangling`が返されていることに気付くことができます。
+
+```cpp
+// prvalueなrangeを返す関数
+auto f() -> std::vector<int>;
+
+int main() {
+  // コンセプトによる変数の制約
+  std::input_or_output_iterator auto result1 = ranges::find(f(), 42);
+}
+```
+
+コンセプトによる変数の制約はこの様に`auto`で変数を宣言しているときにのみ使用することができ、`auto`の前にコンセプトを指定することによって制約します。この時、`C auto v = ...;`の様に指定されたコンセプト`C`には、`requires`式における戻り値型の制約の時と同様に第一引数が補われ、`C<decltype((v))>`の様な制約がチェックされることになります。
+
+上記例では、`input_or_output_iterator<decltype((result1))>`の様に型を補われたコンセプトによる制約がチェックされています。`input_or_output_iterator`はイテレータとしての最小要件を定めるコンセプトであるため、`dangling`では構文的にすら満たすことができずにその場でコンパイルエラーが発せられます。しかし、戻り値として正しくイテレータが返っている場合はコンセプトによる制約をパスし、エラーにはなりません。
+
+```cpp
+// prvalueなrangeを返す関数
+auto f() -> std::vector<int>;
+
+int main() {
+  // エラー
+  std::input_or_output_iterator auto result1 = ranges::find(f(), 42);
+
+  auto vec = f();
+
+  // 共にOK
+  std::input_or_output_iterator auto result2 = ranges::find(vec, 42);
+  std::input_or_output_iterator auto result3 = ranges::find(subrange{vec}, 42);
+}
+```
+
+少し変数宣言が長くなってしまうのが欠点ですが、それに見合った恩恵はあるかと思われます。特に、intellisenseのようなリアルタイムのコードチェックが働いている環境だと、より素早く的確に`dangling`が返されていることに気付くことができるでしょう。
 
 ## `borrowed_iterator_t`
 
