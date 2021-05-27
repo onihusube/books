@@ -1931,9 +1931,47 @@ int main() {
 
 少し変数宣言が長くなってしまうのが欠点ですが、それに見合った恩恵はあるかと思われます。特に、intellisenseのようなリアルタイムのコードチェックが働いている環境だと、より素早く的確に`dangling`が返されていることに気付くことができるでしょう。
 
-## `borrowed_iterator_t`
+## `borrowed_iterator_t/borrowed_subrange_t`
 
-## `borrowed_subrange_t`
+`borrowed_iterator_t/borrowed_subrange_t`は`ranges::dangling`の利用を簡易化するエイリアステンプレートです。
+
+```cpp
+template<range R>
+  using borrowed_iterator_t = conditional_t<borrowed_range<R>, iterator_t<R>, dangling>;
+
+template<range R>
+  using borrowed_subrange_t =
+    conditional_t<borrowed_range<R>, subrange<iterator_t<R>>, dangling>;
+```
+
+入力の型`R`が`borrowed_range`であるかによってイテレータ/`subrange`と`dangling`を切り替えます。
+
+これはRangeライブラリのユーザーが直接使用するものではなく、主にRangeアルゴリズムの実装に使用されるものです。自分で`range`を受け取りイテレータや`subrange`を返すような処理を書くときにも使用できるかもしれません。
+
+```cpp
+template<range R>
+borrowed_iterator_t<R> my_algo_ret_iter(R&& r) {
+  auto it = ranges::begin(r);
+  
+  // ...
+
+  return it;
+}
+
+template<range R>
+borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
+  auto it = ranges::begin(r);
+  auto end = ranges::end(r);
+
+  // ...
+
+  return ranges::subrange{it, end};
+}
+```
+
+内部で`borrowed_iterator_t/borrowed_subrange_t`が`dangling`を示すかどうかによって何を返すか切り替える必要があるのでは？と思われるかもしれませんが、`dangling`の定義をよく見るとコンストラクタが2つあり、2つ目のコンストラクタは任意の数の引数を受け取って何もせずに`ranges::dangling`を構築しています。
+
+この2つ目のブラックホールコンストラクタが呼ばれることによってイテレータ/`subrange`から`dangling`への暗黙変換が可能になっており、戻り値型に`borrowed_iterator_t/borrowed_subrange_t`さえ使っておけば内部の処理ではそのことを何ら気に知る必要がないようになっているわけです。
 
 # Rangeファクトリ
 
