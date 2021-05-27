@@ -1946,9 +1946,12 @@ template<range R>
 
 入力の型`R`が`borrowed_range`であるかによってイテレータ/`subrange`と`dangling`を切り替えます。
 
-これはRangeライブラリのユーザーが直接使用するものではなく、主にRangeアルゴリズムの実装に使用されるものです。自分で`range`を受け取りイテレータや`subrange`を返すような処理を書くときにも使用できるかもしれません。
+これはRangeライブラリのユーザーが直接使用するものではなく、主に`dangling`を返しうるRangeアルゴリズムの実装に使用されるものです。自分で`range`を受け取りイテレータや`subrange`を返すような処理を書くときにも使用できるかもしれません。
+
+`range`を受け取る関数の戻り値型として、例えば次のように使用します。
 
 ```cpp
+// 入力rangeのイテレータを返す処理
 template<range R>
 borrowed_iterator_t<R> my_algo_ret_iter(R&& r) {
   auto it = ranges::begin(r);
@@ -1958,6 +1961,7 @@ borrowed_iterator_t<R> my_algo_ret_iter(R&& r) {
   return it;
 }
 
+// 入力rangeのsubrangeを返す処理
 template<range R>
 borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
   auto it = ranges::begin(r);
@@ -1969,9 +1973,11 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 }
 ```
 
-内部で`borrowed_iterator_t/borrowed_subrange_t`が`dangling`を示すかどうかによって何を返すか切り替える必要があるのでは？と思われるかもしれませんが、`dangling`の定義をよく見るとコンストラクタが2つあり、2つ目のコンストラクタは任意の数の引数を受け取って何もせずに`ranges::dangling`を構築しています。
+この様に使用するだけで、入力`range`が`borrowed_range`じゃなければ`dangling`を返しそれ以外の場合は処理結果のイテレータ/`subrange`を返す、という事が出来ます。
 
-この2つ目のブラックホールコンストラクタが呼ばれることによってイテレータ/`subrange`から`dangling`への暗黙変換が可能になっており、戻り値型に`borrowed_iterator_t/borrowed_subrange_t`さえ使っておけば内部の処理ではそのことを何ら気に知る必要がないようになっているわけです。
+内部で`borrowed_iterator_t/borrowed_subrange_t`が`dangling`を示すかどうかによって何を返すか切り替える必要があるのでは？と思われるかもしれませんが、`dangling`の定義をよく見るとコンストラクタが2つあり、2つ目のコンストラクタは任意の数の引数を受け取って何もせずに`ranges::dangling`を構築しています。この2つ目のブラックホールコンストラクタが呼ばれることによってイテレータ/`subrange`から`dangling`への暗黙変換が可能になっており、戻り値型に`borrowed_iterator_t/borrowed_subrange_t`さえ使っておけば内部の処理ではそのことを何ら気にしなくてもいいようになっているわけです。
+
+`dangling`を返す場合でも内部の処理が通常通り行われている事が気になるかもしれませんが、`dangling`を返している場合というのは通常コンパイル時に気付くはずで、`dangling`を返している処理が実行されることはないはずです。もしコンパイル時に気付かなかったとすれば、それは戻り値を無視しているという事なのでそれはそれでバグでしょう。いずれにせよ、変数に対するコンセプトなどによって`dangling`が返されていることに素早く気付くようにしておく事が推奨されます。
 
 # Rangeファクトリ
 
