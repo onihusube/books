@@ -1973,11 +1973,11 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 }
 ```
 
-この様に使用するだけで、入力`range`が`borrowed_range`じゃなければ`dangling`を返しそれ以外の場合は処理結果のイテレータ/`subrange`を返す、という事が出来ます。
+この様に使用するだけで、入力`range`が`borrowed_range`でなければ`dangling`を返しそれ以外の場合は処理結果のイテレータ/`subrange`を返す、という事が出来ます。
 
 内部で`borrowed_iterator_t/borrowed_subrange_t`が`dangling`を示すかどうかによって何を返すか切り替える必要があるのでは？と思われるかもしれませんが、`dangling`の定義をよく見るとコンストラクタが2つあり、2つ目のコンストラクタは任意の数の引数を受け取って何もせずに`ranges::dangling`を構築しています。この2つ目のブラックホールコンストラクタが呼ばれることによってイテレータ/`subrange`から`dangling`への暗黙変換が可能になっており、戻り値型に`borrowed_iterator_t/borrowed_subrange_t`さえ使っておけば内部の処理ではそのことを何ら気にしなくてもいいようになっているわけです。
 
-`dangling`を返す場合でも内部の処理が通常通り行われている事が気になるかもしれませんが、`dangling`を返している場合というのは通常コンパイル時に気付くはずで、`dangling`を返している処理が実行されることはないはずです。もしコンパイル時に気付かなかったとすれば、それは戻り値を無視しているという事なのでそれはそれでバグでしょう。いずれにせよ、変数に対するコンセプトなどによって`dangling`が返されていることに素早く気付くようにしておく事が推奨されます。
+`dangling`を返す場合でも内部の処理が通常通り行われている事が気になるかもしれませんが、`dangling`を返している場合というのは通常コンパイル時に気付くはずで、`dangling`を返している処理が実行されることはないはずです。もしコンパイル時に気付かなかったとすれば、それは戻り値を無視しているという事なのでそれはそれでバグでしょう。いずれにせよ、利用側では変数に対するコンセプトなどによって`dangling`が返されていることに素早く気付くようにしておく事が推奨されます。
 
 # Rangeファクトリ
 
@@ -2004,6 +2004,135 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 
 # Rangeアルゴリズム
 
+`<alogoritgm>`ヘッダに従来からある各種アルゴリズムは古くから存在しており、コンセプトやRangeライブラリに合わせた設計にはなっていません。とはいえ削除したりインターフェースを変更したりすると後方互換を破壊してしまうので今更変更を加えることはできません。
+
+そこで、`std::ranges`名前空間を追加し、その下に従来のアルゴリズムに対応したRangeアルゴリズムを追加します。RangeアルゴリズムはRangeライブラリをベースとして設計されており、効果そのものは大きく変わりませんがより利用しやすくなっています。
+
 ## 基本形
+
+C++17までのアルゴリズムはイテレータペアを受け取って処理を行うものでしたが、C++20からのRangeアルゴリズムはイテレータペアに加えて`range`を直接受け取ることができます。
+
+例えば`find`アルゴリズムで見てみると、以前は次の2つの宣言がありました
+
+```cpp
+namespace std {
+  // 基本
+  template<class InputIterator, class T>
+  constexpr InputIterator find(InputIterator first, InputIterator last,
+                               const T& value);
+
+  // Parallel Algorithm
+  template<class ExecutionPolicy, class ForwardIterator, class T>
+  ForwardIterator find(ExecutionPolicy&& exec, ForwardIterator first, ForwardIterator last,
+                       const T& value);
+}
+```
+
+C++20 Rangeアルゴリズムでは次のものが追加されます
+
+```cpp
+namespace std::ranges {
+  // イテレータペアを受け取る
+  template<input_iterator I, sentinel_for<I> S, class T, class Proj = identity>
+    requires indirect_binary_predicate<ranges::equal_to, projected<I, Proj>, const T*>
+  constexpr I find(I first, S last, const T& value, Proj proj = {});
+
+  // rangeを受け取る
+  template<input_range R, class T, class Proj = identity>
+    requires indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
+  constexpr borrowed_iterator_t<R>
+      find(R&& r, const T& value, Proj proj = {});
+}
+```
+
+見辛いですね・・・  
+どこが関数名なのかすら少し迷ってしまいます。
+
+関数名の行だけを抜き出して比べてみると
+
+```cpp
+// old find
+constexpr InputIterator find(InputIterator first, InputIterator last, const T& value);
+
+// new find
+constexpr I find(I first, S last, const T& value, Proj proj = {});
+
+// range find
+constexpr borrowed_iterator_t<R> find(R&& r, const T& value, Proj proj = {});
+```
+
+こうしてみると、追加されたのはイテレータペアを受け取るものと`range`を受け取るものの2つであることが分かるでしょうか。引数も`range`を受け取るものはイテレータペアの代わりに`range`オブジェクトを受けており、両方とも最後に謎の`proj`なるものが追加されている以外はそのままであることが分かります。
+
+`proj`は射影（*Projection*）と呼ばれる機能で、後程詳しく説明します。
+
+`ranges::fing`の2つの気になる差は戻り値型に`borrowed_iterator_t`を使用しているか否かでしょう。イテレータペアを受ける方は使用していません。これは、入力が右辺値となりダングリングイテレータを返す危険があるのは`range`を受け取る時だけだとみなせるためで、同じ`range`についてのイテレータペアを取得しているという事は、少なくともその`range`オブジェクトは左辺値であるはずだからです。
+
+```cpp
+// prvalueなrangeを返す関数
+auto f() -> std::vector<int>;
+
+int main() {
+  auto vec = f();
+
+  // イテレータペアを取得するには、左辺値になっているはず
+  auto it = ranges::find(vec.begin(), vec.end(), 20);
+}
+```
+
+そもそもイテレータだけからでは元の`range`の有効性を判定できないというのもありますが、このような制約を考慮すればイテレータペアについては戻り値がダングリングとなる可能性は低いでしょう。もしそうなる場合はそもそも入力のイテレータからおかしいため、ユーザーの責任となります。
+
+なお、このような場合でも`ranges::begin/ranges::end`を使用するようにすると、右辺値の（`view`などではない）`range`からイテレータ/番兵を取得できないためより安全です。
+
+そして、従来のアルゴリズムとRangeアルゴリズムの特徴的な差異はRangeアルゴリズムのテンプレートパラメータは全てコンセプトによって制約されていることです。
+
+今度はRangeアルゴリズムの制約だけを見てみましょう
+
+```cpp
+// new find
+template<input_iterator I, sentinel_for<I> S, class T, class Proj = identity>
+  requires indirect_binary_predicate<ranges::equal_to, projected<I, Proj>, const T*>
+
+// range find
+template<input_range R, class T, class Proj = identity>
+  requires indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
+```
+
+ここだけ見てみるとなんとなく同じようなことをしていることがうっすらと見えてきます。
+
+ここでも*projection*関連は無視します。
+
+イテレータペアを受け取るものは、それがきちんとイテレータペアとなっていることをコンセプトによって表現しています。`input_iteraotr`（入力イテレータを定義するコンセプト）`I`に対して`S`はその`sentinel_for<I>`でなければなりません。
+
+ここで、`sentinel_for<I> S`の様な制約の形式では`sentinel_for`コンセプトの第一引数の指定が省略され、自動的に補われています。`sentinel_for`は本来2引数のコンセプトであり、ここでは正しくは`sentinel_for<I, S>`というコンセプトがチェックされます。戻り値型の制約などで第一引数が補われていたことがここでも行われているわけです。もしこれが行われない場合、型パラメータ`S`の宣言と同時に制約を行うことができず、あとから`requires`式で制約しなければならなくなってしまうため、使いづらくなってしまいます。
+
+`range`を受け取る方は、それが`input_range`であることをシンプルに表現しています。
+
+最後に残ったのは`indirect_binary_predicate`というコンセプトです。`indirect_binary_predicate<F, I1, I2>`は間接参照可能な型（イテレータやポインタ型）`I1, I2`の参照先の型によって`F`が呼び出し可能であり、その結果が`bool`となることを定義するコンセプトです。
+
+`F, I1, I2`のオブジェクトをそれぞれ`pred, i1, i2`とすると、`bool c = pred(*i1, *i2)`の様な呼び出しが可能であることを表しています。
+
+C++STLでは、1つ以上の引数を受け取ってそれについて何かを判定してその結果を`bool`で返す、様な関数の事を述語（*predicate*）と呼んでいます。この場合の`F`は2つの引数を受け取る必要があるため二項述語（*bibary predicate*）と呼ばれ、さらにその引数は間接参照（*indirect read*）の結果として与えられる、という事を`indirect_binary_predicate`という名前は表しています。
+
+これは`find`が内部でやることを考えたら正当な要求であることが分かるでしょう。例えば次のように実装できるでしょう
+
+```cpp
+// ranges::findの簡易実装（projectionはないものとして）
+template<input_iterator I, sentinel_for<I> S, class T>
+  requires indirect_binary_predicate<ranges::equal_to, I, const T*>
+constexpr I find(I first, S last, const T& value) {
+  ranges::equal_to pred{};
+
+  for (; first != last; ++first) {
+    if (pred(*first, value) == true) return first;
+  }
+
+  return last;
+}
+```
+
+`range`を受け取る方はそこから取得したイテレータ/番兵を、このイテレータペアを受け取る方に渡すことで実装できます。
+
+ここで使用されているように、`ranges::equal_to`は`==`による比較を行うための関数オブジェクトです。結果、`indirect_binary_predicate<ranges::equal_to, projected<I, Proj>, const T*>`というような制約は、上記のような実装においての`for`の中の判定部分の様な記述が可能であることを表現していることが分かります。（`indirect_binary_predicate`はイテレータ用のものなので、非イテレータの値との比較の制約を行うために、最後の引数に`const T*`というポインタ型を渡しています）
+
 ## 射影（*Projection*）
 ## ADLの無効化
