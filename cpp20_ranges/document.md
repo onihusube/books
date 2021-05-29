@@ -2126,13 +2126,26 @@ constexpr I find(I first, S last, const T& value) {
     if (pred(*first, value) == true) return first;
   }
 
-  return last;
+  // S -> Iの変換可能性は制約されていないので、firstを返す
+  return first;
 }
 ```
 
-`range`を受け取る方はそこから取得したイテレータ/番兵を、このイテレータペアを受け取る方に渡すことで実装できます。
-
 ここで使用されているように、`ranges::equal_to`は`==`による比較を行うための関数オブジェクトです。結果、`indirect_binary_predicate<ranges::equal_to, projected<I, Proj>, const T*>`というような制約は、上記のような実装においての`for`の中の判定部分の様な記述が可能であることを表現していることが分かります。（`indirect_binary_predicate`はイテレータ用のものなので、非イテレータの値との比較の制約を行うために、最後の引数に`const T*`というポインタ型を渡しています）
+
+また、`range`を受け取る方はその`range`オブジェクトから取得したイテレータと番兵を、イテレータペアを受け取る方に渡すことで実装できます。
+
+```cpp
+// rangeを受け取るfindの簡易実装
+template<input_range R, class T>
+  requires indirect_binary_predicate<ranges::equal_to, iterator_t<R>, const T*>
+constexpr borrowed_iterator_t<R> find(R&& r, const T& value) {
+  // イテレータペア版に委譲する
+  return ranges::find(ranges::begin(r), ranges::end(r), value);
+}
+```
+
+おそらく実際のRangeアルゴリズム実装も、このような委譲を行って実装されているはずです。
 
 ## 射影（*Projection*）
 ## ADLの無効化
