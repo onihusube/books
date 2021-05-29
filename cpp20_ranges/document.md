@@ -1979,36 +1979,14 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 
 `dangling`を返す場合でも内部の処理が通常通り行われている事が気になるかもしれませんが、`dangling`を返している場合というのは通常コンパイル時に気付くはずで、`dangling`を返している処理が実行されることはないはずです。もしコンパイル時に気付かなかったとすれば、それは戻り値を無視しているという事なのでそれはそれでバグでしょう。いずれにせよ、利用側では変数に対するコンセプトなどによって`dangling`が返されていることに素早く気付くようにしておく事が推奨されます。
 
-# Rangeファクトリ
-
-## `empty_view`
-## `single_view`
-## `iota_view`
-## `istream_view`
-
-# Rangeアダプタ
-
-## `all_view`
-## `filter_view`
-## `transform_view`
-## `take_view`
-## `take_while_view`
-## `drop_view`
-## `drop_while_view`
-## `join_view`
-## `split_view`
-## `counted_view`
-## `common_view`
-## `reverse_view`
-## `element_view`
 
 # Rangeアルゴリズム
 
-`<alogoritgm>`ヘッダに従来からある各種アルゴリズムは古くから存在しており、コンセプトやRangeライブラリに合わせた設計にはなっていません。とはいえ削除したりインターフェースを変更したりすると後方互換を破壊してしまうので今更変更を加えることはできません。
+`<algorithm>`ヘッダに従来からある各種アルゴリズムは古くから存在しており、コンセプトやRangeライブラリに合わせた設計にはなっていません。とはいえ削除したりインターフェースを変更したりすると後方互換を破壊してしまうので今更変更を加えることはできません。
 
-そこで、`std::ranges`名前空間を追加し、その下に従来のアルゴリズムに対応したRangeアルゴリズムを追加します。RangeアルゴリズムはRangeライブラリをベースとして設計されており、効果そのものは大きく変わりませんがより利用しやすくなっています。
+そこで、従来のアルゴリズムをリファインしたRangeアルゴリズムを`std::ranges`名前空間の下に追加します。RangeアルゴリズムはRangeライブラリをベースとして設計されており、効果そのものは大きく変わりませんがより利用しやすくなっています。
 
-## 基本形
+## 従来アルゴリズムとの差異
 
 C++17までのアルゴリズムはイテレータペアを受け取って処理を行うものでしたが、C++20からのRangeアルゴリズムはイテレータペアに加えて`range`を直接受け取ることができます。
 
@@ -2028,7 +2006,7 @@ namespace std {
 }
 ```
 
-C++20 Rangeアルゴリズムでは次のものが追加されます
+C++20 Rangeアルゴリズムでは次の様な2つが追加されます
 
 ```cpp
 namespace std::ranges {
@@ -2048,16 +2026,16 @@ namespace std::ranges {
 見辛いですね・・・  
 どこが関数名なのかすら少し迷ってしまいます。
 
-関数名の行だけを抜き出して比べてみると
+関数名を含む最低限のシグネチャだけを抜き出して比べてみると
 
 ```cpp
-// old find
+// 従来のfind
 constexpr InputIterator find(InputIterator first, InputIterator last, const T& value);
 
-// new find
+// ranges::find 1
 constexpr I find(I first, S last, const T& value, Proj proj = {});
 
-// range find
+// ranges::find 2
 constexpr borrowed_iterator_t<R> find(R&& r, const T& value, Proj proj = {});
 ```
 
@@ -2065,7 +2043,7 @@ constexpr borrowed_iterator_t<R> find(R&& r, const T& value, Proj proj = {});
 
 `proj`は射影（*Projection*）と呼ばれる機能で、後程詳しく説明します。
 
-`ranges::fing`の2つの気になる差は戻り値型に`borrowed_iterator_t`を使用しているか否かでしょう。イテレータペアを受ける方は使用していません。これは、入力が右辺値となりダングリングイテレータを返す危険があるのは`range`を受け取る時だけだとみなせるためで、同じ`range`についてのイテレータペアを取得しているという事は、少なくともその`range`オブジェクトは左辺値であるはずだからです。
+`ranges::find`の2つの気になる差は戻り値型に`borrowed_iterator_t`を使用しているか否かでしょう。イテレータペアを受ける方は使用していません。これは、入力が右辺値となりダングリングイテレータを返す危険があるのは`range`を受け取る時だけだとみなせるためで、同じ`range`についてのイテレータペアを取得しているという事は、少なくともその`range`オブジェクトは左辺値であるはずだからです。
 
 ```cpp
 // prvalueなrangeを返す関数
@@ -2079,7 +2057,7 @@ int main() {
 }
 ```
 
-そもそもイテレータだけからでは元の`range`の有効性を判定できないというのもありますが、このような制約を考慮すればイテレータペアについては戻り値がダングリングとなる可能性は低いでしょう。もしそうなる場合はそもそも入力のイテレータからおかしいため、ユーザーの責任となります。
+そもそもイテレータだけからでは元の`range`の有効性を判定できないというのもありますが、このような制約を考慮すればイテレータペアについては戻り値がダングリングとなる可能性は低いでしょう。もしそうなる場合はそもそも入力のイテレータからおかしいため、そのケアはユーザーの責任となります。
 
 なお、このような場合でも`ranges::begin/ranges::end`を使用するようにすると、右辺値の（`view`などではない）`range`からイテレータ/番兵を取得できないためより安全です。
 
@@ -2111,9 +2089,9 @@ template<input_range R, class T, class Proj = identity>
 
 `F, I1, I2`のオブジェクトをそれぞれ`pred, i1, i2`とすると、`bool c = pred(*i1, *i2)`の様な呼び出しが可能であることを表しています。
 
-C++STLでは、1つ以上の引数を受け取ってそれについて何かを判定してその結果を`bool`で返す、様な関数の事を述語（*predicate*）と呼んでいます。この場合の`F`は2つの引数を受け取る必要があるため二項述語（*bibary predicate*）と呼ばれ、さらにその引数は間接参照（*indirect read*）の結果として与えられる、という事を`indirect_binary_predicate`という名前は表しています。
+C++STLでは、1つ以上の引数を受け取ってそれについて何かを判定してその結果を`bool`で返す、様な関数の事を述語（*predicate*）と呼んでいます。この場合の`F`は2つの引数を受け取る必要があるため二項述語（*binary predicate*）と呼ばれ、さらにその引数は間接参照（*indirect read*）の結果として与えられる、という事を`indirect_binary_predicate`という名前は表しています。
 
-これは`find`が内部でやることを考えたら正当な要求であることが分かるでしょう。例えば次のように実装できるでしょう
+これは`find`が内部でやることを考えると正当な要求であることが分かります。`ranges::find`は例えば次のように実装できるでしょう
 
 ```cpp
 // ranges::findの簡易実装（projectionはないものとして）
@@ -2131,9 +2109,9 @@ constexpr I find(I first, S last, const T& value) {
 }
 ```
 
-ここで使用されているように、`ranges::equal_to`は`==`による比較を行うための関数オブジェクトです。結果、`indirect_binary_predicate<ranges::equal_to, projected<I, Proj>, const T*>`というような制約は、上記のような実装においての`for`の中の判定部分の様な記述が可能であることを表現していることが分かります。（`indirect_binary_predicate`はイテレータ用のものなので、非イテレータの値との比較の制約を行うために、最後の引数に`const T*`というポインタ型を渡しています）
+ここで使用されているように、`ranges::equal_to`は`==`による比較を行うための関数オブジェクトです。結果、`indirect_binary_predicate<ranges::equal_to, I, const T*>`というような制約は、上記のような実装においての`for`の中の判定部分の様な記述が可能であることを表現していることが分かります。（`indirect_binary_predicate`はイテレータ用のものなので、イテレータではないものとの比較について制約を行うために、最後の引数に`const T*`というポインタ型を渡しています）
 
-また、`range`を受け取る方はその`range`オブジェクトから取得したイテレータと番兵を、イテレータペアを受け取る方に渡すことで実装できます。
+また、`range`を受け取るオーバーロードはその`range`オブジェクトから取得したイテレータと番兵を、イテレータペアを受け取るオーバーロードに渡すことで実装できます。
 
 ```cpp
 // rangeを受け取るfindの簡易実装
@@ -2147,5 +2125,54 @@ constexpr borrowed_iterator_t<R> find(R&& r, const T& value) {
 
 おそらく実際のRangeアルゴリズム実装も、このような委譲を行って実装されているはずです。
 
+### コンセプトによって制約された比較関数オブジェクト
+
+先ほど出て来た`ranges::equal_to`はRangeライブラリの一部として導入された比較関数オブジェクトの一つです。従来あった`std::equal_to`をリファインするもので、同様に次の6つが導入されています。
+
+- `ranges::equal_to`
+- `ranges::not_equal_to`
+- `ranges::greater`
+- `ranges::less`
+- `ranges::greater_equal`
+- `ranges::less_equal`
+
+これらは関数オブジェクトではなく型として用意されているため、使用するにはオブジェクトを構築する必要があります。そして、その関数呼び出し演算子（`opreator()`）は2引数を取る関数テンプレートとして定義されており、テンプレートパラメータは行う比較についてきちんと制約されています。
+
+```cpp
+int main() {
+  // デフォルト構築でok
+  ranges::less le{};
+
+  // 関数呼び出しによって比較を行う
+  bool c = le(0, 1);
+}
+```
+
+また、これらにはメンバ型として`is_transparent`が定義されており、連想コンテナにおける透過的な操作に対応しています。
+
 ## 射影（*Projection*）
+## Rangeアルゴリズムの基本形
 ## ADLの無効化
+
+# viewその1 - Rangeファクトリ
+
+## `empty_view`
+## `single_view`
+## `iota_view`
+## `istream_view`
+
+# viewその2 - Rangeアダプタ
+
+## `all_view`
+## `filter_view`
+## `transform_view`
+## `take_view`
+## `take_while_view`
+## `drop_view`
+## `drop_while_view`
+## `join_view`
+## `split_view`
+## `counted_view`
+## `common_view`
+## `reverse_view`
+## `element_view`
