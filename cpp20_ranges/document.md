@@ -2182,7 +2182,7 @@ custom_cmp(ranges::less_equal{});
 vector<pair<int, double>> vec = { ... };
 
 // pair<int. double>の1つ目のメンバが20なものを探す
-auto it = ranges::find(vec, 20, [](const auto& p) -> int& { return p.first; });
+auto it = ranges::find(vec, 20, [](const auto& p)  { return p.first; });
 ```
 
 ここで、`ranges::find`の最後に引数に渡しているのがプロジェクションです。
@@ -2229,16 +2229,56 @@ sort(vec.begin(), vec.end(), [](const auto& p1, const auto& p2) { return p1.firs
 
 ```cpp
 // pairの1つ目のメンバでソートする
-ranges::sort(vec.begin(), vec.end(), {}, [](auto& p) -> int& { return p.first; });
+ranges::sort(vec.begin(), vec.end(), {}, [](auto& p) { return p.first; });
 ```
 
 `ranges::sort`は3番目の引数に比較関数オブジェクトを、最後の引数にプロジェクションを取ります。プロジェクションだけを使用する場合は比較をカスタマイズする必要はなく（`{}`でいい）、特定のメンバ変数を引き当てるための最低限の記述で済みます。仮に両方のカスタマイズが必要だとしても、比較のカスタマイズは殆どの場合`ranges::less`をはじめとする関数オブジェクトを使用すれば済み、プロジェクションの指定はどう比較するかとは常に無関係に記述できます。
 
-なおプロジェクションという名前ですが、集合論において直積集合の元である順序対からその成分の一つを取り出すような写像の事を射影と呼び、Rangeライブラリにおける射影（*Projection*）はそこから来ている名前です。C++における構造体はメンバ変数の型を1つの集合と見た時のそれらの直積集合とみなすことができ、そのオブジェクトとは直積集合の元である順序対に対応しています。そして、構造体のオブジェクトからその変数の一つを取り出すことは、順序対からその成分の一つを取り出す写像（射影）に対応しています。
+なおプロジェクションという名前ですが、集合論において直積集合の元である順序対からその成分の一つを取り出すような写像の事を射影と呼び、Rangeライブラリにおける射影（*Projection*）はそこから来ています。C++における構造体はメンバ変数の型を1つの集合と見た時のそれらの直積集合とみなすことができ、そのオブジェクトとは直積集合の元である順序対に対応しています。そして、構造体のオブジェクトからその変数の一つを取り出すことは、順序対からその成分の一つを取り出す写像（射影）に対応しています。
 
 ### メンバ変数ポインタ
 
+プロジェクションの導入によってメンバ変数の一つを取り出すことが書きやすくなったのですがまだ問題があります。
+
+```cpp
+// pairの1つ目のメンバでソートする
+ranges::sort(vec.begin(), vec.end(), {}, [](auto& p) { return p.first; });
+```
+
+ラムダ式の戻り値型は推論されたうえで`decay`されるため、このラムダ式は`p.first`をコピーして返しています。`int`型なら問題ないですが、コピーが重い型だと思わぬオーバーヘッドに繋がります。それを回避するには戻り値型を指定してやればいいのですが、知らなければそれを行えないし、うっかり忘れる事を防ぐ事は難しいでしょう。あと、ラムダ式で引き当てるのは簡易ではありますがそれでも記述量が少ないとは言えません。
+
+ところで、プロジェクションは`std::invoke`を用いた関数呼び出しによって実装されています。たとえば先ほどの簡易実装`ranges::find`で書いてみると
+
+```cpp
+// ranges::findの簡易実装 rev2
+template<input_iterator I, sentinel_for<I> S, class T, class Proj = identity>
+  requires indirect_binary_predicate<ranges::equal_to, projected<I, Proj>, const T*>
+constexpr I find(I first, S last, const T& value, Proj proj = {}) {
+  ranges::equal_to pred{};
+
+  for (; first != last; ++first) {
+    // std::invokeを用いて呼び出しを行う
+    if (pred(invoke(proj, *first), value) == true) return first;
+  }
+
+  return first;
+}
+```
+
+`std::invoke`は関数呼び出し可能なものから可能な限り関数呼び出しを行おうとします。そして、その中にはメンバ変数ポインタからの呼び出しが含まれています。これを利用すると、先ほどのソートは次のように書くことができます。
+
+```cpp
+// pairの1つ目のメンバでソートする
+ranges::sort(vec.begin(), vec.end(), {}, &pair<int, double>::first);
+```
+
+これ（`&pair<int, double>::first`）は`std::pair`の1つ目のメンバ変数を指定するメンバポインタです。`std::invoke`は型`T`のメンバ変数ポインタ`p`と`T`のオブジェクト（の参照）`o`によって`std::invoke(p, o)`のように呼び出されると、`o.*p`の結果を返してくれます。`.*`はメンバポインタ演算子という演算子で、`o`が左辺値ならば`o.*p`の結果は`o`のメンバ変数への左辺値参照を返すので、少しの記述ミスでコピーが発生することはありません。
+
+このように、プロジェクションにはメンバ変数ポインタを指定することができます。クラスのメンバが`public`であるときにしか使えませんが、メンバ変数ポインタを利用することで、特定のメンバ変数を引き当てるという処理をより簡潔かつ正確に書くことができるようになります。
+
 ### `identity`
+
+### `projected`
 
 ## Rangeアルゴリズムの基本形
 ## ADLの無効化
