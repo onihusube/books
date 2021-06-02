@@ -2083,9 +2083,7 @@ template<input_range R, class T, class Proj = identity>
 
 `range`を受け取る方は、それが`input_range`であることをシンプルに表現しています。
 
-最後に残ったのは`indirect_binary_predicate`というコンセプトです。`indirect_binary_predicate<F, I1, I2>`は間接参照可能な型（イテレータやポインタ型）`I1, I2`の参照先の型によって`F`が呼び出し可能であり、その結果が`bool`となることを定義するコンセプトです。
-
-`F, I1, I2`のオブジェクトをそれぞれ`pred, i1, i2`とすると、`bool c = pred(*i1, *i2)`の様な呼び出しが可能であることを表しています。
+最後に残ったのは`indirect_binary_predicate`というコンセプトです。`indirect_binary_predicate<F, I1, I2>`は間接参照可能な型（イテレータやポインタ型）`I1, I2`の参照先の型によって`F`が呼び出し可能であり、その結果が`bool`となることを定義するコンセプトです。これは、`F, I1, I2`のオブジェクトをそれぞれ`pred, i1, i2`とすると、`bool c = pred(*i1, *i2)`の様な呼び出しが可能であることを表しています。
 
 C++STLでは、1つ以上の引数を受け取ってそれについて何かを判定してその結果を`bool`で返す、様な関数の事を述語（*predicate*）と呼んでいます。この場合の`F`は2つの引数を受け取る必要があるため二項述語（*binary predicate*）と呼ばれ、さらにその引数は間接参照（*indirect read*）の結果として与えられる、という事を`indirect_binary_predicate`という名前は表しています。
 
@@ -2100,6 +2098,7 @@ constexpr I find(I first, S last, const T& value) {
 
   for (; first != last; ++first) {
     if (pred(*first, value) == true) return first;
+    //  ^^^^^^^^^^^^^^^^^^^
   }
 
   // S -> Iの変換可能性は制約されていないので、firstを返す
@@ -2107,7 +2106,7 @@ constexpr I find(I first, S last, const T& value) {
 }
 ```
 
-ここで使用されているように、`ranges::equal_to`は`==`による比較を行うための関数オブジェクトです。結果、`indirect_binary_predicate<ranges::equal_to, I, const T*>`というような制約は、上記のような実装においての`for`の中の判定部分の様な記述が可能であることを表現していることが分かります。（`indirect_binary_predicate`はイテレータ用のものなので、イテレータではないものとの比較について制約を行うために、最後の引数に`const T*`というポインタ型を渡しています）
+ここで使用されているように、`ranges::equal_to`は`==`による比較を行うための関数オブジェクトです。結果、`indirect_binary_predicate<ranges::equal_to, I, const T*>`というような制約は、上記のような実装においての`for`の中の判定部分の様な記述が可能であることを表現していることが分かります。（`indirect_binary_predicate`はイテレータ用のものなので、イテレータでも間接参照可能でもない`T`を直接指定することができません。そのため、最後の引数には`const T*`というポインタ型を渡すことで利用可能となるようにしています。）
 
 また、`range`を受け取るオーバーロードはその`range`オブジェクトから取得したイテレータと番兵を、イテレータペアを受け取るオーバーロードに渡すことで実装できます。
 
@@ -2272,13 +2271,61 @@ constexpr I find(I first, S last, const T& value, Proj proj = {}) {
 ranges::sort(vec.begin(), vec.end(), {}, &pair<int, double>::first);
 ```
 
-これ（`&pair<int, double>::first`）は`std::pair`の1つ目のメンバ変数を指定するメンバポインタです。`std::invoke`は型`T`のメンバ変数ポインタ`p`と`T`のオブジェクト（の参照）`o`によって`std::invoke(p, o)`のように呼び出されると、`o.*p`の結果を返してくれます。`.*`はメンバポインタ演算子という演算子で、`o`が左辺値ならば`o.*p`の結果は`o`のメンバ変数への左辺値参照を返すので、少しの記述ミスでコピーが発生することはありません。
+これ（`&pair<int, double>::first`）は`std::pair`の1つ目のメンバ変数`first`を指定するメンバポインタです。`std::invoke`は型`T`のメンバ変数ポインタ`p`と`T`のオブジェクト（の参照）`o`によって`std::invoke(p, o)`のように呼び出されると`o.*p`の結果を返してくれます。`.*`はメンバポインタ演算子という演算子で、`o`が左辺値ならば`o.*p`の結果は`o`のメンバ変数への左辺値参照を返すため、深く考えなくてもコピーされません。そして、メンバ変数ポインタの書式は構文にバリエーションがなく曖昧さが少ないため、ミスが入り込む余地が減ります。
 
-このように、プロジェクションにはメンバ変数ポインタを指定することができます。クラスのメンバが`public`であるときにしか使えませんが、メンバ変数ポインタを利用することで、特定のメンバ変数を引き当てるという処理をより簡潔かつ正確に書くことができるようになります。
+このように、プロジェクションにメンバ変数ポインタを利用することで、特定のメンバ変数を引き当てるという処理をより簡潔かつ正確に書くことができるようになります。ただしこれは対象のメンバ変数が`public`であるときにしか使えません。
 
 ### `identity`
 
+プロジェクションを取るテンプレートパラメータのデフォルト引数には、`identity`という型が指定されています。これはデフォルトのプロジェクションとなる関数オブジェクトの型で、受け取った引数を何もせずそのまま返すものです。
+
+```cpp
+namespace std {
+  struct identity {
+
+    template<class T>
+    constexpr T&& operator()(T&& t) const noexcept {
+      // 引数を値カテゴリも含めてそのまま返す
+      return std::forward<T>(t);
+    }
+
+    using is_transparent = unspecified;
+  };
+}
+```
+
+Rangeアルゴリズムにプロジェクションを何も指定しない場合はこの何もしない関数が射影として使用されており、すなわちイテレータの間接参照の結果をそのまま利用するという事になります。
+
 ### `projected`
+
+先ほど見ていた`ranges::find`の`indirect_binary_predicate`コンセプトによる制約には謎の型？`projected`が出現していました。
+
+```cpp
+template<input_range R, class T, class Proj = identity>
+  requires indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
+                                                       ^^^^^^^^^
+```
+
+`indirect_binary_predicate`を含めて`indirect_xxx`というコンセプトがいくつかあるのですが、それら基本的に`indirectly_readable`な型（間接参照可能な型）で使用するために設計されているため、「イテレータの間接参照結果を射影した結果」を直接用いることができません。`ranges::find`の場合は比較する値として`T`の値を受けますがそれもイテレータではないので直接使えず、`const T*`を代わりに渡すことで解決しています。
+
+`std::projected<I, P>`はプロジェクション`P`によって間接参照可能な型`I`の間接参照結果を射影した結果をもう一度間接参照可能な型に戻すための型です。これによって`indirect_xxx`なイテレータ用のコンセプトで、イテレータに対するプロジェクションの結果を直接利用することができるようになります。
+
+```cpp
+namespace std {
+  template<indirectly_readable I, indirectly_regular_unary_invocable<I> Proj>
+  struct projected {
+    using value_type = remove_cvref_t<indirect_result_t<Proj&, I>>;
+
+    indirect_result_t<Proj&, I> operator*() const;  // 定義されない
+  };
+}
+```
+
+`operator*()`の戻り値型として`I`に`Proj`を適用した結果を示し、`std::projected<I, P>`が有効であるときは`indirectly_readable`コンセプトのモデルとなります。要は`ranges::find`における値型`T`で`indirect_xxx`なコンセプトを利用可能とするために`const T*`というポインタ型を渡す、というのと同じことを少し小難しくイテレータに対してしているだけです。
+
+`indirectly_regular_unary_invocable<Proj, I>`というのは、`Proj`のオブジェクトを`proj`、`I`のオブジェクトを`i`としたときに、`invoke(proj, *i)`の様な呼び出しが可能であることを表すコンセプトです。まあ見たままプロジェクションですね。`indirect_result_t<Proj&, I>`は`invoke(proj, *i)`の結果型を表すエイリアステンプレートで、`Proj&`となっているのは左辺値`proj`から呼び出しを行う事を指定しています。まあ見たままプロジェクションの結果型の事です。
+
+なお、`std::projected`はこの様な目的の型であるためその間接参照操作（`operator*()`）は定義されておらず、実際に呼び出すことは出来ません。これはあくまでコンセプトの文脈で使用する型レベルのものです。
 
 ## Rangeアルゴリズムの基本形
 ## ADLの無効化
