@@ -346,7 +346,7 @@ template<class I>
 - 範囲`[i, s)`を参照する`forward_iterator`から取得された`[i, s)`への参照やポインタは、`[i, s)`が範囲として有効である限り有効であり続ける。
 - マルチパス保証。
 
-`incrementable`はインクリメント（`++`）によるイテレータの進行を定義するコンセプトで、同時にコピー/ムーブ構築と代入、デフォルト構築を要求します。`sentinel_for`はイテレータ型に対する番兵型を定義するコンセプトで、`sentinel_for<I1, I2>`は型`I1`がイテレータ型`I2`の番兵であることを表しています。すなわち、`forward_iterator`である`I`は自分自身がその範囲の終端を表現できなければなりません。
+`incrementable`はインクリメント（`++`）によるイテレータの進行を定義するコンセプトで、同時にコピー/ムーブ構築と代入、デフォルト構築を要求します。`sentinel_for`はイテレータ型に対する番兵型を定義するコンセプトで、`sentinel_for<I1, I2>`は型`I1`がイテレータ型`I2`の番兵であることを定義します。すなわち、`forward_iterator`である`I`は自分自身がその範囲の終端を表現できなければなりません。
 
 意味論要件は少し難解ですが、デフォルト構築されたイテレータが範囲の終端を指すようになり、かつ他のイテレータはそれと常に比較可能であることや、イテレータの参照する要素の有効性は範囲の生存期間に従う（イテレータの操作と無関係になる）など、普通のイテレータに期待される振る舞いを定義しています。
 
@@ -470,7 +470,7 @@ template<class I>
 - `b`が間接参照可能ならば、`a[n]`は有効であり`*b`と等値
 - `bool(a <= b) == true`
 
-`totally_ordered`は全順序による比較を、`sized_sentinel_for`はイテレータと番兵の引き算によって範囲の長さを求められることをそれぞれ定義しているコンセプトです。`requires`式内では*random access iterator*に通常期待される整数値との足し引きによる進行操作を定義しています。
+`totally_ordered`は全順序による比較を、`sized_sentinel_for`は`sentinel_for`かつイテレータと番兵の引き算によって範囲の長さを求められることをそれぞれ定義しているコンセプトです。`requires`式内では*random access iterator*に通常期待される整数値との足し引きによる進行操作を定義しています。
 
 そして、新しく加わったそれらの進行操作がどういう意味を持つのか、どう振る舞うのかを意味論要件が定義します。`+=`による進行は同じ数インクリメントしたのと同じであるとか、`+`と`+=`は進行という意味では同じであるとか、同様の事が`- -=`とデクリメントの間にも言えるだとか、イテレータの大小比較はイテレータの参照位置に基づくということなどを言っています。
 
@@ -547,7 +547,7 @@ C++17の世界ではあらゆるものが`common_range`でしたが、C++20の�
 
 ## `view`
 
-Rangeライブラリの影の主役、`view`と呼ばれるものを定義しているのが、`view`コンセプトです。
+Rangeライブラリの影の主役、`view`と呼ばれるものを定義しているのが`view`コンセプトです。
 
 ```cpp
 template<class T>
@@ -1539,7 +1539,7 @@ template<range R>
   using range_value_t = iter_value_t<iterator_t<R>>;
 ```
 
-`ranges::range_value_t`は`iter_value_t`を用いてイテレータ型からその距離を表す型を取得します。`remove_cvref`したイテレータ型を`I`とすると、`iter_value_t`の示す型は次のどちらかです
+`ranges::range_value_t`は`iter_value_t`を用いてイテレータ型からその要素の値型を取得します。`remove_cvref`したイテレータ型を`I`とすると、`iter_value_t`の示す型は次のどちらかです
 
 - `iterator_traits<I>`がプライマリテンプレートの特殊化となる場合、`indirectly_readable_traits<I>::value_type`
 - それ以外の場合、`iterator_traits<I>::value_type`
@@ -1627,7 +1627,7 @@ void f(R& r, ranges::range_value_t<R> v) {
 
 ## `range_reference_t/iter_reference_t`
 
-`range_reference_t`は`range`の要素を指す参照型を取得します。そのような型はイテレータの`reference_type`（参照型）と呼ばれます。
+`ranges::range_reference_t`は`range`の要素を指す参照型を取得します。そのような型はイテレータの`reference_type`（参照型）と呼ばれます。
 
 ```cpp
 template<dereferenceable I>
@@ -1658,7 +1658,7 @@ void f(R& r, ranges::range_reference_t<R> v) {
 
 ## `range_rvalue_reference_t/iter_rvalue_reference_t`
 
-`range_reference_t`は`range`の要素を指す右辺値参照型を取得します。
+`ranges::range_reference_t`は`range`の要素を指す右辺値参照型を取得します。
 
 ```cpp
 template<dereferenceable I>
@@ -1692,7 +1692,7 @@ void replace(R& r, ranges::range_rvalue_reference_t<R> rv) {
 
 ## `iter_common_reference_t`
 
-# `subrange`
+# 部分範囲（*subrange*）
 
 ## `view_interface`
 
@@ -1805,7 +1805,7 @@ int main() {
 
 `ranges::subrange`は任意のイテレータペアをラップすることのできる`range`型です。`std::span`が連続したメモリ領域のポインタと長さをラップして参照するものであるように、`subrange`は任意の範囲についてのイテレータ2つあるいはイテレータと番兵から、その範囲を参照する`range`を作成します。
 
-その性質から`subrange`は明らかに`view`であり、常に`view`コンセプトのモデルとなります。
+その性質から`subrange`は明らかに`view`であり、常に`view`コンセプトのモデルとなります。また、`borrowed_range`でもあるため`enable_borrowed_range`が`true`となるように特殊化されており、`borrowed_range`コンセプトのモデルでもあります。
 
 ```cpp
 // イテレータペアを受け取る旧来のインターフェース
@@ -1820,7 +1820,7 @@ void old_range_algo(I i1, I i2) {
   }
 
   // Rangeアルゴリズムで使用可能にする
-  ranges::find_if(sr, [](const auto& v) { /*...*/ });
+  auto it = ranges::find_if(sr, [](const auto& v) { /*...*/ });
 
   // Range Adopterで使用可能にする
   for (const auto& v : sr | views::filter( /*...*/ )
@@ -1832,6 +1832,164 @@ void old_range_algo(I i1, I i2) {
 ```
 
 `subrange`は主に、旧来のイテレータペアによる範囲の取り回しとC++20 Rangeライブラリとの橋渡しをしてくれるものです。上記例の様に、イテレータペアを`range`（`view`）へ変換することで、Rangeライブラリの多くの機能を利用できるようになります。
+
+## `subrange_kind`
+
+`subrange`は使うだけならとても簡単で悩みどころもあまり無いのですが、実体はとても複雑な型になっています。
+
+```cpp
+namespace std::ranges {
+  // subrangeの宣言
+  template<input_or_output_iterator I, sentinel_for<I> S = I, subrange_kind K =
+      sized_sentinel_for<S, I> ? subrange_kind::sized : subrange_kind::unsized>
+    requires (K == subrange_kind::sized || !sized_sentinel_for<S, I>)
+  class subrange : public view_interface<subrange<I, S, K>>
+}
+```
+
+何書いてあるかわからないですね。コンセプトに慣れていても目を凝らさないと何が何だかわからないと思われます・・・
+
+テンプレートパラメータは、イテレータ型`I`とその番兵型`S`、`subrange_kind`の値`K`の3つが宣言されています。
+
+ここで、`sentinel_for<I> S`の様な制約の形式では`sentinel_for`コンセプトの第一引数の指定が省略され、自動的に補われています。`sentinel_for`は本来2引数のコンセプトであり、ここでは正しくは`sentinel_for<S, I>`というコンセプトがチェックされます。戻り値型の制約などで第一引数が補われていたことがここでも行われているわけです。もしこれが行われない場合、型パラメータの宣言と同時に制約を行うことができず、あとから`requires`式で制約しなければならなくなってしまうため、使いづらくなってしまいます。
+
+`subrange_kind`は次のように定義されているスコープ付列挙型で、テンプレートパラメータ`K`は非型テンプレートパラメータです。
+
+```cpp
+namespace std::ranges {
+  enum class subrange_kind : bool { unsized, sized };
+}
+```
+
+そして、`K`の初期化は次のように行われています。
+
+```cpp
+subrange_kind K = sized_sentinel_for<S, I> ? subrange_kind::sized : subrange_kind::unsized;
+```
+
+`sized_sentinel_for<S, I>`は`sentinel_for<S, I>`かつ`I, S`のオブジェクト`i, s`によって、`i - s, s - i`の減算によってイテレータ間距離が求められることを定義するコンセプトです。
+
+`K`は入力の型`I, S`が`sized_sentinel_for<S, I>`を満たすとき`subrange_kind::sized`、満たさないとき`subrange_kind::unsized`で初期化されます。`sized_sentinel_for`の意味と列挙値の名前からもわかるかもしれませんが、この`K`は`subrange`が`sized_range`となるかどうかを制御しています。`K == subrange_kind::sized`の時、`subrange<I, S, K>`は`sized_range`コンセプトのモデルになります。
+
+```cpp
+requires (K == subrange_kind::sized || !sized_sentinel_for<S, I>)
+```
+
+残った`requires`節による制約は、`K`が`subrange_kind::unsized`ならば`I, S`が`sized_sentinel_for<S, I>`を満たさない事をチェックしています。というのも、`subrange`に明示的に型を指定して特殊化してしまえば`K`の値を`I, S`によらずに指定することができてしまうためです。ただし、`K == subrange_kind::sized`であれば`I, S`はどうなっていても良いことがここから読み取れます。
+
+## コンストラクタと推論補助
+
+```cpp
+// subrangeの簡易化宣言
+template<input_or_output_iterator I, sentinel_for<I> S = I, subrange_kind K>
+class subrange {
+  // 説明専用静的変数
+  // sized_sentinel_for<S, I>が満たされないのにKがsizedである時にtrue
+  static constexpr bool StoreSize =
+      K == subrange_kind::sized && !sized_sentinel_for<S, I>;
+      
+public:
+
+  // デフォルトコンストラクタ (1)
+  subrange() = default;
+
+  // イテレータペアからのコンストラクタ (2)
+  constexpr subrange(convertible-to-non-slicing<I> auto i, S s) requires (!StoreSize);
+
+  // イテレータペアと長さを受け取るコンストラクタ (3)
+  constexpr subrange(convertible-to-non-slicing<I> auto i, S s,
+                     make-unsigned-like-t<iter_difference_t<I>> n)
+    requires (K == subrange_kind::sized);
+  
+  // rangeからのコンストラクタ (4)
+  template<not-same-as<subrange> R>
+    requires borrowed_range<R> &&
+             convertible-to-non-slicing<iterator_t<R>, I> &&
+             convertible_to<sentinel_t<R>, S>
+  constexpr subrange(R&& r) requires (!StoreSize || sized_range<R>);
+
+  // rangeと長さを受け取るコンストラクタ (5)
+  template<borrowed_range R>
+    requires convertible-to-non-slicing<iterator_t<R>, I> &&
+             convertible_to<sentinel_t<R>, S>
+  constexpr subrange(R&& r, make-unsigned-like-t<iter_difference_t<I>> n)
+    requires (K == subrange_kind::sized)
+      : subrange{ranges::begin(r), ranges::end(r), n}
+  {}
+};
+```
+
+また難解ですが、`subrange`には全部で5つのコンストラクタがあります。デフォルトコンストラクタを除くと、イテレータペアと`range`オブジェクトを受け取るコンストラクタの2種類があり、別の見方をすると長さ`n`を受け取るか受け取らないかで2種類のコンストラクタがあります。
+
+(1)のデフォルトコンストラクタは`view`コンセプトによる要請です。このコンストラクタから構築されている事は`.empty()`メンバ関数によってチェックできます。
+
+(2)のコンストラクタはおそらく最も使用されるであろう、イテレータペアを受けとるコンストラクタです。後置`requires`節に現れている`StoreSize`は`K == subrange_kind::sized`なのに`I, S`が`sized_sentinel_for<S, I>`を満たさない事を検出するものです。そのような指定は可能であり意図的に許可されていますが、その場合にこのコンストラクタから初期化する事はできません。  
+(4)のコンストラクタはその`range`版です。`range`型`R`は`subrange`自身と同じ型ではなく`borrowed_range`であり、`K == subrange_kind::sized`ならば`sized_sentinel_for<S, I>`が満たされているか、`R`が`sized_range`である必要があります。
+
+複雑ですが、(2)(4)のコンストラクタは共に、入力の`range`あるいはイテレータペアから単純な方法によってその長さを求める事ができる場合に使用されるコンストラクタです。そうでは無い場合は`K`の値に関係なく使用可能ではありません。
+
+(3)のコンストラクタは、イテレータペア`[i, s)`に加えてその範囲サイズ`n`を受け取るコンストラクタです。`make-unsigned-like-t`は説明専用の操作で、要するに`n`が負では無い事を表しています。そして、事前条件として`[i, s)`の長さは`n`に等しい事が要求されます。以上でも以下でもなく等しくなければならず、従わない場合は未定義動作です。  
+(5)のコンストラクタはその`range`版です。`range`型`R`は`borrowed_range`でなくてはなりません。実装は(3)のコンストラクタに入力`range`オブジェクト`r`から取得したイテレータペアを転送するだけです。
+
+(3)(5)のコンストラクタはその後置`requires`節が示す通りに`K == subrange_kind::sized`の時に使用されるコンストラクタです。(2)(4)との違いは、`sized_sentinel_for<S, I>`を満たしていなくても使用可能であるところにあります。これらのコンストラクタから初期化された場合、`subrange`は`n`の値を保持し`.size()`メンバ関数はその`n`を返すようになります。すなわち、これらのコンストラクタでは`sized_range`では無い範囲を`sized_range`となるように変換する事ができます。
+
+```cpp
+template<ranges::sized_range R>
+void f(R&& r) {
+  auto l = ranges::size(r); // l == 5
+}
+
+int main() {
+  std::forward_list fl = {2, 5, 1, 0, 9};
+
+  // どちらも構築はok
+  auto sr1 = ranges::subrange{fl.begin(), fl.end()};    // (2)を使用
+  auto sr2 = ranges::subrange{fl.begin(), fl.end(), 5}; // (3)を使用
+
+  /* range版を用いてもいい
+  auto sr1 = ranges::subrange{fl};    // (4)を使用
+  auto sr2 = ranges::subrange{fl, 5}; // (5)を使用
+  */
+
+  f(sr1); // ng
+  f(sr2); // ok
+}
+```
+
+ただし、(3)(4)から構築された`subrange`のイテレータの進行において`n`を使ったチェックがなされるわけではなく、`n`の値は`subrange`自身が`sized_range`となるためにしか使用されません。更に言うと、`subrange`のイテレータ/番兵は構築に用いたイテレータ/番兵をそのまま返し、専用のイテレータ型を持っていません。
+
+各コンストラクタに指定されている`convertible-to-non-slicing`とかのコンセプトは、引数のイテレータ/番兵型がテンプレートパラメータで指定されたイテレータ/番兵型に変換可能である事を指定し、なおかつ要素型を変換する形で変換されてしまう事を防止するものです（主に`T* -> U*`のようなポインタ型の変換を防止している）。
+
+このような複雑な型とコンストラクタをしているため、`subrange`はクラステンプレートの実引数推論無くして活用する事はできません。当然そのままだと適切に型を推論できそうも無いので、`subrange`に対する推論補助は次のように用意されています。
+
+```cpp
+// (2)に対応
+template<input_or_output_iterator I, sentinel_for<I> S>
+subrange(I, S) -> subrange<I, S>;
+
+// (3)に対応
+template<input_or_output_iterator I, sentinel_for<I> S>
+subrange(I, S, make-unsigned-like-t<iter_difference_t<I>>) ->
+  subrange<I, S, subrange_kind::sized>;
+
+// (4)に対応
+template<borrowed_range R>
+subrange(R&&) ->
+  subrange<iterator_t<R>, sentinel_t<R>,
+           (sized_range<R> || sized_sentinel_for<sentinel_t<R>, iterator_t<R>>)
+             ? subrange_kind::sized : subrange_kind::unsized>;
+
+// (5)に対応
+template<borrowed_range R>
+subrange(R&&, make-unsigned-like-t<range_difference_t<R>>) ->
+  subrange<iterator_t<R>, sentinel_t<R>, subrange_kind::sized>;
+```
+
+基本的にそれぞれのコンストラクタに対応したものが用意されており、コンストラクタに渡された引数型から`subrange`のテンプレートパラメータを適切に埋めようとしている事がわかります。
+
+推論補助にコンセプトによる制約が行われている事は驚きかもしれません。推論補助はテンプレートの一種であり、扱いとしては後置戻り値型の関数テンプレートに近いものです。したがって、関数テンプレートでできるような制約の指定はほぼ同様に行う事ができます。それらの制約は推論補助が選択される時に考慮され、制約なしだと推論補助がバッティングしてしまうような場合にも引数型によって適切な推論補助を選択させる事ができます。制約を満たす型が渡されず推論補助が選択されなかった場合はテンプレートパラメータが確定しないためエラーになるでしょう。
+
+このコンセプトで制約された推論補助によって、`subrange`を使用する多くの場合はそのテンプレートパラメータを明示的に指定する必要はありません。というか、指定しようとしない方がいいでしょう・・・
 
 # dangling iterator handling
 
@@ -1929,7 +2087,7 @@ int main() {
 
 ## `borrowed_iterator_t/borrowed_subrange_t`
 
-`borrowed_iterator_t/borrowed_subrange_t`は`ranges::dangling`の利用を簡易化するエイリアステンプレートです。
+`ranges::borrowed_iterator_t/ranges::borrowed_subrange_t`は`ranges::dangling`の利用を簡易化するエイリアステンプレートです。
 
 ```cpp
 template<range R>
@@ -2079,9 +2237,7 @@ template<input_range R, class T, class Proj = identity>
 
 イテレータペアを受け取るものは、それがきちんとイテレータペアとなっていることをコンセプトによって表現しています。`input_iteraotr`（入力イテレータを定義するコンセプト）`I`に対して`S`はその`sentinel_for<I>`でなければなりません。
 
-ここで、`sentinel_for<I> S`の様な制約の形式では`sentinel_for`コンセプトの第一引数の指定が省略され、自動的に補われています。`sentinel_for`は本来2引数のコンセプトであり、ここでは正しくは`sentinel_for<I, S>`というコンセプトがチェックされます。戻り値型の制約などで第一引数が補われていたことがここでも行われているわけです。もしこれが行われない場合、型パラメータ`S`の宣言と同時に制約を行うことができず、あとから`requires`式で制約しなければならなくなってしまうため、使いづらくなってしまいます。
-
-`range`を受け取る方は、それが`input_range`であることをシンプルに表現しています。
+一方で`range`を受け取る方は、それが`input_range`であることをシンプルに表現しています。
 
 最後に残ったのは`indirect_binary_predicate`というコンセプトです。`indirect_binary_predicate<F, I1, I2>`は間接参照可能な型（イテレータやポインタ型）`I1, I2`の参照先の型によって`F`が呼び出し可能であり、その結果が`bool`となることを定義するコンセプトです。これは、`F, I1, I2`のオブジェクトをそれぞれ`pred, i1, i2`とすると、`bool c = pred(*i1, *i2)`の様な呼び出しが可能であることを表しています。
 
