@@ -1720,7 +1720,7 @@ class my_view : ranges::view_interface<my_view<R>> {
 
 `view_interface`が`ranges::view_base`を基底に持つことによって、`view_interface`を継承した型は自動的に`ranges::enable_view`が`true`になるようになり、ほかの条件を満たしていれば`view`コンセプトのモデルとなることができます。
 
-これだけではなく、`view_interface<D>`では型`D`が満たす性質によって、利用可能となるコンテナインターフェースを自動的に有効化してくれます。
+これだけではなく、`view_interface<D>`では`range`型`D`（とそのイテレータ）が満たす性質によって、利用可能となるコンテナインターフェースを自動的に有効化してくれます。
 
 ```cpp
 template<class D>
@@ -1799,9 +1799,7 @@ int main() {
 }
 ```
 
-このように、`view_interface`は`view`の定義の一部を自動化してくれるものです。自分で`view`を作る場合に利用しないという選択肢はないかと思われます。
-
-また、`view_interface<D>`は`D`が不完全型であっても特殊化することができ、その場合は`view_interface`のメンバ関数を参照する前に`D`の定義が完了する必要があります。
+このように、`view_interface`は`view`の定義の一部を自動化してくれるもので、自分で`view`を作る場合に利用しないという選択肢はないかと思われます。なお、これらの操作は`D`そのものか`D`のイテレータを用いてほとんど自動的に導出されるようになっています。`D`および`D`のイテレータを各種`range`/イテレータコンセプトに適合するようにしてあれば、これらの操作を有効化するために特段何かをする必要はないはずです。
 
 ## `subrange`
 
@@ -2529,10 +2527,73 @@ void foo() {
 
 # viewその1 - Rangeファクトリ
 
+Rangeライブラリに導入される`view`には大きくRangeアダプタ（*range adaptors*）とRangeファクトリ（*range factories*）の2つがあり、ここではそのうちの一つであるRangeファクトリと呼ばれる`view`を見ていきます。
+
+Rangeファクトリは極単純な`view`を生成するための型および操作のカテゴリで、ここの`view`達は単独で動作して範囲を新しく生成するような振る舞いをします。
+
 ## `empty_view`
+
+`empty_view`は指定された型`T`の空の範囲を生成する`view`です。
+
+```cpp
+int main() {
+  
+  std::ranges::empty_view<int> ev{};
+
+  for (int n : ev) {
+    assert(false);  // 呼ばれない
+  }
+}
+```
+
+この定義はとても単純で、次のようになっています。
+
+```cpp
+namespace std::ranges {
+  template<class T>
+    requires is_object_v<T>
+  class empty_view : public view_interface<empty_view<T>> {
+  public:
+    static constexpr T* begin() noexcept { return nullptr; }
+    static constexpr T* end() noexcept { return nullptr; }
+    static constexpr T* data() noexcept { return nullptr; }
+    static constexpr size_t size() noexcept { return 0; }
+    static constexpr bool empty() noexcept { return true; }
+  };
+}
+```
+
+これは他の`view`の実装において、入力によって空の範囲を返す必要がある場合などに使用されているようです。
+
+### `views::empty`
+
+`empty_view`に対応する操作を行うためのものが`std::ranges::views::empty`として用意されています。
+
+```cpp
+int main() {
+
+  for (int n : std::views::empty<int>) {
+    assert(false);  // 呼ばれない
+  }
+}
+```
+
+この`views::empty`は変数テンプレートであり、型`T`を受け取って`empty_view<T>`を返します。こちらを用いると、空の範囲を取得すると言う操作を少しだけ簡潔に書くことができます。なお、`std::ranges::views`名前空間は`std::views`としてアクセスすることができ、短くなって意味もわかりやすくなるのでそちらを利用するのがおすすめです。
+
+実際のところ*range factories*というのは`std::ranges::views`名前空間にあるこれらの変数または関数オブジェクトの事を言い、こちらの操作が主体であって`view`型はあくまでその実装の一部に過ぎないわけです。そのため多くの場合、対応する`view`型そのものを使用するよりも*range factories*を介して使用した方がジェネリックかつ自然に書くことができるようになっており、利用の際にもこれらの*range factories*を使用する事がほとんどでしょう。
+
+本書では説明のためにこれらのもののことを「Rangeファクトリオブジェクト」と呼ぶことにします。
+
 ## `single_view`
+
+### `views::single`
+
 ## `iota_view`
+
+### `views::iota`
+
 ## `istream_view`
+
 
 # viewその2 - Rangeアダプタ
 
