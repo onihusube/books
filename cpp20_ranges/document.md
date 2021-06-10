@@ -2565,6 +2565,19 @@ namespace std::ranges {
 
 これは他の`view`の実装において、入力によって空の範囲を返す必要がある場合などに使用されているようです。
 
+### `empty_view<T>`の諸特性
+
+ここで見るのは`view`あるいは`range`全般に共通して見いだすことのできる性質で、利用するにあたっては予め知っておくと便利なものです。しかし、`view`の種類や`view`の元となる`range`によって変化し、どうなっているか判断するのが難しいものなので、簡単にまとめておきます。
+
+- `reference` : `T&`
+- `range`カテゴリ : `contiguous_range`
+- `common_range` : ◯
+- `sized_range` : ◯
+- `const-iterable` : ◯
+- `borrowed_range` : ◯
+
+`reference`とはイテレータの間接参照の結果型（`decltype(*i)`）の事で、`range`カテゴリはその範囲はどの`range`コンセプトを満たしているかという事で、`const-iterable`というのはその`view`（ここでは`empty_view`）を`const`化したときでも`range`でいられるか（範囲`for`でイテレートできるか）を意味しています。他の項目はそのコンセプトを満たしているかどうかを表しています。
+
 ### `views::empty`
 
 `empty_view`に対応する操作を行うためのものが`std::ranges::views::empty`として用意されています。
@@ -2600,6 +2613,20 @@ int main() {
 
 これはある値に対して*range*を取るアルゴリズムを再利用したい場合など、単一の値をシーケンスに変換したい場合に使用できるでしょう。
 
+`single_view`は次のように定義されています
+
+```cpp
+namespace std::ranges {
+  template<copy_constructible T>
+    requires is_object_v<T>
+  class single_view : public view_interface<single_view<T>> {
+    // ...
+  };
+}
+```
+
+要素型`T`はコピー構築可能であり、オブジェクト型でなければなりません。例えば参照型の`single_view`などは作れない事になります（ポインタ型はOK）。
+
 `single_view`のコンストラクタは値をコピーorムーブするためのものが用意されていますが、中には*in place*構築を行うためのコンストラクタがあります。
 
 ```cpp
@@ -2615,6 +2642,17 @@ int main() {
 ```
 
 ただし、このコンストラクタを利用しようとするとクラステンプレートの実引数推論を使用する事ができないため、明示的に要素型を指定してあげる必要があります。
+
+### `single_view<T>`の諸特性
+
+- `reference` : `T&`
+- `range`カテゴリ : `contiguous_range`
+- `common_range` : ◯
+- `sized_range` : ◯
+- `const-iterable` : ◯
+- `borrowed_range` : ×
+
+`single_view`は要素1つとはいえ範囲を所有していますので`borrowed_range`のモデルではありません。しかし、`view`コンセプトのモデルにはなっています。
 
 ### `views::single`
 
@@ -2656,3 +2694,12 @@ int main() {
 ## `common_view`
 ## `reverse_view`
 ## `element_view`
+
+# 謝辞
+
+　本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者・執筆者の方々に厚く御礼申し上げます。
+
+- cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
+- cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
+- C++20 Range Adaptors and Range Factories - Barry Revzin  
+  https://brevzin.github.io/c++/2021/02/28/ranges-reference/
