@@ -2529,7 +2529,7 @@ void foo() {
 
 Rangeライブラリに導入される`view`には大きくRangeアダプタ（*range adaptors*）とRangeファクトリ（*range factories*）の2つがあり、ここではそのうちの一つであるRangeファクトリと呼ばれる`view`を見ていきます。
 
-Rangeファクトリは極単純な`view`を生成するための型および操作のカテゴリで、ここの`view`達は単独で動作して範囲を新しく生成するような振る舞いをします。
+Rangeファクトリは極単純な範囲を保持する`view`を生成するための型および操作のカテゴリで、ここの`view`達は単独で動作して新しい範囲を生成するような振る舞いをします。
 
 ## `empty_view`
 
@@ -2586,7 +2586,53 @@ int main() {
 
 ## `single_view`
 
+`single_view`は指定された要素1つだけからなる範囲を生成する`view`です。
+
+```cpp
+int main() {
+  std::ranges::single_view<int> sv{20};
+
+  for (int n : sv) {
+    std::cout << n; // 1度だけ呼ばれる
+  }
+}
+```
+
+これはある値に対して*range*を取るアルゴリズムを再利用したい場合など、単一の値をシーケンスに変換したい場合に使用できるでしょう。
+
+`single_view`のコンストラクタは値をコピーorムーブするためのものが用意されていますが、中には*in place*構築を行うためのコンストラクタがあります。
+
+```cpp
+int main() {
+  
+  // std::stringのコンストラクタを呼び出してもらう
+  std::ranges::single_view<std::string> sv(std::in_place, "in place construct", 8);
+
+  for (auto& str : sv) {
+    std::cout << str; // in place
+  }
+}
+```
+
+ただし、このコンストラクタを利用しようとするとクラステンプレートの実引数推論を使用する事ができないため、明示的に要素型を指定してあげる必要があります。
+
 ### `views::single`
+
+`single_view`に対応する操作であるRangeファクトリオブジェクトとして、`views::single`が用意されています。
+
+```cpp
+int main() {
+  for (int n : std::views::single(20)) {
+    std::cout << n; // 1度だけ呼ばれる
+  }
+}
+```
+
+この`views::single`はカスタマイゼーションポイントオブジェクトであり、引数の式`arg`によって`views::single(arg)`のように呼び出された時、その効果は次のようになります
+
+1. `ranges::single_view{arg}`（引数`arg`は完全転送される）
+
+ただし、このCPOは1引数しか受け付けないため、*in place*コンストラクタを呼び出すことはできません。
 
 ## `iota_view`
 
