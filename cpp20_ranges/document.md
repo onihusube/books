@@ -2678,6 +2678,119 @@ int main() {
 
 ## `istream_view`
 
+`istream_view<T>`は任意の`istream`が示す入力ストリーム上にある`T`の値のシーケンスを生成する*View*です。
+
+```cpp
+int main() {
+  // 標準入力に"1 2 3 4 5 6"のように入力したとする
+  for (int n : std::ranges::istream_view<int>(std::cin)) {
+    std::cout << n; // 123456
+  }
+}
+```
+
+要は`istream_iterator`を`view`型として再設計したものです。iostreamにアダプトしているため、正確には`basic_istream`によって表現される入力ストリームを受け取ることができます。
+
+```cpp
+int main() {
+  auto iss = istringstream{"0 1  2   3     4"};
+
+  for (int n : std::ranges::istream_view<int>(iss)) {
+    std::cout << n; // 01234
+  }
+}
+```
+
+### `basic_istream_view`
+
+`istream_view<T>`は操作に対応する関数（Rangeファクトリ）であり、実体は`basic_istream_view`というクラスによって実装されています。
+
+```cpp
+namespace std::ranges {
+  // istream_view<T>は関数
+  template<class Val, class CharT, class Traits>
+  basic_istream_view<Val, CharT, Traits> istream_view(basic_istream<CharT, Traits>& s) {
+    return basic_istream_view<Val, CharT, Traits>{s};
+  }
+}
+```
+
+型`CharT, Traits`は`basic_istream`のテンプレートパラメータであり、ストリームのオブジェクトがあれば推論することができます。ユーザーが指定すべきなのは、どの入力ストリームを使うのかと、そこから取り出したい値の型を指定することです。
+
+`basic_istream_view`は次のように定義されています。
+
+```cpp
+namespace std::ranges {
+  template<movable Val, class CharT, class Traits>
+    requires default_initializable<Val> &&
+             stream-extractable<Val, CharT, Traits>
+  class basic_istream_view : public view_interface<basic_istream_view<Val, CharT, Traits>> {
+  public:
+    basic_istream_view() = default;
+    constexpr explicit basic_istream_view(basic_istream<CharT, Traits>& stream);
+
+    constexpr auto begin()
+    {
+      if (stream_) {
+        *stream_ >> value_;
+      }
+      return iterator{*this};
+    }
+
+    constexpr default_sentinel_t end() const noexcept;
+
+  private:
+    // プライベートメンバは説明専用
+    struct iterator;
+    basic_istream<CharT, Traits>* stream_ = nullptr;
+    Val value_ = Val();
+  };
+}
+```
+
+ストリームの値型`Val`は`movable`かつデフォルト構築可能である必要があります。`stream-extractable`は説明専用のコンセプトであり、`<<`による入力操作によって型`Val`の値が得られることを要求しています。
+
+この`basic_istream_view`を直接使おうとすると、`Val`を必ず指定しなければならない事からクラステンプレートの実引数推定が効かず、結局3つのパラメータ全てを指定することになってしまいます。それを回避するために`istream_view<Val>()`が用意されています。
+
+### 遅延評価
+
+`basic_istream_view`は遅延評価されます。`basic_istream_view`によって生成されるシーケンスは`basic_istream_view`オブジェクトを構築した時点では生成されていません。
+
+まず、`basic_istream_view`オブジェクトから`begin()`によってイテレータを取得した時点で最初の要素が計算（読み取り）されます（これは先ほどの定義の`begin()`に見ることができます）。そして、インクリメント（`++i/i++`）のタイミングで1つづつ後続の要素が計算されます。
+
+```cpp
+int main() {
+  // 標準入力に"1 2 3 4 5 6"のように入力したとする
+
+  auto iv = std::ranges::istream_view<int>(std::cin);
+  // この段階ではまだ何もしてない
+
+  auto it = std::ranges::begin(iv); 
+  // この段階で最初の要素（1）が読み取られる
+
+  int n1 = *it; // 最初の要素（1）が得られる
+  ++it;         // ここで次の要素（2）が読み取られる
+  it++;         // ここで次の要素（3）が読み取られる
+  int n2 = *it; // 3番目の要素（3）が得られる  
+}
+```
+
+読み取られた要素は`basic_istream_view`オブジェクトの内部に保存されており、仮に同じオブジェクトからイテレータを2つ以上取得していても、片方のイテレータの操作はもう片方のイテレータに影響を与えます。すなわち、`basic_istream_view`の生成するシーケンスは一方向性でマルチパス保証がありません。
+
+この事によって、`basic_istream_view`によるシーケンスは通常のシーケンスとは異なりメモリ上に空間的に存在するのではなく、ストリーム上に時間的に存在しています。すなわち、`basic_istream_view`を構築したタイミングで入力データが全て到着している必要はなく、任意のタイミングで到着しても構いません。この事は、C#におけるLINQに対するRxの対応と同じです。
+
+シーケンス終端の判定（`==/!=`）はストリーム上にデータが残っているかによって行われ、`std::basic_ios`の`operator bool`が用いられます。入力が無い（終端に到達した）状態でイテレータをインクリメントする事は意味論としては未定義動作に当たりますが、おそらくブロックすることになります。
+
+### `basic_istream_view<V, C, T>`の諸特性
+
+- `reference` : `V&`
+- `range`カテゴリ : `input_range`
+- `common_range` : ×
+- `sized_range` : ×
+- `const-iterable` : ×
+- `borrowed_range` : ×
+
+`basic_istream_view`は、そのイテレータをコピーすることができず、`range`型としてほとんど最低限の操作しかできない、少し特殊な`view`です。しかし、この様な扱いの難しいシーケンスであっても`view`という形に落とし込むことができるという例でもあり、プログラム外部環境に依存するなど特殊なシーケンスを`view/range`化する際の参考にすることができます。
 
 # viewその2 - Rangeアダプタ
 
