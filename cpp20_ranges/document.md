@@ -2567,7 +2567,7 @@ namespace std::ranges {
 
 ### `empty_view<T>`の諸特性
 
-ここで見るのは`view`あるいは`range`全般に共通して見いだすことのできる性質で、利用するにあたっては予め知っておくと便利なものです。しかし、`view`の種類や`view`の元となる`range`によって変化し、どうなっているか判断するのが難しいものなので、簡単にまとめておきます。
+ここで見るのは`view`あるいは`range`全般に共通して見いだすことのできる性質で、利用するにあたっては予め知っておくと便利なものです。しかし、`view`の種類や`view`の元となる`range`によって変化し、場合によってはどうなっているか判断するのが難しいものです。
 
 - `reference` : `T&`
 - `range`カテゴリ : `contiguous_range`
@@ -2576,7 +2576,14 @@ namespace std::ranges {
 - `const-iterable` : ◯
 - `borrowed_range` : ◯
 
-`reference`とはイテレータの間接参照の結果型（`decltype(*i)`）の事で、`range`カテゴリはその範囲はどの`range`コンセプトを満たしているかという事で、`const-iterable`というのはその`view`（ここでは`empty_view`）を`const`化したときでも`range`でいられるか（範囲`for`でイテレートできるか）を意味しています。他の項目はそのコンセプトを満たしているかどうかを表しています。
+これらの特性はそれぞれ次のような意味です。
+
+- `reference` : イテレータの間接参照の結果型（`decltype(*i)`）
+- `range`カテゴリ : どの`range`コンセプトのモデルとなるか
+- `common_range` : `common_range`コンセプトのモデルとなるか
+- `sized_range` : `sized_range`コンセプトのモデルとなるか
+- `const-iterable` : `const`化したときでも`range`でいられるか
+- `borrowed_range` : `borrowed_range`コンセプトのモデルとなるか
 
 ### `views::empty`
 
@@ -2668,13 +2675,155 @@ int main() {
 
 この`views::single`はカスタマイゼーションポイントオブジェクトであり、引数の式`arg`によって`views::single(arg)`のように呼び出された時、その効果は次のようになります
 
-1. `ranges::single_view{arg}`（引数`arg`は完全転送される）
+1. `single_view{arg}`（引数`arg`は完全転送される）
 
 ただし、このCPOは1引数しか受け付けないため、*in place*コンストラクタを呼び出すことはできません。
 
 ## `iota_view`
 
+`iota_view`は渡された2つの値をそれぞれ始点と終点として、単調増加するシーケンスを作成する*View*です。話を整数型に限定するならば、`init, bound`の2つの値を渡すと[init, bound)の範囲で1づつ増加していく数列を生成します。
+
+```cpp
+#include <ranges>
+
+int main() {
+  // [1, 10)の範囲の整数列を生成
+  ranges::iota_view iv{1, 10};
+
+  for (int n : iv) {
+    std::cout << n; // 123456789
+  }
+}
+```
+
+また、引数1つだけで構築することもでき、その場合は終端のない無限列を生成します。
+
+```cpp
+#include <ranges>
+
+int main() {
+  // [1, ∞)の整数列を生成
+  ranges::iota_view iv{1};
+
+  for (int n : iv) {
+    std::cout << n;     // 1234567891011121314151617181920
+    if (n == 20) break; // 何かしら終わらせる条件がないと無限ループ
+  }
+}
+```
+
+基本的には整数列を生成するために使用すると思われますが、`iota_view`の実体はインクリメント可能であり距離を定義できさえすればどんな型の単調増加シーケンスでも作成可能です。
+
+```cpp
+namespace std::ranges {
+  // iota_viewの定義の例
+  template<weakly_incrementable W, semiregular Bound = unreachable_sentinel_t>
+    requires weakly-equality-comparable-with<W, Bound> && semiregular<W>
+  class iota_view : public view_interface<iota_view<W, Bound>> {
+    // ...
+  };
+}
+```
+
+型`W, Bound`はそれぞれ生成する範囲の先頭、終端を表す型です。それぞれのオブジェクトを`w, b`とすると、`[w, b)`の範囲のシーケンスを生成します。`W`は`weakly_incrementable`であるので、`++`によるインクリメントが可能でありさえすればどんな型のシーケンスでも生成する事ができます。`Bound`はその上界（番兵）を指定するもので、デフォルトで指定されている`unreachable_sentinel_t`はあらゆる型との比較に常に`true`を返す特殊な番兵型で、別の方法で範囲の終端が指定される場合に用いる事ができるものです。すなわち、1引数で`iota_view`を構築した場合にこれが使用され、`W`の単調増加無限列を表すことになります。
+
+`requires`節の制約は`W, Bound`が`== !=`で相互に比較可能であり、`W`が`int`型などの基本型と同程度に単純な型である事を要求しています。`semiregular`コンセプトは型がコピー可能でありデフォルト構築可能であれば満たす事ができます。
+
+この性質によって例えば、ポインタ型やイテレータ型のシーケンスを作成可能です。
+
+```cpp
+int main() {
+
+  int array[] = {2, 4, 6, 8, 10};
+
+  // ポインタのシーケンス
+  ranges::iota_view iva{ranges::begin(array), ranges::end(array)};
+
+  for (int* p : iva) {
+    std::cout << *p;  // 246810
+  }
+
+  std::cout << '\n';
+
+  std::list list = {1, 3, 5, 7, 9}; 
+
+  // listイテレータのシーケンス
+  ranges::iota_view ivl{ranges::begin(list), ranges::end(list)};
+
+  for (auto it : ivl) {
+    std::cout << *it; // 13579
+  }
+}
+```
+
+なお、浮動小数点数型は`weakly_incrementable`のモデルとならないため`iota_view`では使用できません。2つの値の間の距離を整数値で定義できないためです。
+
+### 遅延評価
+
+`iota_view`によって生成されるシーケンスは`iota_view`オブジェクトを構築した時点では生成されておらず、各要素の生成は遅延評価されます。
+
+具体的には、`iota_view`オブジェクトから得られるイテレータのインクリメント（`++i/i++`）のタイミングで1つづつシーケンスの要素が計算されます。
+
+```cpp
+int main() {
+  std::ranges::iota_view iv{1, 10};
+  auto it = std::ranges::begin(iv);
+  // この段階ではまだ何もしてない
+
+  int n1 = *it; // 初項（1）が得られる
+  ++it;         // ここで次の項（2）が計算される
+  it++;         // ここで次の項（3）が計算される
+  int n2 = *it; // 3番目の項（3）が得られる  
+}
+```
+
+`iota_view`のイテレータと番兵は`iota_view`に渡された値`[w, b)`をそれぞれ保持しており、インクリメントや同値比較の際に利用します。`iota_view`の行うことの大部分はイテレータによって行われているわけです。
+
+### `iota_view<W, B>`の諸特性
+
+- `reference` : `W`
+- `range`カテゴリ
+    - `W`が`advanceable` : `random_access_range`
+    - `W`が`decrementable` : `bidirectional_range`
+    - `W`が`incrementable` : `forward_range`
+    - それ以外 : `input_range`
+- `common_range` : `W, Bound`が同じ型である場合
+- `sized_range` : 次のいずれかの場合
+    - `common_range`かつ`random_access_range`となる時
+    - `W, Bound`がともに整数型である時
+    - `W, Bound`が`sized_sentinel_for<Bound, W>`のモデルとなる時
+- `const-iterable` : ◯
+- `borrowed_range` : ◯
+
+`incrementable`と言うのは`weakly_incrementable`より少し強い制約で、自身との等値比較や後置`++`が自身と同じ型を返す事などが追加で求められるものです。`decrementable`はそれに加えてデクリメント操作が可能であるもので、`advanceable`はさらに`+ - += -=`によって進行する事が可能である事を要求します（なお、`incrementable`は標準コンセプトですが他の二つは説明専用のものです）。すなわち、`W`について各種イテレータと同様の操作による値の増加・減少が可能である時に、対応するイテレータと同じカテゴリの`range`になります。
+
+`iota_view`は自身で範囲を所有しているタイプの`range`ですが、`view`および`borrowed_range`のモデルとなるように実装されます。自身で範囲を所有しているにも関わらず`view`および`borrowed_range`の要求を満たす事ができるのは、シーケンスが遅延評価されていることによって可能となっています。
+
 ### `views::iota`
+
+`iota_view`に対応する操作であるRangeファクトリオブジェクトとして、`views::iota`が用意されています。
+
+```cpp
+#include <ranges>
+
+int main() {
+  for (int n : std::views::iota(1, 10)) {
+    std::cout << n;   // 123456789
+  }
+  
+  std::cout << '\n';
+
+  for (int n : std::views::iota(1)) {
+    std::cout << n;   // 1234567891011121314151617181920
+    if (n == 20) break;
+  }
+}
+```
+
+この`views::iota`はカスタマイゼーションポイントオブジェクトであり、引数の式`w`によって`views::iota(w)`のように呼び出された時、あるいは`w, b`によって`views::iota(w, b)`のように呼び出された時、その効果は次のようになります
+
+1. 1引数で呼ばれた場合 : `iota_view{w}`
+2. 2引数で呼ばれた場合 : `iota_view{w, b}`
 
 ## `istream_view`
 
