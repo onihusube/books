@@ -2943,7 +2943,136 @@ int main() {
 
 # viewその2 - Rangeアダプタ
 
-## `all_view`
+## `ref_view` (*All View*)
+
+`ref_view`は他の`range`を参照するだけの`view`です。
+
+```cpp
+#include <ranges>
+
+int main() {
+  std::vector vec = {1, 3, 5, 7, 9, 11};
+
+  for (int n : std::ranges::ref_view(vec)) {
+    std::cout << n; // 1357911
+  }
+}
+```
+
+右辺値でさえなければ任意の`range`オブジェクトを受けることができて、その`range`を単に参照するだけの`view`となります。
+
+ぱっと見ると何に使うのか不明ですが、これは`std::vector`などのコピーが気軽にできない`range`の取り回しを改善するために利用できます。そのような`range`の軽量な参照ラッパとなることで、コピーされるかを気にしなくてよくなるなど可搬性が向上します。役割としては、通常のオブジェクトの参照に対する`std::reference_wrapper`に対応しています。例えば、`std::async`の追加の引数として渡すときなどのように*decay copy*されてしまう所に渡す場合に活用できるでしょう。
+
+```cpp
+struct check {
+  check() = default;
+  check(const check&) {
+    std::cout << "コピーされたよ！" << std::endl;
+  }
+};
+
+int main() {
+  std::vector<check> vec{};
+  vec.emplace_back();
+  
+  // vectorがコピーされる
+  auto f1 = std::async(std::launch::async, [](auto&&) {}, vec); 
+  
+  // ref_viewがコピーされる
+  auto f2 = std::async(std::launch::async, [](auto&&) {}, ranges::ref_view{vec});  
+}
+```
+
+またほかの`view`、特にRangeアダプタの実装にも利用されます。`view`を作ろうとするとデフォルト構築とムーブ構築/代入が求められますが、`range`オブジェクトへの参照を直接持つと代入演算子やデフォルトコンストラクタが定義できなくなり、ポインタを利用すると`nullptr`を気にしなければなりません。`view`コンセプトの定義を思い出すと、すべての`view`はデフォルト構築可能でムーブ構築/代入が可能であり、`ref_view`もまたそれに従います。そのため、`ref_view`（正確には`views::all`）を用いて`range`を受け取り保持するようにすることでその辺りの考慮の必要性がなくなり、`view`の実装を幾分か楽にすることができます。
+
+`ref_view`の定義は次のようになっています。
+
+```cpp
+namespace std::ranges {
+  template<range R>
+    requires is_object_v<R>
+  class ref_view : public view_interface<ref_view<R>> {
+  private:
+    R* r_ = nullptr;  // 説明専用メンバ
+  public:
+    constexpr ref_view() noexcept = default;
+
+    template<different-from<ref_view> T>
+      requires /*...*/
+    constexpr ref_view(T&& t);
+
+    constexpr R& base() const { return *r_; }
+
+    constexpr iterator_t<R> begin() const { return ranges::begin(*r_); }
+    constexpr sentinel_t<R> end() const { return ranges::end(*r_); }
+
+    constexpr bool empty() const
+      requires requires { ranges::empty(*r_); }
+    { return ranges::empty(*r_); }
+
+    constexpr auto size() const requires sized_range<R>
+    { return ranges::size(*r_); }
+
+    constexpr auto data() const requires contiguous_range<R>
+    { return ranges::data(*r_); }
+  };
+
+  template<class R>
+    ref_view(R&) -> ref_view<R>;
+}
+```
+
+入力の型`R`は`range`オブジェクトであればよく、コンストラクタでの制約によって`ref_view`自身と右辺値の`range`オブジェクトを弾きます。そして、`ref_view`自体は対象の`range`オブジェクトへのポインタを保持し、その`range`のイテレータをそのまま利用します。
+
+### `ref_view<R>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : `R`のカテゴリに従う
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : 〇
+- `borrowed_range` : 〇
+
+`ref_view`は元の`range`の極々薄いラッパでしかないので、元の`range`の性質をほとんどそのまま受け継ぎます。
+
+### `views::all`
+
+`ref_view`に対応する操作であるRangeアダプタオブジェクトが`views::all`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 3, 5, 7, 9, 11};
+
+  for (int n : views::all(vec)) {
+    std::cout << n; // 1357911
+  }
+
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (int n : vec | views::all) {
+    std::cout << n; // 1357911
+  }
+}
+```
+
+`views::all`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::all(r)`のように呼び出されたとき、その効果は次のようになります
+
+1. `decay_t<decltype(r)>`が`view`コンセプトを満たす（`r`が`view`である）ならば、`decay-copy(r)`
+2. `ref_view{r}`が構築可能ならば、`ref_view{r}`
+3. それ以外の場合、`subrange{r}`
+
+`views::all`は`ref_view`だけを生成するわけではないですが、結果の型を区別しなければ実質的に`ref_view`相当の`view`オブジェクトを得ることができます。
+
+先ほど少し触れましたが、この`views::all`は他のRangeアダプタの実装に良く用いられ、その型を参照したいことがよくあります。そのため、`views::all_t`というエイリアステンプレートによって`views::all`の戻り値型を簡単に取得することができるようになっています。
+
+```cpp
+namespace std::ranges::views {
+  template<viewable_range R>
+    using all_t = decltype(all(declval<R>()));
+}
+```
+
 ## `filter_view`
 ## `transform_view`
 ## `take_view`
