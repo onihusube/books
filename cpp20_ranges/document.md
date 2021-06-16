@@ -3116,14 +3116,13 @@ int main() {
 }
 ```
 
-## `all_view`
 `views::all`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::all(r)`のように呼び出されたとき、その効果は次のようになります
 
 1. `decay_t<decltype(r)>`が`view`コンセプトを満たす（`r`が`view`である）ならば、`decay-copy(r)`
 2. `ref_view{r}`が構築可能ならば、`ref_view{r}`
 3. それ以外の場合、`subrange{r}`
 
-`views::all`は`ref_view`だけを生成するわけではないですが、結果の型を区別しなければ実質的に`ref_view`相当の`view`オブジェクトを得ることができます。
+`views::all`は`ref_view`だけを生成するわけではないですが、結果の型を区別しなければ実質的に`ref_view`相当の`view`オブジェクトを得ることができます。これによって得られる`view`の事を総称して*All View*と呼びます。
 
 先ほど少し触れましたが、この`views::all`は他のRangeアダプタの実装に良く用いられ、その型を参照したいことがよくあります。そのため、`views::all_t`というエイリアステンプレートによって`views::all`の戻り値型を簡単に取得することができるようになっています。
 
@@ -3133,6 +3132,29 @@ namespace std::ranges::views {
     using all_t = decltype(all(declval<R>()));
 }
 ```
+
+これは例えば次のように利用されます。
+
+```cpp
+template<input_range V>
+class my_view {
+  V base_;
+
+public:
+
+  myview(V base)
+    : base_(td::move(base))
+  {}
+
+  // ...
+};
+
+// 推論補助でall_tを使用する
+template<typename R>
+my_view(R&&) -> my_view<views::all_t<R>>;
+```
+
+`ref_view`にせよ`subrange`にせよその型さえ求めてしまえば暗黙変換が可能なので、推論補助で`views::all_t`を使用して*All View*の型を求めてそれを利用する事で、コンストラクタなどで`views::all`を呼び出す必要がなくなります。
 
 ## `filter_view`
 ## `transform_view`
