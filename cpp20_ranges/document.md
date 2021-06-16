@@ -79,11 +79,11 @@ concept range =
 
 範囲を変更しないとはそのままで、`t`の表す範囲を`begin/end`の呼び出しに伴って何か変更（要素を消したり、並び替えたり）してはいけません。
 
-> `begin(t)`が`std::forward_iterator`コンセプトのモデルであるならば、`begin(t)`は等さを保持する（*equality-preserving*）
+> `begin(t)`が`std::forward_iterator`コンセプトのモデルであるならば、`begin(t)`は等しさを保持する（*equality-preserving*）
 
 `std::forward_iterator`コンセプトは名前の通り、従来*forward iterator*と呼ばれていた種類のイテレータを定義するコンセプトで、C++20から`<iterator>`にて定義されています。イテレータカテゴリには継承関係があり、コンセプトにもそれに応じた包含関係があります。*forward iterator*より強いイテレータは同時に`std::forward_iterator`コンセプトのモデルでもあります。
 
-ある式が等さを保持する（*equality-preserving*である）とは、ある式に同じ値を入力するといつも同じ結果が得られる事を言います。簡単に言えば、式の内部で状態を持ったりグローバルな変数に依存したりしていない、という事です。同じオブジェクトではなく「同じ値」であることに注意してください、同じオブジェクトを渡してもその値が変更されているならば同じ結果を返す必要はありません。
+ある式が等しさを保持する（*equality-preserving*である）とは、ある式に同じ値を入力するといつも同じ結果が得られる事を言います。簡単に言えば、式の内部で状態を持ったりグローバルな変数に依存したりしていない、という事です。同じオブジェクトではなく「同じ値」であることに注意してください、同じオブジェクトを渡してもその値が変更されているならば同じ結果を返す必要はありません。
 
 この意味論的な要件はつまり、`begin(t)`から得られるイテレータが*forward iterator*（あるいはより強いイテレータ）であるならば、`begin(t)`は同じ`t`に対して同じイテレータを返すべし、という事です。
 
@@ -3253,13 +3253,111 @@ int main() {
 }
 ```
 
-`views::filter`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::filter(r, p)`のように呼び出されたとき、その効果は次のようになります
+`views::filter`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::filter(r, p)`のように呼び出されたとき、`filter_view{r, p}`を返します。
 
-1. `filter_view{r, p}`
-
-`views::filter`と`filter_view`は一対一対応しています。それでも、パイプラインで使用可能であるなど`views::filter`を使った方が有利なシーンは多いでしょう。
+`views::filter`と`filter_view`は一対一対応していますが、パイプラインで使用可能であるなど`views::filter`を使った方が有利なシーンは多いでしょう。
 
 ## `transform_view`
+
+`transform_view`は元となる範囲の要素それぞれに指定された変換を適用したシーケンスを生成する`view`です。
+
+```cpp
+#include <ranges>
+
+int main() {
+  // 各要素を2倍する
+  transform_view tv{views::iota(1, 5), [](int n) { return n * 2; }};
+  
+  for (int n : tv) {
+    std::cout << n; // 2468
+  }
+}
+```
+
+型`T`のシーケンスと`T -> U`へ変換する関数を受けて、`U`のシーケンスを返すものです。この例では結果も`int`ですが、当然型を変換することもできます。このような操作は他の所だと`map`とか`select`と呼ばれていますが、C++は原初のSTLのころからこの操作の事を一貫して`transform`と呼んでいるため、その流れを受けてここでも`transform`となっています。
+
+```cpp
+namespace std::ranges {
+  // transform_viewの定義例
+  template<input_range V, copy_constructible F>
+    requires view<V> && is_object_v<F> &&
+             regular_invocable<F&, range_reference_t<V>> &&
+             can-reference<invoke_result_t<F&, range_reference_t<V>>>
+  class transform_view : public view_interface<transform_view<V, F>> {
+    // ...
+  };
+
+  template<class R, class F>
+    transform_view(R&&, F) -> transform_view<views::all_t<R>, F>;
+}
+```
+
+入力となる`range`及び変換関数型`F`に求められる基本的な事は`filter_view`と同様ですが、`F`には`copy_constructible`だけが要求されています（`filter_view`の場合は`indirect_unary_predicate`を通して要求されていました）。`regular_invocable`コンセプトは等しさを保持しながらの関数呼び出しが可能であることを定義するコンセプトで、`can-reference`は型が`void`ではないことをチェックする説明専用のコンセプトです。すなわち、`F`は`V`の要素によって呼び出し可能であり、その呼び出しは`F`の内外の状態に依存したり副作用を持ったりしてはならず、`F`の戻り値型は`void`であってはならないという事です。
+
+
+### 遅延評価
+
+`transform_view`もまた、遅延評価によってシーケンスを生成します。イテレータの`opreator*()`による間接参照のタイミングで要素の読み出しと変換の適用が行われます。
+
+```cpp
+std::ranges::transform_view tv{std::views::iota(1, 5), [](int n) { return n * 2; }};
+// transform_view構築時にはまだ計算されない
+
+auto it = std::ranges::begin(tv);
+// イテレータ取得時にも計算されない
+
+++it;
+// インクリメント時にも計算されない
+
+// 間接参照時に要素が読みだされ、変換が適用される
+int n1 = *it; // n1 == 2
+int n2 = *it; // n2 == 2、再計算している
+
+++it;
+
+int n3 = *it; // n3 == 4
+```
+
+少し注意点なのですが、この性質上`opreator*()`による間接参照のタイミングで毎回変換が行われます。一度計算した値をキャッシュしたりはしません。そのため、`transform_view`による範囲を複数回イテレートする際は変換関数の処理の重さに気を配る必要があるかもしれません。
+
+### `transform_view<R, F>`の諸特性
+
+- `reference` : `invoke_result_t<F&, range_reference_t<R>>`
+- `range`カテゴリ
+    - `R`が`random_access_range` : `random_access_range`
+    - `R`が`bidirectional_range` : `bidirectional_range`
+    - `R`が`forward_range` : `forward_range`
+    - それ以外 : `input_range`
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`であり、`const F`が呼び出し可能である場合
+- `borrowed_range` : ×
+
+`reference`はややこしいですが、`R`の要素型`T`について`F`が`F : T -> U`のような変換を行う場合の`U`になり、これは`remove_cvref`等されない`F`の戻り値型そのままです。また、`range`カテゴリが`R`と異なるのは`R`が`contiguous_range`であるときだけです。
+
+### `views::transform`
+
+`transform_view`に対応するRangeアダプタオブジェクトが`views::transform`です。
+
+```cpp
+int main() {
+  auto time_2 = [](int n) { return n * 2; };
+
+  for (int n : views::transform(views::iota(1, 5), time_2)) {
+    std::cout << n; // 2468
+  }
+
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (int n : views::iota(1, 5) | views::transform(time_2)) {
+    std::cout << n; // 2468
+  }
+}
+```
+
+`views::transform`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, f`によって`views::transform(r, f)`のように呼び出されたとき、`transform_view{r, f}`を返します。
+
 ## `take_view`
 ## `take_while_view`
 ## `drop_view`
