@@ -675,6 +675,8 @@ int main() {
 
 この様な恣意的な例以外でも、たとえば並列処理において大本の`range`が別のスレッドに所有されていたりする場合などにも起こり得ます。Rustならば型レベルでこのような問題を阻止できますが、C++ではこれを防ぐことはできません。コンパイラのコード分析や各種サニタイザなどを用いれば検出できるかもしれませんが・・・
 
+\clearpage
+
 # Rangeアクセス関数
 
 C++17においてコンテナアクセスの共通操作として`std`名前空間の下に追加されていたグローバル関数テンプレートに対応するものが、Rangeライブラリにも`std::ranges`名前空間の下に用意されています。これは一見すると同じものが重複して存在しているように見えてしまいますがそうではなく、コンセプトによって制約され、同じ意味を持ついくつかの操作をさらに統一化している、よりジェネリックで安全かつ簡単にその操作の目的を達成するものです。
@@ -1236,6 +1238,8 @@ int main () {
 
 `std::span`がまさにそうですが、自身の`const`性と要素の`const`性が同期しない`range`型では、この関数が有効でも`const`ポインタが得られるとは限りません。
 
+\clearpage
+
 # その他のRange CPO
 
 分類としてはRangeアクセス関数ではありませんが、Rangeライブラリにおいて新しいカスタマイゼーションポイントとして追加されたCPOが他にもあります。
@@ -1372,6 +1376,8 @@ constexpr iter_value_t<X> iter-exchange-move(X&& x, Y&& y)
 このように、3番目のケースは`ranges::swap`によって要素の交換が出来ない場合に最後の手段として働くものです。
 
 ところで、`ranges::iter_move`も`ranges::iter_swap`もよく見るとイテレータ型だけでなく、間接参照可能な（`indirectly_readable`な）型に対して使用することができます。
+
+\clearpage
 
 # Range情報取得エイリアス
 
@@ -1696,7 +1702,7 @@ void replace(R& r, ranges::range_rvalue_reference_t<R> rv) {
 }
 ```
 
-## `iter_common_reference_t`
+\clearpage
 
 # 部分範囲（*subrange*）型
 
@@ -1997,6 +2003,8 @@ subrange(R&&, make-unsigned-like-t<range_difference_t<R>>) ->
 
 このコンセプトで制約された推論補助によって、`subrange`を使用する多くの場合はそのテンプレートパラメータを明示的に指定する必要はありません。というか、指定しようとしない方がいいでしょう・・・
 
+\clearpage
+
 # dangling iterator handling
 
 関数の引数などとして`range`を取りまわす時、`range`をコピーして取りまわすなんてことをするはずはなく、`view`や`borrowed_range`の様な範囲を参照する形でやり取りすることになります。その際に問題となるのは、参照先の範囲の寿命が先に尽きて、その範囲への参照あるいはイテレータが無効になってしまう事です。これは未定義動作に繋がり、そのような参照やイテレータの事をダングリング参照/イテレータと呼びます。
@@ -2139,6 +2147,7 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 
 `dangling`を返す場合でも内部の処理が通常通り行われている事が気になるかもしれませんが、`dangling`を返している場合というのは通常コンパイル時に気付くはずで、`dangling`を返している処理が実行されることはないはずです。もしコンパイル時に気付かなかったとすれば、それは戻り値を無視しているという事なのでそれはそれでバグでしょう。いずれにせよ、利用側では変数に対するコンセプトなどによって`dangling`が返されていることに素早く気付くようにしておく事が推奨されます。
 
+\clearpage
 
 # Rangeアルゴリズム
 
@@ -2530,6 +2539,8 @@ void foo() {
 このような事は`ranges::find`に限らずRangeアルゴリズム全てに対して規定されており、RangeアルゴリズムはADL以前に発見されている場合にADLを妨げ無効化する効果を持っています。これは、Rangeアルゴリズムが従来のアルゴリズムをリファインする新しいものであるため、ADLを介して意図せず古い関数が使用されることを防止するための仕組みです。
 
 そして、このような効果は普通の関数テンプレートでは実現できないため、Rangeアルゴリズムは実のところ関数テンプレートではありません。おそらく、関数オブジェクトとして実装されます。
+
+\clearpage
 
 # viewその1 - Rangeファクトリ
 
@@ -2945,9 +2956,11 @@ int main() {
 
 `basic_istream_view`は、そのイテレータをコピーすることができず、`range`型としてほとんど最低限の操作しかできない、少し特殊な`view`です。しかし、この様な扱いの難しいシーケンスであっても`view`という形に落とし込むことができるという例でもあり、プログラム外部環境に依存するなど特殊なシーケンスを`view/range`化する際の参考にすることができます。
 
+\clearpage
+
 # viewその2 - Rangeアダプタ
 
-2つ目の`view`のグループ、Rangeアダプタ（*range adaptors*）と呼ばれる`view`は、他の`range`に対して作用して特定の操作を適用した`view`に変換するものです。Rangeアダプタは`range`から`range`へ操作を適用しつつ変換するものなので、Rangeアダプタの結果にさらにRangeアダプタを適用する形で操作をチェーンさせることができ、その結果もまた`range`（`view`）として得られます。
+2つ目の`view`のグループ、Rangeアダプタ（*range adaptors*）と呼ばれる`view`は、他の`range`に対して作用して特定の操作を適用した`view`に変換するものです。Rangeアダプタは`range`から`range`へ操作を適用しつつ変換するものなので、Rangeアダプタの結果にさらにRangeアダプタを適用する形で操作をチェーンさせることができ、その結果もまた`range`（`view`）として得られます。そして、Rangeアダプタによって生成されるシーケンスは可能な限り遅延評価され、何処かのタイミングでシーケンスの全体を計算してそれを所有するようなものではありません。
 
 Rangeファクトリはシーケンスを生成するタイプの`view`なのでRangeアダプタのように他の`range`に作用することはできませんが、Rangeアダプタと比較してみるとRangeファクトリはRangeアダプタによるチェーンの起点となる`view`として利用するものである事がわかります。
 
@@ -3157,6 +3170,95 @@ my_view(R&&) -> my_view<views::all_t<R>>;
 `ref_view`にせよ`subrange`にせよその型さえ求めてしまえば暗黙変換が可能なので、推論補助で`views::all_t`を使用して*All View*の型を求めてそれを利用する事で、コンストラクタなどで`views::all`を呼び出す必要がなくなります。
 
 ## `filter_view`
+
+`filter_view`は受け取った述語に従って元の範囲の要素を選別したシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  // 奇数をフィルターする（偶数のみ取り出す）
+  filter_view fv{views::iota(1, 10), [](int n) { return n % 2 == 0; }};
+  
+  for (int n : fv) {
+    std::cout << n; // 2468
+  }
+}
+```
+
+元の範囲の各要素に対して渡した術後オブジェクトが`true`を返す要素だけを残します。
+
+```cpp
+namespace std::ranges {
+  // filter_viewの定義の例    
+  template<input_range V, indirect_unary_predicate<iterator_t<V>> Pred>
+    requires view<V> && is_object_v<Pred>
+  class filter_view : public view_interface<filter_view<V, Pred>> {
+    // ...
+  };
+
+  template<class R, class Pred>
+    filter_view(R&&, Pred) -> filter_view<views::all_t<R>, Pred>;
+}
+```
+
+`filter_view`の入力となる`range`は`input_range`かつ`view`でなければなりません。述語型`Pred`はオブジェクト型であるように制約されていますが、これは関数ポインタを排除するものではありません。
+
+### 遅延評価
+
+`filter_view`によるシーケンス生成は遅延評価されます。構築時に最初の要素だけが計算され、残りの要素はイテレータのインクリメントのタイミングで計算されます。
+
+```cpp
+filter_view fv{views::iota(1, 10), [](int n) { return n % 2 == 0; }};
+// 構築時に条件を満たす最初の要素が探索され、1番目の要素が計算される
+
+auto it = ranges::begin(fv);
+
+++it;
+// 次に条件を満たす要素が探索され、2番目の要素が計算される
+
+int n = *it; // 2番目の要素（4）が得られる
+```
+
+この例では`iota_view`もまた遅延評価されているので、一連のシーケンス全体が遅延評価によって生成されています。
+
+### `filter_view<R, P>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ
+    - `R`が`bidirectional_range` : `bidirectional_range`
+    - `R`が`forward_range` : `forward_range`
+    - それ以外 : `input_range`
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` : ×
+- `const-iterable` : ×
+- `borrowed_range` : ×
+
+### `views::filter`
+
+`filter_view`に対応するRangeアダプタオブジェクトが`views::filter`です。
+
+```cpp
+int main() {
+  auto even = [](int n) { return n % 2 == 0; };
+
+  for (int n : views::filter(views::iota(1, 10), even)) {
+    std::cout << n;
+  }
+
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (int n : views::iota(1, 10) | views::filter(even)) {
+    std::cout << n;
+  }
+}
+```
+
+`views::filter`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::filter(r, p)`のように呼び出されたとき、その効果は次のようになります
+
+1. `filter_view{r, p}`
+
+`views::filter`と`filter_view`は一対一対応しています。それでも、パイプラインで使用可能であるなど`views::filter`を使った方が有利なシーンは多いでしょう。
+
 ## `transform_view`
 ## `take_view`
 ## `take_while_view`
@@ -3168,6 +3270,8 @@ my_view(R&&) -> my_view<views::all_t<R>>;
 ## `common_view`
 ## `reverse_view`
 ## `element_view`
+
+\clearpage
 
 # 謝辞
 
