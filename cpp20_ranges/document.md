@@ -3253,7 +3253,7 @@ int main() {
 }
 ```
 
-`views::filter`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::filter(r, p)`のように呼び出されたとき、`filter_view{r, p}`を返します。
+`views::filter`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::filter(r, p)`のように呼び出されたとき、`filter_view(r, p)`を返します。
 
 `views::filter`と`filter_view`は一対一対応していますが、パイプラインで使用可能であるなど`views::filter`を使った方が有利なシーンは多いでしょう。
 
@@ -3318,7 +3318,7 @@ int n2 = *it; // n2 == 2、再計算している
 int n3 = *it; // n3 == 4
 ```
 
-少し注意点なのですが、この性質上`opreator*()`による間接参照のタイミングで毎回変換が行われます。一度計算した値をキャッシュしたりはしません。そのため、`transform_view`による範囲を複数回イテレートする際は変換関数の処理の重さに気を配る必要があるかもしれません。
+少し注意点なのですが、この性質上`opreator*()`による間接参照のタイミングで毎回変換が行われます。一度計算した値をキャッシュしたりはしません。そのため、`transform_view`による範囲を複数回イテレートする際は変換処理の重さに気を配る必要があるかもしれません。
 
 ### `transform_view<R, F>`の諸特性
 
@@ -3356,9 +3356,156 @@ int main() {
 }
 ```
 
-`views::transform`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, f`によって`views::transform(r, f)`のように呼び出されたとき、`transform_view{r, f}`を返します。
+`views::transform`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, f`によって`views::transform(r, f)`のように呼び出されたとき、`transform_view(r, f)`を返します。
 
 ## `take_view`
+
+`take_view`は元となるシーケンスの先頭から指定された数だけ要素を取り出したシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  // 先頭から5つの要素だけを取り出す
+  take_view tv{views::iota(1), 5};
+  
+  for (int n : tv) {
+    std::cout << n; // 12345
+  }
+}
+```
+
+`iota_view`の生成する無限列のように無限に続くシーケンスから決められた数だけを取り出したり、Rangeアルゴリズムにおいて他の操作を適用したシーケンスから（先頭に集められた）最終的な結果を取り出す時などに活用できます。
+
+### オーバーランの防止
+
+意地悪な人はきっと、`take_view`に元となる範囲の長さよりも大きい数を指定したらどうなるの？と思うことでしょう。残念ながら？これは対策されています。
+
+`take_view<R>`のイテレータは元となる範囲`R`の種別によって3つのパターンに分岐します。
+
+1. `R`が`sized_range`であるならば、次のいずれか
+   1.  `R`が`random_access_range`なら、`R`の先頭イテレータをそのまま利用
+   2. それ以外の場合、`std::counted_iterator`に`R`の先頭イテレータと与えられた長さと`R`の長さの短い方を渡して構築
+2. それ以外の場合、`std::counted_iterator`に`R`の先頭イテレータと与えられた長さを渡して構築
+
+`std::counted_iterator`はC++20から追加された*iteretor adaptor*で、与えられたイテレータをラップして指定された長さだけイテレート可能なものに変換します。
+
+これによって、距離が事前に求まる場合はその距離を超えてイテレートされることはありません。そして、`sized_range`ではない`range`に対しても`take_view`の提供する番兵型によって確実にオーバーランしないようにチェックされています。
+
+```cpp
+int main() {
+  using namespace std::string_view_literals;
+  
+  // 元の文字列の長さを超えた長さを指定する（上記1.1のケース）
+  take_view tv1{"str"sv, 10};
+  
+  int count = 0;
+  
+  // 安全、3回しかループしない
+  for ([[maybe_unused]] char c : tv1) {
+    ++count;
+  }
+  
+  std::cout << "loop : " << count << '\n';  // loop : 3
+  
+  std::list li = {1, 2, 3, 4, 5};
+  
+  // 元のリストの長さを超えた長さを指定する（上記1.2のケース）
+  take_view tv2{li, 10};
+  count = 0;
+
+  // 安全、5回しかループしない
+  for ([[maybe_unused]] int n : tv2) {
+    ++count;
+  }
+  
+  std::cout << "loop : " << count << '\n';  // loop : 5
+
+  std::forward_list fl = {1, 2, 3, 4, 5};
+  
+  // 元のリストの長さを超えた長さを指定する（上記2のケース）
+  take_view tv3{fl, 10};
+  count = 0;
+
+  // 安全、5回しかループしない
+  for ([[maybe_unused]] int n : tv3) {
+    ++count;
+  }
+  
+  std::cout << "loop : " << count << '\n';  // loop : 5
+}
+```
+
+なお、`take_view`に負の値を渡すこともできますが、`R`が`random_access_range`の場合以外は未定義動作になります。使い所はあるかもしれませんが基本的には避けた方が良いでしょう。
+
+### 遅延評価
+
+`take_view`もまた、遅延評価によってシーケンスを生成します。ただ、`take_view`は元となる`range`の極薄いラッパーなので、ほとんどの操作はベースにあるイテレータの操作をそのまま呼び出すだけで、特別な事は行ないません。`take_view`が行なっている事はほぼその長さの管理だけです。それは主に`==`による終端チェック時に行われます。また、`std::counted_iterator`が使用される場合はそのためにインクリメントのタイミングで残りの距離の計算（単純なカウンタのデクリメントによる）が行われます。
+
+```cpp
+take_view tv{views::iota(1), 5};
+// take_vieww構築時には何もしない
+
+auto it = ranges::begin(tv);
+// イテレータ取得時には元のシーケンスによって最適なイテレータを返す
+
+++it;
+// インクリメントはベースのイテレータをインクリメントする
+// counted_iteratorが使用される場合、ここで残りの距離が計算される
+
+int n1 = *it; // n1 == 2
+// 間接参照時はベースのイテレータを間接参照するだけ
+
+auto fin = ranges::end(tv);
+// 番兵取得時には元のシーケンスによって最適な番兵を返す
+
+it == fin;
+// 終端チェック時に与えられた長さと元のシーケンスの長さ、現在の位置に基づいて終端チェックが行われる
+```
+
+### `take_view<R>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : `R`のカテゴリに従う
+- `common_range` : `R`が`sized_range`かつ`random_access_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`take_view`は元の範囲`R`のごく薄いラッパとなり、元の`range`の性質をほぼそのまま受け継ぎます。
+
+### `views::take`
+
+`take_view`に対応するRangeアダプタオブジェクトが`views::take`です。
+
+```cpp
+int main() {
+  
+  for (int n : views::take(views::iota(1), 5)) {
+    std::cout << n;
+  }
+  
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (int n : views::iota(1) | views::take(5)) {
+    std::cout << n;
+  }
+}
+```
+
+`views::take`はカスタマイゼーションポイントオブジェクトであり、型`R, D`の引数の式`r, n`によって`views::take(r, n)`のように呼び出されたとき、その効果は次のようになります
+
+1. `R`が`empty_view`の特殊化である場合、`((void) n, decay-copy(r))`
+2. `R`が`random_access_range`かつ`sized_range`であり以下のいずれかに該当する場合、`R(ranges::begin(r), ranges::begin(r) + min<D>(ranges::size(r), n))`
+      - `R`が`std::span`の特殊化であり、`extent`が`std::dynamic_extent`である
+      - `R`が`std::basic_string_view`の特殊化である
+      - `R`が`iota_view`の特殊化である
+      - `R`が`subrange`の特殊化である
+3. それ以外の場合、`take_view(r, n)`
+
+その条件は複雑ですが、`random_access_range`かつ`sized_range`である標準ライブラリのもの（`std::span, std::string_view`など）に対しては、与えられた長さと元の長さのより短い方の長さによって構築し直したその型のオブジェクトを返し、そうではない`r`に対しては`take_view`を返します。
+
+厳密には`take_view`だけが得られる訳ではありませんが、結果の型を区別しなければ実質的に`take_view`と同等の`view`が得られます。
+
 ## `take_while_view`
 ## `drop_view`
 ## `drop_while_view`
@@ -3382,7 +3529,7 @@ int main() {
 
 表紙は友人のKさんに書いていただきました。可愛いキノコをありがとうございました！
 
-表紙にあるC++のロゴは「Standard C++ Foundation」の正式なものですが、本書および本サークルは「Standard C++ Foundation」からなんらかの支持を得たものではなく、無関係です。「Standard C++ Foundation」およびそのロゴについては以下のリンクをご参照ください。
+表紙にあるC++のロゴは「Standard C++ Foundation」の正式なものですが、本書および本サークルは「Standard C++ Foundation」からなんらかの支持を得たものではありません。「Standard C++ Foundation」およびそのロゴについては以下のリンクをご参照ください。
 
 - Standard C++ (https://isocpp.org)
 - Foundation name and C++ logo (https://isocpp.org/home/terms-of-use)
