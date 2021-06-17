@@ -3208,9 +3208,10 @@ namespace std::ranges {
 
 ```cpp
 filter_view fv{views::iota(1, 10), [](int n) { return n % 2 == 0; }};
-// 構築時に条件を満たす最初の要素が探索され、1番目の要素が計算される
 
 auto it = ranges::begin(fv);
+// イテレータ取得時に条件を満たす最初の要素が探索され、1番目の要素が計算される
+// そしてその探索結果はキャッシュされる
 
 ++it;
 // 次に条件を満たす要素が探索され、2番目の要素が計算される
@@ -3219,6 +3220,8 @@ int n = *it; // 2番目の要素（4）が得られる
 ```
 
 この例では`iota_view`もまた遅延評価されているので、一連のシーケンス全体が遅延評価によって生成されています。
+
+`fv.begin()`の呼び出し時に元の範囲の先頭から条件を満たす最初の要素を探索してその位置のイテレータを返すのですが、ただし毎回それをすると`range`コンセプトの意味論要件である「`ranges::begin()`の呼び出しが償却定数」というのを満たすことができなくなるため、最初に求めたイテレータは`filter_view`内部にキャッシュされ、`fv.begin()`の2回目以降の呼び出しではキャッシュされたイテレータを返します。
 
 ### `filter_view<R, P>`の諸特性
 
@@ -3231,6 +3234,10 @@ int n = *it; // 2番目の要素（4）が得られる
 - `sized_range` : ×
 - `const-iterable` : ×
 - `borrowed_range` : ×
+
+`filter_view`が`borrowed_range`ではないのは、指定される述語`P`のオブジェクトを`filter_view`内部に保持しており、取得したイテレータはそれを参照しているためです。従って、親の`filter_view`オブジェクトの寿命が尽きるとそこから取得されたイテレータはすべて無効になります。`sized_range`ではないのは終端要素が条件`P`によって指定されているために定数時間でサイズを求められないためです。
+
+`const-iterable`ではないのは`.begin()`の呼び出しでキャッシュしているためです。標準ライブラリの`const`メンバ関数はスレッドセーフであることを表明しており、`filter_view`が`const-iterable`であるためには`.begin()`の呼び出しに追加の同期が必要になりますが、それはオーバーヘッドになるため行われません。そのため、`filter_view`は`.begin()`を`const`にすることができないため、`const-iterable`ではありません。
 
 ### `views::filter`
 
@@ -3507,6 +3514,101 @@ int main() {
 厳密には`take_view`だけが得られる訳ではありませんが、結果の型を区別しなければ実質的に`take_view`と同等の`view`が得られます。
 
 ## `take_while_view`
+
+`take_while_view`は元となるシーケンスから指定された条件を満たす連続要素によるシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  // 先頭から7未満の要素だけを取り出す
+  take_while_view tv{views::iota(1), [](int n) { return n < 7; }};
+  
+  for (int n : tv) {
+    std::cout << n; // 123456
+  }
+}
+```
+
+元となる範囲の先頭（`t`）から条件を満たさない最初の要素（`e`）の一つ前までのシーケンス（`[t, e)`）を生成します。
+
+```cpp
+namespace std::ranges {
+
+  // take_while_viewの定義例
+  template<view V, class Pred>
+    requires input_range<V> && is_object_v<Pred> &&
+             indirect_unary_predicate<const Pred, iterator_t<V>>
+  class take_while_view : public view_interface<take_while_view<V, Pred>> {
+    // ...
+  };
+
+  template<class R, class Pred>
+    take_while_view(R&&, Pred) -> take_while_view<views::all_t<R>, Pred>;
+}
+```
+
+入力となる`range`及び述語型`P`に求められる基本的な事は`filter_view`と同様です。
+
+### 遅延評価
+
+`take_while_view`もまた、遅延評価によってシーケンスを生成します。ただ、`take_while_view`は元となる`range`の極々薄いラッパーなので、ほとんどの操作はベースにあるイテレータの操作をそのまま呼び出すだけです。`take_while_view`が行なっている事は範囲終端の管理だけで、`==`による終端チェックのタイミングで現在の要素が条件を満たすか否かをチェックします。また、同時に現在の位置が元のシーケンスの終端に到達しているかもチェックすることでオーバーランを防止します。
+
+```cpp
+take_while_view tv{views::iota(1), [](int n) { return n < 7; }};
+// take_while_view構築時には何もしない
+
+auto it = ranges::begin(tv);
+// イテレータ取得時には元のイテレータをそのまま返す
+
+++it;
+// インクリメントは元のイテレータのインクリメント
+
+int n1 = *it; // n1 == 2
+// 間接参照も元のイテレータの間接参照
+
+auto fin = ranges::end(tv);
+// 受け取った述語オブジェクトを私て番兵を構築する
+
+it == fin;
+// 終端チェック時に現在のイテレータの指す要素が与えられた条件を満たしているかをチェック
+// 同時に元のシーケンスの終端に到達しているかもチェックする
+```
+
+この特性上、`==`による終端チェック時には毎回要素の参照と条件のチェック及び終端チェックが行われます。条件判定に重い処理を渡してしまうと思わぬオーバーヘッドになるかもしれません。
+
+### `take_while_view<R, P>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : `R`のカテゴリに従う
+- `common_range` : ×
+- `sized_range` :  ×
+- `const-iterable` : `R`が`const-iterable`かつ`const P`と`R`のイテレータが`indirect_unary_predicate`である場合
+- `borrowed_range` : ×
+
+`take_while_view`は元の範囲`R`の薄いラッパではあるのですが、範囲の終端が条件`P`で指定されているために`sized`ではなく、番兵との`==`の比較時にそれをチェックすることから番兵型を自前で提供せざるを得ないため`common`でもありません。`borrowed`でもないのは、`filter_view`同様に`P`のオブジェクトを内部に保持しているためです。
+
+### `views::take_while`
+
+`take_while_view`に対応するRangeアダプタオブジェクトが`views::take_while`です。
+
+```cpp
+int main() {
+  auto less_than_7 = [](int n) { return n < 7; };
+
+  for (int n : views::take_while(views::iota(1), less_than_7)) {
+    std::cout << n; // 123456
+  }
+  
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (int n : views::iota(1) | views::take_while(less_than_7)) {
+    std::cout << n; // 123456
+  }
+}
+```
+
+`views::take_while`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::take_while(r, p)`のように呼び出されたとき、`take_while_view{r, p}`を返します。
+
 ## `drop_view`
 ## `drop_while_view`
 ## `join_view`
