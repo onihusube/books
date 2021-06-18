@@ -3610,6 +3610,88 @@ int main() {
 `views::take_while`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::take_while(r, p)`のように呼び出されたとき、`take_while_view{r, p}`を返します。
 
 ## `drop_view`
+
+`drop_view`は元となるシーケンスの先頭から指定された数の要素を取り除いたシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  // 先頭から5つの要素を取り除く
+  drop_view dv{views::iota(1, 10), 5};
+  
+  for (int n : dv) {
+    std::cout << n; // 6789
+  }
+}
+```
+
+ちょうど`take_view`と逆の働きをするもので、先頭から指定個数の要素をスキップしたところから開始するシーケンスを生成します。
+
+### オーバーラン防止と遅延評価
+
+`take_view`がそうであるように`drop_view`もまた元となるシーケンスの長さを超えることの無いようになっています。
+
+`drop_view`によるシーケンスは遅延評価によって生成され、そのイテレータの取得時（`begin()`の呼び出し時）に元となるシーケンスの先頭イテレータを指定した分進めて返します。その際、元のシーケンス上で終端チェックを行いながら進めることでオーバーランしないようになっています。これはC++20から追加された`ranges::next(it, end, n)`を使用して行われ、元のシーケンスの長さよりも大きい値を指定すると空の範囲が得られます。
+
+```cpp
+drop_view dv{views::iota(1, 10), 5};
+// drop_view構築時にはまだ何もしない
+
+auto it = ranges::begin(tv);
+// イテレータ取得時にスキップ処理が行われる
+// 元のシーケンスの先頭イテレータを指定した長さ進めるだけ
+// その際終端チェックを同時に行う
+
+++it;
+*it;
+// その他の操作は元のシーケンスのイテレータそのまま
+```
+
+`drop_view<R>`の`begin()`の呼び出しは`R`が`forward_range`であるとき、`begin()`の処理結果はキャッシュされます。これによって`drop_view`の`begin()`の計算量は償却定数となります。ただし、`R`に対して`const R`が`random_access_range`かつ`sized_range`である時、キャッシュは使用されず`begin()`メンバ関数は`const`修飾され、`drop_view`は`const`状態でもイテレート可能となります。なぜなら、`R`が`random_access_range`かつ`sized_range`である場合、その範囲の現在の長さの取得とイテレータの適切な進行操作の両方を`O(1)`で行う事ができるため、キャッシュを使用しなくても`range`コンセプトの要件を満たす事ができるためです。
+
+### `droo_view<R>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : `R`のカテゴリに従う
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` :  `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`であり`random_access_range`かつ`sized_range`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`const-iterable`だけは少し複雑になっていますが、`drop_view`はイテレータ取得時に元のイテレータを進めて返すだけなので、元の`range`の性質をほぼそのまま受け継ぎます。
+
+### `views::drop`
+
+`drop_view`に対応するRangeアダプタオブジェクトが`views::drop`です。
+  
+```cpp
+int main() {
+  for (int n : views::drop(views::iota(1, 10), 5)) {
+    std::cout << n;
+  }
+  
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (int n : views::iota(1, 10) | views::drop(5)) {
+    std::cout << n;
+  }
+}
+```
+
+`views::drop`はカスタマイゼーションポイントオブジェクトであり、型`R, D`の引数の式`r, n`によって`views::drop(r, n)`のように呼び出されたとき、その効果は次のようになります
+
+1. `R`が`empty_view`の特殊化である場合、`((void) n, decay-copy(r))`
+2. `R`が`random_access_range`かつ`sized_range`であり以下のいずれかに該当する場合、`R(ranges::begin(r) + min<D>(ranges::size(r), n), ranges::end(r))`
+      - `R`が`std::span`の特殊化であり、`extent`が`std::dynamic_extent`である
+      - `R`が`std::basic_string_view`の特殊化である
+      - `R`が`iota_view`の特殊化である
+      - `R`が`subrange`の特殊化である
+3. それ以外の場合、`drop_view(r, n)`
+
+条件は複雑ですが、`random_access_range`かつ`sized_range`である標準ライブラリのもの（`std::span, std::string_view`など）に対しては、与えられた長さと元の長さのより短い方の位置から開始するように構築し直したその型のオブジェクトを返し、そうではない`r`に対しては`drop_view`を返します。
+
+厳密には`drop_view`だけを返すわけではありませんが、結果の型を区別しなければ実質的に`drop_view`と同等の`view`が得られます。
+
 ## `drop_while_view`
 ## `join_view`
 ## `split_view`
