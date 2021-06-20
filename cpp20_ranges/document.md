@@ -3611,6 +3611,81 @@ int main() {
 
 ## `drop_view`
 ## `drop_while_view`
+
+`drop_while_view`は元となるシーケンスの先頭から条件を満たす連続した要素を取り除いたシーケンスを生成する*View*です。
+
+```cpp
+#include <ranges>
+
+iint main() {
+  // 先頭のホワイトスペースを取り除く
+  ranges::drop_while_view dv{"     drop while view", [](char c) { return c == ' '; }};
+  
+  for (char c : dv) {
+    std::cout << c; // drop while view
+  }
+}
+```
+
+`take_view`に対する`take_while_view`の対応と同様に、`drop_view`の条件指定版です。そのため、その性質は`take_while_view`によく似ています。
+
+### オーバーラン防止と遅延評価
+
+`drop_while_view`も`drop_view`と同様の方法によって遅延評価とオーバーランの防止を行なっています。
+
+すなわち、`drop_while_view`はそのイテレータの取得時（`begin()`の呼び出し時）に元となるシーケンスの先頭イテレータを条件を満たさない最初の要素まで進めて返します。その際、元のシーケンス上で終端チェックを行いながら進めることでオーバーランしないようになっています。これはC++20から追加された`ranges::find_if_not(base_view, pred)`を使用して行われます。
+
+```cpp
+std::ranges::drop_while_view dv{"     drop while view", [](char c) { return c == ' '; }};
+// drop_view構築時にはまだ何もしない
+
+auto it = std::ranges::begin(dv);
+// イテレータ取得時にスキップ処理が行われる
+// 元のシーケンスの先頭イテレータを条件を満たす間進めるだけ
+// その際終端チェックを同時に行う
+
+++it;
+*it;
+// その他の操作は元のシーケンスのイテレータそのまま
+```
+
+`drop_while_view`の`begin()`の呼び出しも、元のシーケンスが`forward_range`であるときキャッシュされることが規定されています。これによって`drop_while_view`の`begin()`も計算量は償却定数となります。しかし、キャッシュを使用するために`const`修飾できず、`drop_view`とは異なり条件をチェックする必要があることから元の`range`が何であってもそれを回避することができません。そのため、`drop_while_view`は常に`const-iterable`ではありません。
+
+### `drop_while_view<R, P>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : `R`のカテゴリに従う
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` :  `R`が`sized_range`の場合
+- `const-iterable` : ×
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`drop_while_view`は元となる`range`のイテレータを完全に流用しているため、その性質の多くの部分をもとの`range`から継承します。ただし、前述の様に`const-iterable`にだけはどうしてもなりません。
+
+### `views::drop_while`
+
+`drop_while_view`に対応するRangeアダプタオブジェクトが`views::drop_while`です。
+  
+```cpp
+int main() {
+
+  auto skip_ws = [](char c) { return c == ' '; };
+
+  for (char c : views::drop_while("     drop while view", skip_ws)) {
+    std::cout << c;
+  }
+  
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (char c : "     drop while view" | views::drop_while(skip_ws)) {
+    std::cout << c;
+  }
+}
+```
+
+`views::drop_while`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::drop_while(r, p)`のように呼び出されたとき、`drop_while_view{r, p}`を返します。
+
 ## `join_view`
 ## `split_view`
 ## `counted_view`
