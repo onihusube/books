@@ -3656,11 +3656,11 @@ auto it = std::ranges::begin(dv);
 - `reference` : `range_reference_t<R>`
 - `range`カテゴリ : `R`のカテゴリに従う
 - `common_range` : `R`が`common_range`の場合
-- `sized_range` :  `R`が`sized_range`の場合
+- `sized_range` :  ×
 - `const-iterable` : ×
 - `borrowed_range` : `R`が`borrowed_range`の場合
 
-`drop_while_view`は元となる`range`のイテレータを完全に流用しているため、その性質の多くの部分をもとの`range`から継承します。ただし、前述の様に`const-iterable`にだけはどうしてもなりません。
+`drop_while_view`は元となる`range`のイテレータを完全に流用しているため、その性質の多くの部分をもとの`range`から継承します。ただし、前述のりゆうから`sized`と`const-iterable`にだけはどうしてもなりません。
 
 ### `views::drop_while`
 
@@ -3684,9 +3684,137 @@ int main() {
 }
 ```
 
-`views::drop_while`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::drop_while(r, p)`のように呼び出されたとき、`drop_while_view{r, p}`を返します。
+`views::drop_while`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::drop_while(r, p)`のように呼び出されたとき、`drop_while_view(r, p)`を返します。
 
 ## `join_view`
+
+`join_view`は`range`の`range`となっているシーケンスを平坦化したシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  std::vector<std::vector<int>> vecvec = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
+
+  ranges::join_view jv{vecvec};
+  
+  for (int n : jv) {
+    std::cout << n; // 1234567891011
+  }
+}
+```
+
+すなわち、配列の配列を1つの配列に直列化するような事を行うものです。
+
+この例では`std::vector`の`std::vector`を利用していますが、別に外側と内側の`range`が同じものである必要はありません。`std::list`の`std::vector`とか、`std::deque`の生配列など、`range`の`range`になっていれば`join_view`は平坦化してくれます。
+
+```cpp
+int main() {
+  std::vector<std::list<int>> veclist = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
+
+  join_view jv1{veclist};
+  
+  for (int n : jv1) {
+    std::cout << n; // 1234567891011
+  }
+  
+  std::cout << '\n';
+  
+  std::deque<int> arrdeq[] = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
+
+  join_view jv2{arrdeq};
+  
+  for (int n : jv2) {
+    std::cout << n; // 1234567891011
+  }
+}
+```
+
+この様な操作は他の所では`flat`とか`flatten`とも呼ばれています。モナドの文脈だと`join`と呼ばれることがあり、`join_view`という名前はそちらを採用しているようです。
+
+```cpp
+namespace std::ranges {
+
+  // join_viewの定義例
+  template<input_range V>
+    requires view<V> && input_range<range_reference_t<V>>
+  class join_view : public view_interface<join_view<V>> {
+    // ...
+  };
+
+  template<class R>
+    explicit join_view(R&&) -> join_view<views::all_t<R>>;
+}
+```
+
+`join_view`の入力となる`range`は`input_range`かつ`view`であり、その要素型が`input_range`である必要があります。まあ当然ですね。
+
+### 遅延評価
+
+`join_view`によるシーケンスもまた遅延評価によって生成されます。`join_view`の仕事の殆どは元となるシーケンスの内側の`range`同士を接続することにあり、イテレータのインクリメントのタイミングでそれを行います。
+
+`join_view`は元となるシーケンスの内側のシーケンスのイテレータを利用して1つの内側`range`のイテレートを行います。そのイテレータが終端に達した時（1つの内側`range`の終端に達した時）、外側`range`のイテレータを1つ進めてそこから次の内側`range`のイテレータを取得します。ただ、そのままだと内側`range`が空の場合に上手くいかないため、すぐに内側`range`の終端チェックを行い空でない内側`range`が見つかるまで外側`range`をイテレートします。
+
+```cpp
+std::vector<std::vector<int>> vecvec = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
+
+join_view jv{vecvec};
+auto it = ranges::begin(jv);
+// 構築とイテレータ取得時には何もしない
+
+++it;
+// インクリメント時に内側イテレータの接続を行う
+// 内側イテレータが終端に到達していれば、外側イテレータを進めてそこから内側イテレータを再取得する
+// 同時に内側イテレータの終端チェックを行い、空の内側*range*をスキップする
+
+--it;
+// デクリメント時はその逆を行う
+
+int n = *it;
+// 間接参照は元のシーケンスのイテレータそのまま
+```
+
+1つの内側`range`をイテレートしている間は内側イテレータの終端チェックのみが行われますが、その終端に到達した時（2つの内側`range`を接続する時）は外側`range`のイテレータのインクリメントと終端チェックが入るため、少し処理が重くなります。
+
+### `join_view<R, P>`の諸特性
+
+- `reference` : `range_reference_t<range_reference_t<R>>`
+- `range`カテゴリ : 
+    - `range_reference_t<R>`が参照型であり（`R`の要素が左辺値であり）
+      - 外側（`R`）と内側（`range_reference_t<R>`）`range`が共に`bidirectional_range`である場合 : `bidirectional_range`
+      - 外側（`R`）と内側（`range_reference_t<R>`）`range`が共に`forward_range`である場合 : `forward_range`
+    - それ以外 : `input_range`
+- `common_range` : 次の条件を全て満たす場合
+    - `R`が`forward_range`かつ`common_range`
+    - 内側`range`（`range_reference_t<R>`）が`forward_range`かつ`common_range`
+    - `range_reference_t<R>`が参照型
+- `sized_range` :  ×
+- `const-iterable` : `R`が`const-iterable`であり`range_reference_t<R>`が参照型である場合
+- `borrowed_range` : ×
+
+頻出する「`range_reference_t<R>`が参照型」と言う条件は、外側`range`の要素である内側の`range`オブジェクトが右辺値で帰ってこない事を指定しています。そのような`R`であっても`join`可能ですが、性質は大きく制限されます。また、`join_view`の理解においては外側と内側の`range`を識別することが重要です。
+
+### `views::join`
+
+`join_view`に対応するRangeアダプタオブジェクトが`views::join`です。
+
+```cpp
+int main() {
+  std::vector<std::vector<int>> vecvec = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
+
+  for (int n : views::join(vecvec)) {
+    std::cout << n;
+  }
+
+  std::cout << '\n';
+
+  // パイプラインスタイル
+  for (int n : vecvec | views::join) {
+    std::cout << n;
+  }
+}
+```
+
+`views::join`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::join(r)`のように呼び出されたとき、`join_view<views​::​all_t<decltype((r))>>{r}`を返します。
+
 ## `split_view`
 ## `counted_view`
 ## `common_view`
