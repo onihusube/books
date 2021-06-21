@@ -3902,6 +3902,8 @@ int main() {
 
 この場合でも遅延評価などは行われており、`++`のタイミングで内側`range`をキャッシュする以外にやることは変化していません。
 
+このキャッシュは伝播しません。すなわち、キャッシュを持つ`join_view`をムーブしたりコピーしてもキャッシュの内容はコピー/ムーブ先に伝わらず、コピー/ムーブ元のキャッシュも消去されます。これは、`join_view`のコピー/ムーブが元となる`range`の生成する`range`（要素）に依存してしまう事を回避するための振る舞いで、それによって`join_view`をムーブしたときにキャッシュ元の`range`の所有権だけが別オブジェクトに移動することでキャッシュの内容がある種のダングリング状態に陥ることを回避しようとするものです。
+
 なお、内側`range`が左辺値の場合はこれらの様なオーバーヘッドはありません。すなわち、内側`range`の性質によってクラスレイアウトごと性質が変化します。
 
 ### `views::join`
@@ -3928,6 +3930,156 @@ int main() {
 `views::join`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::join(r)`のように呼び出されたとき、`join_view<views​::​all_t<decltype((r))>>{r}`を返します。
 
 ## `lazy_split_view`
+
+`lazy_split_view`は元のシーケンスから指定されたデリミタを区切りとして切り出した部分範囲のシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  // ホワイトスペースをデリミタとして文字列を切り出す
+  lazy_split_view sv{"lazy_split_view takes a view and a delimiter, and splits the view into subranges on the delimiter.", ' '};
+  
+  // split_viewは切り出した文字列のrangeとなる
+  for (auto inner_range : sv) {
+    // inner_rangeは分割された文字列1つを表すview
+    for (char c : inner_range) {
+      std::cout << c;
+    }
+    std::cout << '\n';
+  }
+}
+```
+
+一見すると文字列分割に使いたくなるかもしれません。
+
+`lazy_split_view`は切り出した部分範囲それぞれを要素とするシーケンス（外側`range`）となります。そのため、その要素を参照すると分割された文字列1つを表す別のシーケンス（内側`range`）が得られます。そこから、内側`range`の要素を参照することで切り出した文字列を1文字づつ取り出すことができます。
+
+なお、この例の場合の`inner_range`（内側`range`）は`std::string_view`あるいは類するものではなく、単に`forward_range`である何かです。そのため、この`inner_range`から`string_view`等文字列型に変換するのは少し手間のかかる作業となります。
+
+### 遅延評価
+
+`lazy_split_view`もまた遅延評価によって分割処理と*View*の生成を行います。
+
+`lazy_split_view`の主たる仕事は元のシーケンス上でデリミタと一致する部分を見つけだし、それを区切りに内側`range`を生成する事にあります。それは外側`range`のイテレータのインクリメントと内側`range`のイテレータの終端チェックのタイミングで行われます。
+
+外側`range`のイテレータ（外側イテレータ）は元のシーケンスのイテレータ（元イテレータ）を持っており、インクリメント時にはそのイテレータから出発して最初に出てくるデリミタ部分を探し出し、そのデリミタ部分の終端位置に元イテレータを更新します。インクリメントと共にこれを行う事で、デリミタ探索範囲を限定しています。
+
+内側`range`における終端検出（すなわち文字列分割そのもの）は、内側`range`のイテレータ（内側イテレータ）の終端チェック（`==`）のタイミングで行われます。内側イテレータは自身を生成した外側イテレータとその親の`lazy_split_view`を参照して、外側イテレータの保持する元イテレータの終端チェック→デリミタが空かのチェック→自信の現在位置とデリミタの比較、の順で終端チェックを行います。　
+
+```cpp
+lazy_split_view sv{"lazy_split_view takes a view and a delimiter", ' '};
+// 構築時点では何もしない
+
+auto outer_it = std::ranges::begin(sv);
+// 外側イテレータの取得、特に何もしない
+
+++outer_it;
+// 外側イテレータのインクリメント時、元のシーケンスから次に出現するデリミタを探す
+// 内部rangeは"lazy_split_view"->"takes"へ進む
+
+auto inner_range = *outer_it;
+// 内側rangeの取得、特に何もしない
+
+auto inner_it = std::ranges::begin(inner_range);
+// 内側イテレータの取得、特に何もしない
+
+++inner_it;
+// 内側イテレータのインクリメントは、元のシーケンスのイテレータのインクリメントとほぼ等価
+
+char c = *inner_it; // a
+// 元のシーケンスのイテレータのデリファレンスと等価
+
+bool f = inner_it == std::ranges::end(inner_range); // false
+// 内部rangeの終端チェック
+// 元のシーケンスの終端と、デリミタが空かどうか、現在の位置でデリミタが出現しているかどうか、を調べる
+```
+
+`lazy_split_view`の結果が複雑となる一因は、この遅延評価を行うことによるところがあります。
+
+### `lazy_split_view<R, P>`の諸特性
+
+`lazy_split_view`は`range`の`range`を生成する`view`であり、外側`range`と内側`range`の2つを意識する必要があります。
+
+まず、外側`range`の性質は次のようになります
+
+- `reference` : `range_reference_t<R>`の`range`
+- `range`カテゴリ
+    - `R`が`forward_range`の場合 : `forward_range`
+    - それ以外の場合 : `input_range`
+- `common_range` : `R`が`forward_range`かつ`common_range`の場合
+- `sized_range` :  ×
+- `const-iterable` : `R`および`const R`が共に`forward_range`である場合
+- `borrowed_range` : ×
+
+内側`range`は外側`range`の`reference`であり入力`range`（`R`）の部分要素ですが、`subrange`を用いるわけではなく独自の`range`型となります。
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : 外側`range`のカテゴリに従う
+- `common_range` : ×
+- `sized_range` :  ×
+- `const-iterable` : ◯
+- `borrowed_range` : ×
+
+内側`range`はどんなにがんばっても`forward_range`にしかならないため、多くの文字列を扱う所（最低でも`bidirectional_range`を要求する）で使用できなくなっています。内側`range`を独自型で定義しなおしているのは、遅延評価を実装するためです。そして、この事が`lazy_split_view`を文字列分割に使用しづらくしています。
+
+### `views::lazy_split`
+
+`lazy_split_view`に対応するRangeアダプタオブジェクトが`views::lazy_split`です。
+
+```cpp
+int main() {
+  const auto str = std::string_view("split_view takes a view and a delimiter");
+
+  for (auto inner_range : views::split(str, ' ')) {
+    for (char c : inner_range) {
+      std::cout << c;
+    }
+    std::cout << '\n';
+  }
+
+  // パイプラインスタイル
+  for (auto inner_range : str | views::split(' ')) {
+    for (char c : inner_range) {
+      std::cout << c;
+    }
+    std::cout << '\n';
+  }
+}
+```
+
+`views::lazy_split`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::lazy_split(r, p)`のように呼び出されたとき、`lazy_split_view(r, p)`を返します。
+
+### 任意のシーケンスによる任意のシーケンスの分割
+
+実のところ、`lazy_split_view`はとてもとてもジェネリックに定義されているため分割対象は文字列に限らず、デリミタもまた文字だけではなく任意の`range`を使用することができます。
+
+たとえば、`std::vector`を`std::list`で分割することができます。
+
+```cpp
+int main() {
+  // 3つ1が並んでいるところで分割する
+  std::vector<int> vec = {1, 2, 4, 4, 1, 1, 1, 10, 23, 67, 9, 1, 1, 1, 1111, 1, 1, 1, 1, 1, 1, 9, 0};
+  std::list<int> delimiter = {1, 1, 1};
+  
+  for (auto inner_range : vec | std::views::split(delimiter)) {
+    for (int n : inner_range) {
+      std::cout << n;
+    }
+    std::cout << '\n';
+  }
+  /*
+     1244
+     1023679
+     1111
+     
+     90
+  */
+}
+```
+
+実際このようなジェネリックな分割が必要になる事があるのかはわかりません・・・
+
+遅延評価を頑張ることとこのジェネリックさによって、`lazy_split_view`は文字列で使いづらくなってしまっています。
+
 ## `split_view`
 
 `split_view`は文字列分割に特化した`lazy_split_view`です。
@@ -3969,6 +4121,37 @@ namespace std::ranges {
 ```
 
 文字列に特化したと言いつつ、実際のところ入力となる`range`は`forward_range`かつ`view`であればよく、デリミタ（`Pattern`）も`forward_range`であればOKです。例えば文字の`std::list`などを用いて/によって分割する事ができるわけです。また、デリミタに単一要素を指定しても`single_view`を用いて`range`化する事で、処理がデリミタの長さや型に依存しない様になっている事が推論補助から見て取れます。
+
+たとえば、文字列を文字列で分割することができます。
+
+```cpp
+int main() {
+  // カンマとホワイトスペースで区切りたい
+  // そのままだとナル文字\0が入るのでうまくいかない
+  split_view ng{"1, 12434, 5, 0000, 3942", ", "};
+
+  for (std::string_view str : ng) {
+    std::cout << str << '\n';
+  }
+  // 1, 12434, 5, 0000, 3942
+
+  // デリミタ文字列を2文字分のシーケンスにする
+  split_view ok{"1, 12434, 5, 0000, 3942", std::string_view(", ", 2)};
+
+  for (std::string_view str : ok) {
+    std::cout << str << '\n';
+  }
+  /*
+    1
+    12434
+    5
+    0000
+    3942
+  */
+}
+```
+
+ナル文字の扱いは少し厄介です。文字列としての終端は最後の`\0`ですが`range`としての終端は`\0`の次になり、`split_view`はデリミタ列を`range`として扱って比較を行うために、文字列終端の`\0`を含めてしまいます。
 
 ### 遅延評価
 
