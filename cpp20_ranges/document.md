@@ -3927,7 +3927,136 @@ int main() {
 
 `views::join`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::join(r)`のように呼び出されたとき、`join_view<views​::​all_t<decltype((r))>>{r}`を返します。
 
+## `lazy_split_view`
 ## `split_view`
+
+`split_view`は文字列分割に特化した`lazy_split_view`です。
+
+```cpp
+int main() {
+  // ホワイトスペースをデリミタとして文字列を切り出す
+  split_view sv{"split_view takes a view and a delimiter", ' '};
+  
+  // split_viewは切り出した文字列のシーケンスとなる
+  // その要素は容易に文字列として扱う事ができる
+  for (std::string_view str : sv) {
+    std::cout << str << '\n'
+  }
+}
+```
+
+`split_view`もやはり、分割した`range`のシーケンスとなる`range`を返します。しかし、`lazy_split_view`と異なり内側の`range`は入力`range`のイテレータを利用した`subrange`となるため、文字列であれば内側`range`は`contiguous_range`かつ`common_range`となり、かなり扱いやすくなっています。そして、`string_view`にはC++23より`range`コンストラクタが追加されているので、そのままストレートに変換する事ができます。
+
+```cpp
+namespace std::ranges {
+  // split_viewの定義例
+  template<forward_range V, forward_range Pattern>
+    requires view<V> && view<Pattern> &&
+             indirectly_comparable<iterator_t<V>, iterator_t<Pattern>, ranges::equal_to>
+  class split_view : public view_interface<split_view<V, Pattern>> {
+    // ...
+  };
+
+  // デリミタがrange（文字列）である場合
+  template<class R, class P>
+    split_view(R&&, P&&) -> split_view<views::all_t<R>, views::all_t<P>>;
+
+  // デリミタが単一要素（文字）である場合
+  template<forward_range R>
+    split_view(R&&, range_value_t<R>)
+      -> split_view<views::all_t<R>, single_view<range_value_t<R>>>;
+}
+```
+
+文字列に特化したと言いつつ、実際のところ入力となる`range`は`forward_range`かつ`view`であればよく、デリミタ（`Pattern`）も`forward_range`であればOKです。例えば文字の`std::list`などを用いて/によって分割する事ができるわけです。また、デリミタに単一要素を指定しても`single_view`を用いて`range`化する事で、処理がデリミタの長さや型に依存しない様になっている事が推論補助から見て取れます。
+
+### 遅延評価
+
+`split_view`もまた遅延評価によって分割処理と`view`の生成を行いますが、`lazy_split_view`とは少し異なります。
+
+`split_view`では、`.begin()`による外側イテレータの取得時に最初のデリミタ位置を探索し文字列先頭位置とともに記録しておきます。そして、外側イテレータのインクリメントのタイミングでデリミタ位置と文字列先頭位置の更新を行なっていきます。外側イテレータの間接参照では、現在の文字列先頭位置と次のデリミタ位置のイテレータから切り出す文字列を`subrange`によって返すため、内側`range`は特別なことを何もしません。外側イテレータの終端チェックでは、デリミタ列に一致する文字列が終端に来ているケースを考慮するために少し判定が増えていますが、`lazy_split_view`と比べると調べるべきことは単純になっています。
+
+```cpp
+split_view sv{"split_view takes a view and a delimiter", ' '};
+// 構築時点では何もしない
+
+auto outer_it = ranges::begin(sv);
+// 外側イテレータの取得時、最初にデリミタ列に一致する部分範囲を計算
+// 外側イテレータは、文字列先頭位置と次に出現するデリミタ位置をイテレータで管理
+
+++outer_it;
+// 外側イテレータのインクリメント時、次に出現するデリミタ列を探し更新
+// 文字列先頭位置を前のデリミタ位置から求め更新
+// 内部rangeは"split_view"->"takes"へ進む
+
+auto inner_range = *outer_it;
+// 内側rangeの取得、subrangeを作って返す
+// 文字列先頭位置イテレータ(cur)と次に出現するデリミタ列の先頭イテレータ(next)
+// から、subrange{cur, next}を返す
+
+auto inner_it = ranges::begin(inner_range);
+// 内側イテレータは元のrangeのイテレータを返す
+
+++inner_it;
+// 内側イテレータのインクリメントは、元のシーケンスのイテレータのインクリメントと等価
+
+char c = *inner_it; // a
+// 元のシーケンスのイテレータのデリファレンスと等価
+
+bool b = outer_it == ranges::end(sv); // false
+// 外側range終端チェック
+// 元のシーケンス上での終端チェックと、現在の位置でデリミタが出現しているかどうかを調べる
+```
+
+`lazy_split_view`の様に過度な一般化と過度な遅延評価を行わない事によって、文字列分割時に結果を文字列に簡単に変換可能である様に実装されています。
+
+### `split_view<R, P>`の諸特性
+
+`split_view`の外側`range`の性質は次の様になります。
+
+- `reference` : `subrange<iterator_t<R>>`
+- `range`カテゴリ : `forward_range`
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` :  ×
+- `const-iterable` : ×
+- `borrowed_range` : ×
+
+内側`range`は入力`range`（`R`）のイテレータによる`subrange`であるので、`R`の性質をそのまま受け継ぎます。
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : `R`のカテゴリに従う
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` :  `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`の場合
+- `borrowed_range` : ◯
+
+### `views::split`
+
+`split_view`に対応するRangeアダプタオブジェクトが`std::views::split`です。
+
+```cpp
+int main() {
+  const auto str = std::string_view("split_view takes a view and a delimiter");
+
+  for (auto inner_range : views::split(str, ' ')) {
+    for (char c : inner_range) {
+      std::cout << c;
+    }
+    std::cout << '\n';
+  }
+
+  // パイプラインスタイル
+  for (auto inner_range : str | views::split(' ')) {
+    for (char c : inner_range) {
+      std::cout << c;
+    }
+    std::cout << '\n';
+  }
+}
+```
+
+`views::split`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::split(r, p)`のように呼び出されたとき、`split_view(r, p)`を返します。
+
 ## `counted_view`
 ## `common_view`
 ## `reverse_view`
