@@ -4313,6 +4313,17 @@ int main() {
 
 *Counted view*は単体のイテレータに対して`take_view`相当のものを生成するためのものであり、イテレータ1つではその範囲の終端は分からないのでオーバーランを防ぐことができないのです。
 
+### Counted viewの諸特性
+
+入力のイテレータ型を`I`として
+
+- `reference` : `iter_reference_t<I>`
+- `range`カテゴリ : `I`のイテレータカテゴリに対応するカテゴリ
+- `common_range` : `I`が`random_access_iterator`の場合
+- `sized_range` :  ◯
+- `const-iterable` : ◯
+- `borrowed_range` : ◯
+
 ## `common_view`
 
 `common_view`は元となる`range`を`common_range`に変換する`view`です。
