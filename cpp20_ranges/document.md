@@ -4314,6 +4314,125 @@ int main() {
 *Counted view*は単体のイテレータに対して`take_view`相当のものを生成するためのものであり、イテレータ1つではその範囲の終端は分からないのでオーバーランを防ぐことができないのです。
 
 ## `common_view`
+
+`common_view`は元となる`range`を`common_range`に変換する`view`です。
+
+```cpp
+int main() {
+  // common_rangeではないシーケンス
+  auto even_seq = views::iota(1)
+    | views::filter([](int n) { return n % 2 == 0; })
+    | views::take(10);
+
+  // イテレータ型と終端イテレータ型が合わないためエラー 
+  std::vector<int> vec(ranges::begin(even_seq), ranges::end(even_seq)); // ng
+  
+  common_view common{even_seq};
+  
+  std::vector<int> vec(ranges::begin(common), ranges::end(common)); //ok
+
+  for (int n : vec) {
+    std::cout << n; // 2468101214161820
+  }
+}
+```
+
+`common_range`とは`begin()/end()`によって取得できるイテレータと終端イテレータの型が同じとなる`range`のことでした。これはC++20以降のイテレータ（Rangeライブラリの`view`などのイテレータ）をC++17以前のイテレータを受け取るものに渡す際に使用できます。
+
+標準コンテナのイテレータペアを受け取るコンストラクタや`<algorithm>`の各種アルゴリズム群など、C++17以前のイテレータを受け取るところでは`begin()/end()`の型が同一である事を前提としています。しかし、C++20以降のイテレータおよび`range`では異なっていることが前提です。特に、各種`view`型の場合は元となる`range`の種別や構築のされ方によって`begin()/end()`の型は細かく変化するので、古いライブラリと組み合わせる際に`common_view`が必要となります。
+
+`<algorithm>`のイテレータアルゴリズム関数群は`std::ranges`名前空間の下にある同名の関数を利用すればC++20以降のイテレータに対してもそのまま使用できるようになっていますが、標準コンテナのイテレータペアを取るコンストラクタや`<numeric>`にあるアルゴリズム関数などでは`common_view`を使用する必要があります。
+
+```cpp
+int main() {
+  auto even_seq = std::views::iota(1)
+    | std::views::filter([](int n) { return n % 2 == 0; })
+    | std::views::take(10);
+
+  auto common = std::views::common(even_seq);
+
+  auto less_than_10 = [](int n) { return 10 < n;};
+  
+  // 古いやつ
+  auto it1 = std::find_if(common.begin(), common.end(), less_than_10);
+  std::cout << *it1 << '\n';  // 12
+  
+  // 新しいやつ
+  auto it2 = std::ranges::find_if(even_seq.begin(), even_seq.end(), less_than_10);
+  std::cout << *it2 << '\n';  // 12
+  
+  // rangeそのまま
+  auto it3 = std::ranges::find_if(even_seq, less_than_10);
+  std::cout << *it3 << '\n';  // 12
+
+  // 古いやつ
+  auto sum = std::accumulate(common.begin(), common.end(), 0u);
+  std::cout << sum << '\n';   // 110
+  
+  // まだない・・・
+  //auto sum2 = std::ranges::accumulate(even_seq.begin(), even_seq.end(), 0u);
+  //auto sum3 = std::ranges::accumulate(even_seq, 0u);
+}
+```
+
+### `common_view<R>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ
+    - `R`が`random_access_range`かつ`sized_range`の場合 : `R`のカテゴリに従う
+    - `R`が`forward_range`の場合 : `forward_range`
+    - それ以外の場合 : `input_range`
+- `common_range` : ◯
+- `sized_range` :  `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`R`が`random_access_range`かつ`sized_range`の時はそのイテレータをそのまま利用するため`R`のカテゴリを継承しますが、それ以外の場合は`common_iterator`を利用して元のイテレータをラップするため`R`のカテゴリと同じにはなりません。イテレータ型と番兵型が異なっている場合、`R`が`bidirectional`でもその番兵オブジェクトに`--`操作が求められておらず、その様なイテレータペアをラップした`common_iterator`も`--`操作を行えないため、`forward_iterator`となるのが精一杯です。そのため、`common_iterator`を利用する場合の`common_view`も`forward`にしかなりません。
+
+### `views::common`
+
+`common_view`に対応するRangeアダプタオブジェクトが`views::common`です。
+
+```cpp
+int main() {
+  auto even_seq = views::iota(1)
+    | views::filter([](int n) { return n % 2 == 0; })
+    | views::take(10);
+
+  auto common1 = views::common(even_seq);
+  
+  std::vector<int> vec(ranges::begin(common1), ranges::end(common1)); //ok
+
+
+  for (int n : vec) {
+    std::cout << n; // 2468101214161820
+  }
+}
+```
+
+```cpp
+int main() {
+  // パイプラインスタイル
+  auto even_seq = views::iota(1)
+    | views::filter([](int n) { return n % 2 == 0; })
+    | views::take(10)
+    | views::common;
+
+  std::vector<int> vec(ranges::begin(even_seq), ranges::end(even_seq)); //ok
+  
+  for (int n : vec) {
+    std::cout << n; // 2468101214161820
+  }
+}
+```
+
+`views::common`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::common(r)`のように呼び出されたとき、その効果は次の様になります
+
+1. `decltype((E))`が`common_range`の場合、`views::all(r)`
+2. それ以外の場合、`common_view{r}`
+
+結果の型を区別しなければ、あらゆる`range`オブジェクトに対して`common_view`相当のものを得ることができます。特に、`common_view`は`common_range`から構築することができないので、`common_view`が欲しい際は`views::common`を利用するとよりジェネリックです。
+
 ## `reverse_view`
 ## `element_view`
 
