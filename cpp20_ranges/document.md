@@ -4125,6 +4125,8 @@ namespace std::ranges {
 たとえば、文字列を文字列で分割することができます。
 
 ```cpp
+using namespace std::literals;
+
 int main() {
   // カンマとホワイトスペースで区切りたい
   // そのままだとナル文字\0が入るのでうまくいかない
@@ -4135,8 +4137,9 @@ int main() {
   }
   // 1, 12434, 5, 0000, 3942
 
-  // デリミタ文字列を2文字分のシーケンスにする
-  split_view ok{"1, 12434, 5, 0000, 3942", std::string_view(", ", 2)};
+  // デリミタ文字列を2文字分の範囲にする
+  // string_viewは\0を含めない範囲となる
+  split_view ok{"1, 12434, 5, 0000, 3942", ", "sv};
 
   for (std::string_view str : ok) {
     std::cout << str << '\n';
@@ -4151,7 +4154,7 @@ int main() {
 }
 ```
 
-ナル文字の扱いは少し厄介です。文字列としての終端は最後の`\0`ですが`range`としての終端は`\0`の次になり、`split_view`はデリミタ列を`range`として扱って比較を行うために、文字列終端の`\0`を含めてしまいます。
+ナル文字`\0`の扱いは少し厄介です。文字列としての終端は最後の`\0`ですが`range`としての終端は`\0`の次になり、`split_view`はデリミタ列を`range`として扱って比較を行うために文字列終端の`\0`を含めてしまいます。例にあるように、`string_view`（あるいは`string`）を通すことでナル文字を除いた部分の文字列による範囲となるようになるため、意図通りになります。
 
 ### 遅延評価
 
@@ -4243,6 +4246,130 @@ int main() {
 ## `counted_view`
 ## `common_view`
 ## `reverse_view`
+
+`reverse_view`は元となるシーケンスを逆順にしたシーケンスを生成する*View*です。
+
+```cpp
+int main() {
+  // [10, 30, 50, 70, 90]
+  auto seq = views::iota(1, 10)
+    | views::filter([](int n) { return n % 2 == 1; })
+    | views::transform([](int n) { return n * 10; });
+  
+  reverse_view rv{seq};
+  
+  for (int n : rv) {
+    std::cout << n; // 9070503010
+  }
+}
+```
+
+`reverse_view`は次のように宣言されています。
+
+```cpp
+namespace std::ranges {
+  template<view V>
+    requires bidirectional_range<V>
+  class reverse_view : public view_interface<reverse_view<V>> {
+    // ...
+  };
+}
+```
+
+逆順にするという操作の都合上、入力となる`range`は`bidirectional_range`でなければなりません。
+
+
+### 遅延評価
+
+`reverse_view`は遅延評価によって逆順範囲を生成します。とはいえ、逆順範囲にの生成と管理を`reverse_iterator`に丸投げしているので、`reverse_view`の行うことは`begin()`によってイテレータを取得するタイミングで`reverse_iterator`を適切に構築することです。
+
+そこではまず、元の`range`が`common_range`であればその終端イテレータ（`end()`で取得できるイテレータ）を使って`std::reverse_iterator`を構築します。元の`range`が`common_range`ではない場合、元の`range`のイテレータを`ranges::next()`によって終端まで進めて、それによって`reverse_iterator`を構築します。
+
+```cpp
+auto seq = std::views::iota(1, 10)
+  | std::views::filter([](int n) { return n % 2 == 1; })
+  | std::views::transform([](int n) { return n * 10; });
+
+std::ranges::reverse_view rv{seq};
+// 構築の時点では何もしない
+
+auto it = std::ranges::begin(rv);
+// イテレータ取得時に元となるシーケンスの終端1つ手前のイテレータからreverse_iteratorを構築して返す
+// 元となるシーケンスがcommon_rangeではない場合、時間計算量はO(N)になる
+
+++it;
+--it;
+int n = *it;
+// イテレータはreverse_iterator
+```
+
+元の`range`が`common_range`ではない場合、終端イテレータの取得はインクリメントによって行われるため、シーケンスの長さを`N`とした`O(N)`の時間計算量となってしまいます。そしてその場合、`reverse_view`の`begin()`の処理結果はキャッシュされます。これによって`reverse_view`の`begin()`の計算量は償却定数となります。
+
+### `reverse_view<R>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ
+    - `R`が`random_access_range`の場合 : `random_access_range`
+    - それ以外の場合 : `bidirectional_range`
+- `common_range` : ◯
+- `sized_range` :  `R`が`sized_range`の場合
+- `const-iterable` : `const R`が`common_range`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`reverse_view`のイテレータは`reverse_iterator`を利用しているので、`reverse_view`は常に`common_range`となります。一方、`R`の`contiguous`性は継承されません。そのほかは`R`の性質を継承します。
+
+### `views::reverse`
+
+`reverse_view`に対応するRangeアダプタオブジェクトが`views::reverse`です。
+
+```cpp
+int main() {
+  auto seq = views::iota(1, 10)
+    | views::filter([](int n) { return n % 2 == 1; })
+    | views::transform([](int n) { return n * 10; });
+  
+  for (int n : views::reverse(seq)) {
+    std::cout << n; // 9070503010
+  }
+  
+  std::cout << '\n';
+  
+  // パイプラインスタイル
+  for (int n : seq | views::reverse) {
+    std::cout << n; // 9070503010
+  }
+}
+```
+
+`views::reverse`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`（その型を`R`とする）によって`views::reverse(r)`のように呼び出されたとき、その効果は次のようになります。
+
+1. `R`が`reverse_view`の特殊化である場合、`r.base()`
+2. `R`は`subrange<reverse_iterator<I>, reverse_iterator<I>, K>`の様な型であり
+      1. `K == subrange_kind​::​sized`の場合、`subrange<I, I, K>(r.end().base(), r.begin().base(), r.size())`
+      2. それ以外の場合、`subrange<I, I, K>(r.end().base(), r.begin().base())`
+3. それ以外の場合、`reverse_view{r}`
+
+ここで頻繁に呼び出されている`.base()`とか`.size()`等のメンバ関数は、Rangeライブラリの`view`及びそのイテレータ型が共通で備えているメンバ関数です。`view.base()`はその`view`の元になっている`range`を取得し、`iter.base()`はそのイテレータがラップしている元のイテレータを取得します。`view.size()`は元の`range`が`sized_range`であれば、その長さを取得します。
+
+この複雑な条件分岐は、すでに逆順になっているシーケンス（`reverse_view`や`reverse_iterator`の`subrange`）に対してはその元になっている`range`及びイテレータを返す事によって、`reverse_view`や`reverse_iterator`が何回も適用される事を回避しています。`reverse`操作をしているのは3番目の効果だけで、1,2番目の効果は`reverse`している範囲を元に戻すものです。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+
+  for (int n : vec | views::reverse  // vector<int> -> reverse_view
+                   | views::reverse  // reverse_view -> ref_view<vector<int>>
+                   | views::reverse  // ref_view<vector<int>> -> reverse_view
+                   | views::reverse  // reverse_view -> ref_view<vector<int>>
+      )
+  {
+    std::cout << n; // 123456789
+  }
+}
+```
+
+`view`を構築するときに元の`range`が`views::all`を通ることになるので完全にそのままとはなっていませんが、実質的には`reverse`の`reverse`で元の`range`に戻るようになっています。
+
 ## `element_view`
 
 \clearpage
