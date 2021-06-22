@@ -496,7 +496,7 @@ template<class T>
 ```
 
 型`T&`の値`t`について
-- `to_address(​ranges​::​begin(t)) == ranges​::​data(t)`
+- `to_address(ranges::begin(t)) == ranges::data(t)`
 
 
 `contiguous_range`は`random_access_iterator`でありそのイテレータが`contiguous_iterator`であることに加えて、`ranges::data(t)`という操作によってその範囲の存在するメモリ領域を指すポインタを取得することができます。そして、そのようなポインタ型はイテレータの要素型と一貫しており、取得されるポインタ値は先頭イテレータのアドレスと一致します。
@@ -1061,7 +1061,7 @@ namespace std::ranges {
 4. `T`はクラス型か列挙型であり、`decay-copy(rbegin(r))`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(rbegin(r))`
       - ADLによって`rbegin()`を呼び出す
       - その際、ADLより前に`std`名前空間にある`std::rbegin()`を発見しないように名前解決が行われる
-5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges​::​end(r))`
+5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges::end(r))`
 6. それ以外の場合、*ill-formed*
 
 そして、同じように`ranges::rend(r)`と呼び出されたとき、その効果は次のいずれかになります
@@ -1073,7 +1073,7 @@ namespace std::ranges {
 4. `T`はクラス型か列挙型であり、`decay-copy(rend(r))`が呼び出し可能であり、その戻り値型`E`が`sentinel_for<E, decltype(ranges::rbegin(r)>`コンセプトのモデルとなるなら、`decay-copyr(end(r))`
       - ADLによって`rend()`を呼び出す
       - その際、ADLより前に`std`名前空間にある`std::rend()`を発見しないように名前解決が行われる
-5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges​::begin(r))`
+5. `ranges::begin(r)`と`ranges::end(r)`が呼び出し可能であり、その戻り値型が同じ型で`bidirectional_iterator`のモデルであるなら、`make_reverse_iterator(ranges::begin(r))`
 6. それ以外の場合、*ill-formed*
 
 どちらにおいても`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
@@ -1207,7 +1207,7 @@ namespace std::ranges {
 2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
 3. `decay-copy(r.data())`が呼び出し可能であり、その戻り値型がオブジェクトポインタ型である場合、`decay-copy(r.data())`
       - メンバ関数の`data()`を呼び出す 
-4. `ranges::begin(r)`が呼び出し可能であり、その戻り値型が`contiguous_iterator`のモデルであるなら、`to_address(ranges​::begin(r))`
+4. `ranges::begin(r)`が呼び出し可能であり、その戻り値型が`contiguous_iterator`のモデルであるなら、`to_address(ranges::begin(r))`
 5. それ以外の場合、*ill-formed*
 
 4番目のケースでは`to_address`を使用していることによって、`contiguous_iterator`となる非ポインタ型のイテレータラッパからでもアドレスを取得可能です。
@@ -3343,6 +3343,8 @@ int n3 = *it; // n3 == 4
 
 `reference`はややこしいですが、`R`の要素型`T`について`F`が`F : T -> U`のような変換を行う場合の`U`になり、これは`remove_cvref`等されない`F`の戻り値型そのままです。また、`range`カテゴリが`R`と異なるのは`R`が`contiguous_range`であるときだけです。
 
+常に`borrowed_range`とならないのは、変換関数`F`のオブジェクトを`transform_view`内に保存しておかなければならないためです。`transform_view`イテレータの間接参照時には、親の`transform_view`オブジェクト内に保存された`F`のオブジェクトを使用しています。
+
 ### `views::transform`
 
 `transform_view`に対応するRangeアダプタオブジェクトが`views::transform`です。
@@ -3927,7 +3929,7 @@ int main() {
 }
 ```
 
-`views::join`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::join(r)`のように呼び出されたとき、`join_view<views​::​all_t<decltype((r))>>{r}`を返します。
+`views::join`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::join(r)`のように呼び出されたとき、`join_view<views::all_t<decltype((r))>>{r}`を返します。
 
 ## `lazy_split_view`
 
@@ -4278,7 +4280,6 @@ namespace std::ranges {
 
 逆順にするという操作の都合上、入力となる`range`は`bidirectional_range`でなければなりません。
 
-
 ### 遅延評価
 
 `reverse_view`は遅延評価によって逆順範囲を生成します。とはいえ、逆順範囲にの生成と管理を`reverse_iterator`に丸投げしているので、`reverse_view`の行うことは`begin()`によってイテレータを取得するタイミングで`reverse_iterator`を適切に構築することです。
@@ -4345,7 +4346,7 @@ int main() {
 
 1. `R`が`reverse_view`の特殊化である場合、`r.base()`
 2. `R`は`subrange<reverse_iterator<I>, reverse_iterator<I>, K>`の様な型であり
-      1. `K == subrange_kind​::​sized`の場合、`subrange<I, I, K>(r.end().base(), r.begin().base(), r.size())`
+      1. `K == subrange_kind::sized`の場合、`subrange<I, I, K>(r.end().base(), r.begin().base(), r.size())`
       2. それ以外の場合、`subrange<I, I, K>(r.end().base(), r.begin().base())`
 3. それ以外の場合、`reverse_view{r}`
 
@@ -4371,6 +4372,226 @@ int main() {
 `view`を構築するときに元の`range`が`views::all`を通ることになるので完全にそのままとはなっていませんが、実質的には`reverse`の`reverse`で元の`range`に戻るようになっています。
 
 ## `element_view`
+
+`elements_view`は*tuple-like*な型の値のシーケンスから、指定された番号の要素を取り出したシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  // tupleのシーケンス
+  std::vector<std::tuple<int, double, std::string_view>> vec = { 
+    {1, 1.0, "one"},
+    {2, 2.0, "two"},
+    {3, 3.0, "three"}
+  };
+  
+  // 1つ目（int）のtuple要素のシーケンス
+  elements_view<views::all_t<decltype((vec))>, 0> ev1{vec};
+  
+  for (int n : ev1) {
+    std::cout << n; //123
+  }
+  
+  // 3つ目（string_view）のtuple要素のシーケンス
+  elements_view<views::all_t<decltype((vec))>, 2> ev2{vec};
+  
+  for (std::string_view sv : ev2) {
+    std::cout << sv << ' '; // one two three
+  }
+}
+```
+
+*tuple-like*な型のシーケンスのそれぞれの要素を指定された番号による`get<N>()`で射影し、その値のシーケンスを生成します。
+
+`elements_view`には抽出する`tuple`要素の番号を非型テンプレートパラメータとして渡さなければならないため、クラステンプレートの実引数推論を利用できません。そのため、引数として渡す`range`の型を書く必要があります。その際は他の`view`がそうであるように`std::views::all_t`を使うのが便利なのですが、`decltype(())`としないと`views::all`に左辺値として渡せずにコンパイルエラーを起こします（`views::all`は右辺値をリジェクトします）。
+
+これは特に、連想コンテナにおいて便利かと思われます。
+
+```cpp
+using namespace std::string_view_literals;
+
+int main() {
+
+  std::map<int, std::string_view> i2s = { 
+    {6, "six"sv}, {1, "one"sv}, {0, "zero"sv}, 
+    {2, "two"sv}, {3, "three"sv}, {5, "five"sv}, 
+    {4, "four"sv}
+  };
+  
+  // keyのシーケンス
+  elements_view<views::all_t<decltype((i2s))>, 0> ev1{i2s};
+  
+  for (int n : ev1) {
+    std::cout << n; // 0123456
+  }
+  
+  std::cout << '\n';
+
+  // valueのシーケンス
+  elements_view<views::all_t<decltype((i2s))>, 1> ev2{i2s};
+  
+  for (std::string_view sv : ev2) {
+    std::cout << sv << ' '; // zero one two three four five six
+  }
+}
+```
+
+`std::tuple`に`get`を使用する時と同様に、指定する要素番号は`0`始まりでなければなりません。
+
+### 遅延評価
+
+`elements_view`によるシーケンスもまた、遅延評価によって生成されます。とはいえそれは単純に、イテレータの間接参照のタイミングで元のシーケンスの要素に対して`get<N>`を適用して要素を取り出すだけです。`taransform_view`とやっていることは同じなので、遅延評価の仕方も同じです。
+
+```cpp
+std::vector<std::tuple<int, double, std::string_view>> vec = { 
+  {1, 1.0, "one"}, {2, 2.0, "two"}, {3, 3.0, "three"}
+};
+  
+elements_view<views::all_t<decltype((vec))>, 0> ev1{vec};
+// elements_view構築時は何もしない
+
+auto it = ranges::begin(ev1);
+// イテレータ取得時も何もしない
+
+++it;
+--it;
+// インクリメント等進行操作はほぼ元のイテレータそのまま
+
+auto&& elem = *it;
+// 間接参照時に元のイテレータの間接参照結果にget<N>を適用して1要素だけを取り出す
+```
+
+`elements_view`が行う殆どの事はそのイテレータの間接参照時に集中しており、そのほかの操作は元のイテレータの薄いラッパとなります。
+
+### `elements_view<R, N>`の諸特性
+
+- `reference` : `tuple_element_t<N, range_reference_t<R>>`
+- `range`カテゴリ
+    - `R`が`random_access_range` : `random_access_range`
+    - `R`が`bidirectional_range` : `bidirectional_range`
+    - `R`が`forward_range` : `forward_range`
+    - それ以外 : `input_range`
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` :  `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`reference`は確かに`tuple_element_t`によって分かりますが、`std::get`は引数の値カテゴリで細かく変動するため、言うほど推測が簡単なわけではありません。`elements_view`は特殊化された`transform_view`であるので`R`の`contiguous`性を受け継ぎませんが、`transform_view`と異なり`R`がそうであれば`borrowed_range`となることができます。これは、変換関数が固定されているため`view`本体にそれを保存しておく必要が無いためです。
+
+### `views::elements`
+
+`elements_view`に対応するRangeアダプタオブジェクトが`views::elements`です。
+
+```cpp
+int main() {
+  std::vector<std::tuple<int, double, std::string_view>> vec = { 
+    {1, 1.0, "one"}, {2, 2.0, "two"}, {3, 3.0, "three"}
+  };
+  
+  for (int n : views::elements<0>(vec)) {
+    std::cout << n; //123
+  }
+
+  // パイプラインスタイル
+  for (std::string_view sv : vec | views::elements<2>) {
+    std::cout << sv << ' '; // one two three
+  }
+}
+```
+
+`views::elements`はカスタマイぜーションポイントオブジェクトであり、数値`N`と引数の式`r`によって`views::elements<N>(r)`のように呼び出されたとき、`elements_view<views::all_t<decltype((E))>, N>{r}`を返します。
+
+`elements_view`は要素番号をテンプレートパラメータで受け取る都合上クラステンプレートの実引数推論が効かないため、テンプレートパラメータに引数`range`の型を書かなければなりませんが、`views::elements`を使うことでそれを省略できます。
+
+### `keys_view/values_view`
+
+`elements_view`は連想コンテナにおいてよく使用される事を想定しているためか、連想コンテナで使う際に便利なエイリアスがあらかじめ用意されています。これを用いると、冒頭の連装コンテナのサンプルは次のように書くことができます。
+
+```cpp
+using namespace std::string_view_literals;
+
+int main() {
+
+  std::map<int, std::string_view> i2s = {
+    {6, "six"sv}, {1, "one"sv}, {0, "zero"sv}, 
+    {2, "two"sv}, {3, "three"sv}, {5, "five"sv}, 
+    {4, "four"sv}
+  };
+  
+  // keyのシーケンス
+  keys_view ev1{i2s};
+  
+  for (int n : ev1) {
+    std::cout << n; // 0123456
+  }
+  
+  std::cout << '\n';
+
+  // valueのシーケンス
+  values_view ev2{i2s};
+  
+  for (std::string_view sv : ev2) {
+    std::cout << sv << ' '; // zero one two three four five six
+  }
+}
+```
+
+`keys_view/values_view`は`elements_view`のエイリアステンプレートで、次のように定義されます。
+
+```cpp
+namespace std::ranges {
+  template<typename R>
+  using keys_view = elements_view<views::all_t<R>, 0>;
+
+  template<typename R>
+  using values_view = elements_view<views::all_t<R>, 1>;
+}
+```
+
+C++20からはエイリアステンプレートの実引数推論が導入されているので、これらを利用すると完全に型を省略できるようになります。
+
+さらに、`keys_view/values_view`に対応するRangeアダプタオブジェクトも用意されています。
+
+```cpp
+using namespace std::string_view_literals;
+
+int main() {
+
+  std::map<int, std::string_view> i2s = {
+    {6, "six"sv}, {1, "one"sv}, {0, "zero"sv}, 
+    {2, "two"sv}, {3, "three"sv}, {5, "five"sv}, 
+    {4, "four"sv}
+  };
+  
+  // keyのシーケンスをイテレート
+  for (int n : i2s | views::keys) {
+    std::cout << n; // 0123456
+  }
+  
+  std::cout << '\n';
+
+  // valueのシーケンスをイテレート
+  for (std::string_view sv : i2s | views::values) {
+    std::cout << sv << ' '; // zero one two three four five six
+  }
+}
+```
+
+`view::keys/views::values`は`views::elements`の単なる特殊化です。
+
+```cpp
+namespace std::ranges::views {
+
+  // views::elements
+  template<size_t N>
+    inline constexpr /*unspecified*/ elements = /*unspecified*/;
+
+  // view::keys/views::values
+  inline constexpr auto keys = elements<0>;
+  inline constexpr auto values = elements<1>;
+}
+```
+
+これらを用いると、さらに意図を明確に書くことができます。
 
 \clearpage
 
