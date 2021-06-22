@@ -1400,13 +1400,13 @@ template<range R>
 実装は見たままで、`ranges::begin/ranges::end`を使用して入力の`range`型からイテレータ/番兵を取り出し、`decltype`でその型を取得しています。とはいえこれが無いと同等のものを一々定義するか、これと同じことを書くかすることになるため、これは便利なものです。C++20からは`typename`を省略できるコンテキストが増えているため、あまり難しいことを考えなくてもこれを使用できます。
 
 ```cpp
-template<ranges::range R>
+template<range R>
   // イテレータ型に対する制約を書くときに使う
-  requires same_as<ranges::iterator_t<R>, int*>
+  requires same_as<iterator_t<R>, int*>
 void f(R&& r) {
   // イテレータ型が欲しい時に使う
-  ranges::iterator_t<R> it = ranges::begin(r);
-  ranges::sentinel_t<R> se = ranges::end(r);
+  iterator_t<R> it = ranges::begin(r);
+  sentinel_t<R> se = ranges::end(r);
 
 }
 ```
@@ -1418,8 +1418,8 @@ void f(R&& r) {
 extern int arr[];
 
 int main() {
-  ranges::iterator_t<decltype(arr)> p1;  // ok
-  ranges::sentinel_t<decltype(arr)> p2;  // ng
+  iterator_t<decltype(arr)> p1;  // ok
+  sentinel_t<decltype(arr)> p2;  // ng
 }
 ```
 
@@ -1713,9 +1713,11 @@ void replace(R& r, ranges::range_rvalue_reference_t<R> rv) {
 `view_interface`は`view`を定義するときに必要となる物の共通部分を集めたクラスです。`view`型はこのクラスを継承して利用することが推奨されます。
 
 ```cpp
-template<class D>
-  requires is_class_v<D> && same_as<D, remove_cv_t<D>>
-class view_interface : public view_base ;
+namespace std::ranges {
+  template<class D>
+    requires is_class_v<D> && same_as<D, remove_cv_t<D>>
+  class view_interface : public view_base ;
+}
 ```
 
 コンセプトが示すのは、`D`がクラス型でありCV修飾されていないという事です。
@@ -1724,8 +1726,8 @@ class view_interface : public view_base ;
 
 ```cpp
 // 自作のviewを定義するとき、CRTPして継承する
-template<ranges::range R>
-class my_view : ranges::view_interface<my_view<R>> {
+template<range R>
+class my_view : view_interface<my_view<R>> {
   // ...
 }
 ```
@@ -1759,7 +1761,7 @@ public:
 };
 ```
 
-省略していますが、全て`const`オーバーロードも用意されています。
+これらの関数は、継承先の`range`型`D`のイテレータだけを用いて実装される様になっているため、`D`を`range`として正しく実装しておけば追加の作業を必要とせずに有効化されます。なお、省略していますが全て`const`オーバーロードも用意されています。
 
 ここでは後置`requires`節によって、クラステンプレートの非テンプレートメンバ関数の制約が行われています。そこでは主に、`D`がどのタイプの`range`なのかによってそれぞれの関数を有効化するか否かが決定されています。
 
@@ -1817,7 +1819,7 @@ int main() {
 
 `ranges::subrange`は任意のイテレータペアをラップすることのできる`range`型です。`std::span`が連続したメモリ領域のポインタと長さをラップして参照するものであるように、`subrange`は任意の範囲についてのイテレータ2つあるいはイテレータと番兵から、その範囲を参照する`range`を作成します。
 
-その性質から`subrange`は明らかに`view`であり、常に`view`コンセプトのモデルとなります。また、`borrowed_range`でもあるため`enable_borrowed_range`が`true`となるように特殊化されており、`borrowed_range`コンセプトのモデルでもあります。
+その性質から`subrange`は明らかに`view`であり、常に`view`コンセプトのモデルとなります。また、`borrowed_range`でもあるため`enable_borrowed_range`が`true`となるように特殊化されており、常に`borrowed_range`コンセプトのモデルでもあります。
 
 ```cpp
 // イテレータペアを受け取る旧来のインターフェース
@@ -1946,7 +1948,7 @@ public:
 (3)(5)のコンストラクタはその後置`requires`節が示す通りに`K == subrange_kind::sized`の時に使用されるコンストラクタです。(2)(4)との違いは、`sized_sentinel_for<S, I>`を満たしていなくても使用可能であるところにあります。これらのコンストラクタから初期化された場合、`subrange`は`n`の値を保持し`.size()`メンバ関数はその`n`を返すようになります。すなわち、これらのコンストラクタでは`sized_range`では無い範囲を`sized_range`となるように変換する事ができます。
 
 ```cpp
-template<ranges::sized_range R>
+template<sized_range R>
 void f(R&& r) {
   auto l = ranges::size(r); // l == 5
 }
@@ -1955,12 +1957,12 @@ int main() {
   std::forward_list fl = {2, 5, 1, 0, 9};
 
   // どちらも構築はok
-  auto sr1 = ranges::subrange{fl.begin(), fl.end()};    // (2)を使用
-  auto sr2 = ranges::subrange{fl.begin(), fl.end(), 5}; // (3)を使用
+  auto sr1 = subrange{fl.begin(), fl.end()};    // (2)を使用
+  auto sr2 = subrange{fl.begin(), fl.end(), 5}; // (3)を使用
 
   /* range版を用いてもいい
-  auto sr1 = ranges::subrange{fl};    // (4)を使用
-  auto sr2 = ranges::subrange{fl, 5}; // (5)を使用
+  auto sr1 = subrange{fl};    // (4)を使用
+  auto sr2 = subrange{fl, 5}; // (5)を使用
   */
 
   f(sr1); // ng
@@ -2018,12 +2020,14 @@ Rangeライブラリでは安全のためにダングリングとなる場合を
 `ranges::dangling`は出力となるイテレータがダングリングとなる場合に代わりに返されるタグ型です。
 
 ```cpp
-struct dangling {
-  constexpr dangling() noexcept = default;
+namespace std::ranges {
+  struct dangling {
+    constexpr dangling() noexcept = default;
 
-  template<class... Args>
-  constexpr dangling(Args&&...) noexcept { }
-};
+    template<class... Args>
+    constexpr dangling(Args&&...) noexcept { }
+  };
+}
 ```
 
 C++20でリファインされるRangeアルゴリズムと呼ばれる関数のうち、`range`を受け取りそのイテレータを返すタイプの関数において利用されます。
@@ -2104,12 +2108,14 @@ int main() {
 `ranges::borrowed_iterator_t/ranges::borrowed_subrange_t`は`ranges::dangling`の利用を簡易化するエイリアステンプレートです。
 
 ```cpp
-template<range R>
-  using borrowed_iterator_t = conditional_t<borrowed_range<R>, iterator_t<R>, dangling>;
+namespace std::ranges {
+  template<range R>
+    using borrowed_iterator_t = conditional_t<borrowed_range<R>, iterator_t<R>, dangling>;
 
-template<range R>
-  using borrowed_subrange_t =
-    conditional_t<borrowed_range<R>, subrange<iterator_t<R>>, dangling>;
+  template<range R>
+    using borrowed_subrange_t =
+      conditional_t<borrowed_range<R>, subrange<iterator_t<R>>, dangling>;
+}
 ```
 
 入力の型`R`が`borrowed_range`であるかによってイテレータ/`subrange`と`dangling`を切り替えます。
@@ -2137,7 +2143,7 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 
   // ...
 
-  return ranges::subrange{it, end};
+  return subrange{it, end};
 }
 ```
 
@@ -3989,6 +3995,10 @@ auto outer_it = ranges::begin(sv);
 // 文字列先頭位置を前のデリミタ位置から求め更新
 // 内部rangeは"split_view"->"takes"へ進む
 
+bool b = outer_it == ranges::end(sv); // false
+// 外側range終端チェック
+// 元のシーケンス上での終端チェックと、現在の位置でデリミタが出現しているかどうかを調べる
+
 auto inner_range = *outer_it;
 // 内側rangeの取得、subrangeを作って返す
 // 文字列先頭位置イテレータ(cur)と次に出現するデリミタ列の先頭イテレータ(next)
@@ -4002,10 +4012,6 @@ auto inner_it = ranges::begin(inner_range);
 
 char c = *inner_it; // a
 // 元のシーケンスのイテレータのデリファレンスと等価
-
-bool b = outer_it == ranges::end(sv); // false
-// 外側range終端チェック
-// 元のシーケンス上での終端チェックと、現在の位置でデリミタが出現しているかどうかを調べる
 ```
 
 `lazy_split_view`の様に過度な一般化と過度な遅延評価を行わない事によって、文字列分割時に結果を文字列に簡単に変換可能である様に実装されています。
@@ -4032,7 +4038,7 @@ bool b = outer_it == ranges::end(sv); // false
 
 ### `views::split`
 
-`split_view`に対応するRangeアダプタオブジェクトが`std::views::split`です。
+`split_view`に対応するRangeアダプタオブジェクトが`views::split`です。
 
 ```cpp
 int main() {
