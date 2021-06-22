@@ -1400,13 +1400,13 @@ template<range R>
 実装は見たままで、`ranges::begin/ranges::end`を使用して入力の`range`型からイテレータ/番兵を取り出し、`decltype`でその型を取得しています。とはいえこれが無いと同等のものを一々定義するか、これと同じことを書くかすることになるため、これは便利なものです。C++20からは`typename`を省略できるコンテキストが増えているため、あまり難しいことを考えなくてもこれを使用できます。
 
 ```cpp
-template<ranges::range R>
+template<range R>
   // イテレータ型に対する制約を書くときに使う
-  requires same_as<ranges::iterator_t<R>, int*>
+  requires same_as<iterator_t<R>, int*>
 void f(R&& r) {
   // イテレータ型が欲しい時に使う
-  ranges::iterator_t<R> it = ranges::begin(r);
-  ranges::sentinel_t<R> se = ranges::end(r);
+  iterator_t<R> it = ranges::begin(r);
+  sentinel_t<R> se = ranges::end(r);
 
 }
 ```
@@ -1418,8 +1418,8 @@ void f(R&& r) {
 extern int arr[];
 
 int main() {
-  ranges::iterator_t<decltype(arr)> p1;  // ok
-  ranges::sentinel_t<decltype(arr)> p2;  // ng
+  iterator_t<decltype(arr)> p1;  // ok
+  sentinel_t<decltype(arr)> p2;  // ng
 }
 ```
 
@@ -1713,9 +1713,11 @@ void replace(R& r, ranges::range_rvalue_reference_t<R> rv) {
 `view_interface`は`view`を定義するときに必要となる物の共通部分を集めたクラスです。`view`型はこのクラスを継承して利用することが推奨されます。
 
 ```cpp
-template<class D>
-  requires is_class_v<D> && same_as<D, remove_cv_t<D>>
-class view_interface : public view_base ;
+namespace std::ranges {
+  template<class D>
+    requires is_class_v<D> && same_as<D, remove_cv_t<D>>
+  class view_interface : public view_base ;
+}
 ```
 
 コンセプトが示すのは、`D`がクラス型でありCV修飾されていないという事です。
@@ -1724,8 +1726,8 @@ class view_interface : public view_base ;
 
 ```cpp
 // 自作のviewを定義するとき、CRTPして継承する
-template<ranges::range R>
-class my_view : ranges::view_interface<my_view<R>> {
+template<range R>
+class my_view : view_interface<my_view<R>> {
   // ...
 }
 ```
@@ -1759,7 +1761,7 @@ public:
 };
 ```
 
-省略していますが、全て`const`オーバーロードも用意されています。
+これらの関数は、継承先の`range`型`D`のイテレータだけを用いて実装される様になっているため、`D`を`range`として正しく実装しておけば追加の作業を必要とせずに有効化されます。なお、省略していますが全て`const`オーバーロードも用意されています。
 
 ここでは後置`requires`節によって、クラステンプレートの非テンプレートメンバ関数の制約が行われています。そこでは主に、`D`がどのタイプの`range`なのかによってそれぞれの関数を有効化するか否かが決定されています。
 
@@ -1817,7 +1819,7 @@ int main() {
 
 `ranges::subrange`は任意のイテレータペアをラップすることのできる`range`型です。`std::span`が連続したメモリ領域のポインタと長さをラップして参照するものであるように、`subrange`は任意の範囲についてのイテレータ2つあるいはイテレータと番兵から、その範囲を参照する`range`を作成します。
 
-その性質から`subrange`は明らかに`view`であり、常に`view`コンセプトのモデルとなります。また、`borrowed_range`でもあるため`enable_borrowed_range`が`true`となるように特殊化されており、`borrowed_range`コンセプトのモデルでもあります。
+その性質から`subrange`は明らかに`view`であり、常に`view`コンセプトのモデルとなります。また、`borrowed_range`でもあるため`enable_borrowed_range`が`true`となるように特殊化されており、常に`borrowed_range`コンセプトのモデルでもあります。
 
 ```cpp
 // イテレータペアを受け取る旧来のインターフェース
@@ -1946,7 +1948,7 @@ public:
 (3)(5)のコンストラクタはその後置`requires`節が示す通りに`K == subrange_kind::sized`の時に使用されるコンストラクタです。(2)(4)との違いは、`sized_sentinel_for<S, I>`を満たしていなくても使用可能であるところにあります。これらのコンストラクタから初期化された場合、`subrange`は`n`の値を保持し`.size()`メンバ関数はその`n`を返すようになります。すなわち、これらのコンストラクタでは`sized_range`では無い範囲を`sized_range`となるように変換する事ができます。
 
 ```cpp
-template<ranges::sized_range R>
+template<sized_range R>
 void f(R&& r) {
   auto l = ranges::size(r); // l == 5
 }
@@ -1955,12 +1957,12 @@ int main() {
   std::forward_list fl = {2, 5, 1, 0, 9};
 
   // どちらも構築はok
-  auto sr1 = ranges::subrange{fl.begin(), fl.end()};    // (2)を使用
-  auto sr2 = ranges::subrange{fl.begin(), fl.end(), 5}; // (3)を使用
+  auto sr1 = subrange{fl.begin(), fl.end()};    // (2)を使用
+  auto sr2 = subrange{fl.begin(), fl.end(), 5}; // (3)を使用
 
   /* range版を用いてもいい
-  auto sr1 = ranges::subrange{fl};    // (4)を使用
-  auto sr2 = ranges::subrange{fl, 5}; // (5)を使用
+  auto sr1 = subrange{fl};    // (4)を使用
+  auto sr2 = subrange{fl, 5}; // (5)を使用
   */
 
   f(sr1); // ng
@@ -2018,12 +2020,14 @@ Rangeライブラリでは安全のためにダングリングとなる場合を
 `ranges::dangling`は出力となるイテレータがダングリングとなる場合に代わりに返されるタグ型です。
 
 ```cpp
-struct dangling {
-  constexpr dangling() noexcept = default;
+namespace std::ranges {
+  struct dangling {
+    constexpr dangling() noexcept = default;
 
-  template<class... Args>
-  constexpr dangling(Args&&...) noexcept { }
-};
+    template<class... Args>
+    constexpr dangling(Args&&...) noexcept { }
+  };
+}
 ```
 
 C++20でリファインされるRangeアルゴリズムと呼ばれる関数のうち、`range`を受け取りそのイテレータを返すタイプの関数において利用されます。
@@ -2104,12 +2108,14 @@ int main() {
 `ranges::borrowed_iterator_t/ranges::borrowed_subrange_t`は`ranges::dangling`の利用を簡易化するエイリアステンプレートです。
 
 ```cpp
-template<range R>
-  using borrowed_iterator_t = conditional_t<borrowed_range<R>, iterator_t<R>, dangling>;
+namespace std::ranges {
+  template<range R>
+    using borrowed_iterator_t = conditional_t<borrowed_range<R>, iterator_t<R>, dangling>;
 
-template<range R>
-  using borrowed_subrange_t =
-    conditional_t<borrowed_range<R>, subrange<iterator_t<R>>, dangling>;
+  template<range R>
+    using borrowed_subrange_t =
+      conditional_t<borrowed_range<R>, subrange<iterator_t<R>>, dangling>;
+}
 ```
 
 入力の型`R`が`borrowed_range`であるかによってイテレータ/`subrange`と`dangling`を切り替えます。
@@ -2137,7 +2143,7 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 
   // ...
 
-  return ranges::subrange{it, end};
+  return subrange{it, end};
 }
 ```
 
@@ -3917,14 +3923,14 @@ int main() {
   std::vector<std::vector<int>> vecvec = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
 
   for (int n : views::join(vecvec)) {
-    std::cout << n;
+    std::cout << n; // 1234567891011
   }
 
   std::cout << '\n';
 
   // パイプラインスタイル
   for (int n : vecvec | views::join) {
-    std::cout << n;
+    std::cout << n; // 1234567891011
   }
 }
 ```
@@ -3938,7 +3944,7 @@ int main() {
 ```cpp
 int main() {
   // ホワイトスペースをデリミタとして文字列を切り出す
-  lazy_split_view sv{"lazy_split_view takes a view and a delimiter, and splits the view into subranges on the delimiter.", ' '};
+  lazy_split_view sv{"lazy_split_view takes a view and a delimiter", ' '};
   
   // split_viewは切り出した文字列のrangeとなる
   for (auto inner_range : sv) {
@@ -3948,6 +3954,15 @@ int main() {
     }
     std::cout << '\n';
   }
+  /*
+    lazy_split_view
+    takes
+    a
+    view
+    and
+    a
+    delimiter
+  */
 }
 ```
 
@@ -3957,9 +3972,11 @@ int main() {
 
 なお、この例の場合の`inner_range`（内側`range`）は`std::string_view`あるいは類するものではなく、単に`forward_range`である何かです。そのため、この`inner_range`から`string_view`等文字列型に変換するのは少し手間のかかる作業となります。
 
+ややこしいですが、`join_view`のところで外側/内側`range`と言っていたのは`join_view`への入力`range`に対しての話で、ここでの内側/外側は`lazy_split_view`からの出力`range`の話です。
+
 ### 遅延評価
 
-`lazy_split_view`もまた遅延評価によって分割処理と*View*の生成を行います。
+`lazy_split_view`もまた遅延評価によって分割処理と`view`の生成を行います。
 
 `lazy_split_view`の主たる仕事は元のシーケンス上でデリミタと一致する部分を見つけだし、それを区切りに内側`range`を生成する事にあります。それは外側`range`のイテレータのインクリメントと内側`range`のイテレータの終端チェックのタイミングで行われます。
 
@@ -3991,7 +4008,7 @@ char c = *inner_it; // a
 // 元のシーケンスのイテレータのデリファレンスと等価
 
 bool f = inner_it == std::ranges::end(inner_range); // false
-// 内部rangeの終端チェック
+// 内側rangeの終端チェック
 // 元のシーケンスの終端と、デリミタが空かどうか、現在の位置でデリミタが出現しているかどうか、を調べる
 ```
 
@@ -4021,7 +4038,7 @@ bool f = inner_it == std::ranges::end(inner_range); // false
 - `const-iterable` : ◯
 - `borrowed_range` : ×
 
-内側`range`はどんなにがんばっても`forward_range`にしかならないため、多くの文字列を扱う所（最低でも`bidirectional_range`を要求する）で使用できなくなっています。内側`range`を独自型で定義しなおしているのは、遅延評価を実装するためです。そして、この事が`lazy_split_view`を文字列分割に使用しづらくしています。
+内側`range`はどんなにがんばっても`forward_range`にしかならないため、多くの文字列を扱う所（最低でも`bidirectional_range`を要求する）で使用できなくなっています。内側`range`を独自型で定義しなおしているのは遅延評価を実装するためですが、この事が`lazy_split_view`を文字列分割に使用しづらくしています。
 
 ### `views::lazy_split`
 
@@ -4069,11 +4086,11 @@ int main() {
     std::cout << '\n';
   }
   /*
-     1244
-     1023679
-     1111
-     
-     90
+    1244
+    1023679
+    1111
+    
+    90
   */
 }
 ```
@@ -4096,6 +4113,15 @@ int main() {
   for (std::string_view str : sv) {
     std::cout << str << '\n'
   }
+  /*
+    split_view
+    takes
+    a
+    view
+    and
+    a
+    delimiter
+  */
 }
 ```
 
@@ -4122,7 +4148,7 @@ namespace std::ranges {
 }
 ```
 
-文字列に特化したと言いつつ、実際のところ入力となる`range`は`forward_range`かつ`view`であればよく、デリミタ（`Pattern`）も`forward_range`であればOKです。例えば文字の`std::list`などを用いて/によって分割する事ができるわけです。また、デリミタに単一要素を指定しても`single_view`を用いて`range`化する事で、処理がデリミタの長さや型に依存しない様になっている事が推論補助から見て取れます。
+文字列に特化したと言いつつ、実際のところ入力となる`range`は`forward_range`であればよく、デリミタ（`Pattern`）も`forward_range`であればOKです。例えば`std::list`などを、あるいはそれによって分割する事ができるわけです。また、デリミタに単一要素を指定しても`single_view`を用いて`range`化する事で、デリミタを常に`range`として統一的に扱っている事が推論補助から見て取れます。
 
 たとえば、文字列を文字列で分割することができます。
 
@@ -4162,7 +4188,7 @@ int main() {
 
 `split_view`もまた遅延評価によって分割処理と`view`の生成を行いますが、`lazy_split_view`とは少し異なります。
 
-`split_view`では、`.begin()`による外側イテレータの取得時に最初のデリミタ位置を探索し文字列先頭位置とともに記録しておきます。そして、外側イテレータのインクリメントのタイミングでデリミタ位置と文字列先頭位置の更新を行なっていきます。外側イテレータの間接参照では、現在の文字列先頭位置と次のデリミタ位置のイテレータから切り出す文字列を`subrange`によって返すため、内側`range`は特別なことを何もしません。外側イテレータの終端チェックでは、デリミタ列に一致する文字列が終端に来ているケースを考慮するために少し判定が増えていますが、`lazy_split_view`と比べると調べるべきことは単純になっています。
+`split_view`では、`.begin()`による外側イテレータの取得時に最初のデリミタ位置を探索し文字列先頭位置とともに記録しておきます。そして、外側イテレータのインクリメントのタイミングでデリミタ位置と文字列先頭位置の更新を行なっていきます。外側イテレータの間接参照では、現在の文字列先頭位置と次のデリミタ位置のイテレータから切り出す文字列を`subrange`によって返すため、内側`range`は特別なことを何もしません。外側イテレータの終端チェックでは、デリミタ列に一致する文字列が終端に来ているケースを考慮するために少し判定が増えていますが、`lazy_split_view`と比べると単純になっています。
 
 ```cpp
 split_view sv{"split_view takes a view and a delimiter", ' '};
@@ -4177,6 +4203,10 @@ auto outer_it = ranges::begin(sv);
 // 文字列先頭位置を前のデリミタ位置から求め更新
 // 内部rangeは"split_view"->"takes"へ進む
 
+bool b = outer_it == ranges::end(sv); // false
+// 外側range終端チェック
+// 元のシーケンス上での終端チェックと、現在の位置でデリミタが出現しているかどうかを調べる
+
 auto inner_range = *outer_it;
 // 内側rangeの取得、subrangeを作って返す
 // 文字列先頭位置イテレータ(cur)と次に出現するデリミタ列の先頭イテレータ(next)
@@ -4190,10 +4220,6 @@ auto inner_it = ranges::begin(inner_range);
 
 char c = *inner_it; // a
 // 元のシーケンスのイテレータのデリファレンスと等価
-
-bool b = outer_it == ranges::end(sv); // false
-// 外側range終端チェック
-// 元のシーケンス上での終端チェックと、現在の位置でデリミタが出現しているかどうかを調べる
 ```
 
 `lazy_split_view`の様に過度な一般化と過度な遅延評価を行わない事によって、文字列分割時に結果を文字列に簡単に変換可能である様に実装されています。
@@ -4218,9 +4244,11 @@ bool b = outer_it == ranges::end(sv); // false
 - `const-iterable` : `R`が`const-iterable`の場合
 - `borrowed_range` : ◯
 
+特に、内側`range`の性質が大きく改善された事によって、文字列分割への適性が向上しています。
+
 ### `views::split`
 
-`split_view`に対応するRangeアダプタオブジェクトが`std::views::split`です。
+`split_view`に対応するRangeアダプタオブジェクトが`views::split`です。
 
 ```cpp
 int main() {
@@ -4245,8 +4273,182 @@ int main() {
 
 `views::split`はカスタマイゼーションポイントオブジェクトであり、引数の式`r, p`によって`views::split(r, p)`のように呼び出されたとき、`split_view(r, p)`を返します。
 
-## `counted_view`
+## Counted view
+
+*Counted view*は元となるシーケンスの先頭から指定された個数の要素のシーケンスを生成する`view`です。
+
+```cpp
+int main() {
+  auto iota = views::iota(1);
+  
+  for (int n : views::counted(ranges::begin(iota), 5)) {
+    std::cout << n; // 12345
+  }
+}
+```
+
+この*Counted view*は`couted_view`のようなクラスがあるわけではなく、生成するには`views::counted`を使用します。`views::counted`はカスタマイぜーションポイントオブジェクトであり、引数の式`i, n`によって`views::counted(i, n)`のように呼び出されたとき、その効果は次の様になります（`T = decay_t<decltype((E))>, D = iter_difference_t<T>`として）
+
+1. `n`の型と型`D`が`convertible_to<decltype((n)), D>`のモデルとならない場合、、*ill-formed*
+2. `T`が`contiguous_iterator`であある場合、`span(to_address(i), static_cast<D>(n))`
+3. `T`が`random_access_iterator`であある場合、`subrange(i, i + static_cast<D>(n))`
+4. それ以外の場合、`subrange(counted_iterator(i, n), default_sentinel)`
+
+イテレータ1つと要素数を受け取って、イテレータに応じて最適な型を選択してサイズ`n`の`range`を返してくれます。`counted_iterator`というのはC++20から追加されたイテレータラッパで、イテレータとカウント数からそのカウント数だけ進行可能なイテレータを作成するものです。`couted_view`はないのですが、`views::counted`には`counted_iterator`が対応しています。
+
+ただ、`views::counted`はRangeアダプタオブジェクトではないのでパイプラインスタイルで使用することはできません。どちらかというとRangeファクトリっぽいものですがそうではなくRangeアダプタでもないのですが、他のカテゴライズもないのでとりあえずRangeアダプタとして扱われている感じがあります。
+
+### `take_view`との差異
+
+*Counted view*はまさに`take_view`と同じことをしてくれますが、次の様な違いがあります。
+
+- `take_view`は`view`を受けるが、*Counted view*はイテレータを受け取る
+- *Counted view*はオーバラン防止のためのケアをしない
+
+```cpp
+int main() {
+  int arr[] = {1, 2, 3};
+
+  // 範囲を飛び越す！
+  for (int n : views::counted(std::ranges::begin(arr), 5)) {
+    std::cout << n; // 123??
+  }
+}
+```
+
+*Counted view*は単体のイテレータに対して`take_view`相当のものを生成するためのものであり、イテレータ1つではその範囲の終端は分からないのでオーバーランを防ぐことができないのです。
+
+### Counted viewの諸特性
+
+入力のイテレータ型を`I`として
+
+- `reference` : `iter_reference_t<I>`
+- `range`カテゴリ : `I`のイテレータカテゴリに対応するカテゴリ
+- `common_range` : `I`が`random_access_iterator`の場合
+- `sized_range` :  ◯
+- `const-iterable` : ◯
+- `borrowed_range` : ◯
+
 ## `common_view`
+
+`common_view`は元となる`range`を`common_range`に変換する`view`です。
+
+```cpp
+int main() {
+  // common_rangeではないシーケンス
+  auto even_seq = views::iota(1)
+    | views::filter([](int n) { return n % 2 == 0; })
+    | views::take(10);
+
+  // イテレータ型と終端イテレータ型が合わないためエラー 
+  std::vector<int> vec(ranges::begin(even_seq), ranges::end(even_seq)); // ng
+  
+  common_view common{even_seq};
+  
+  std::vector<int> vec(ranges::begin(common), ranges::end(common)); //ok
+
+  for (int n : vec) {
+    std::cout << n; // 2468101214161820
+  }
+}
+```
+
+`common_range`とは`begin()/end()`によって取得できるイテレータと終端イテレータの型が同じとなる`range`のことでした。これはC++20以降のイテレータ（Rangeライブラリの`view`などのイテレータ）をC++17以前のイテレータを受け取るものに渡す際に使用できます。
+
+標準コンテナのイテレータペアを受け取るコンストラクタや`<algorithm>`の各種アルゴリズム群など、C++17以前のイテレータを受け取るところでは`begin()/end()`の型が同一である事を前提としています。しかし、C++20以降のイテレータおよび`range`では異なっていることが前提です。特に、各種`view`型の場合は元となる`range`の種別や構築のされ方によって`begin()/end()`の型は細かく変化するので、古いライブラリと組み合わせる際に`common_view`が必要となります。
+
+`<algorithm>`のイテレータアルゴリズム関数群は`std::ranges`名前空間の下にある同名の関数を利用すればC++20以降のイテレータに対してもそのまま使用できるようになっていますが、標準コンテナのイテレータペアを取るコンストラクタや`<numeric>`にあるアルゴリズム関数などでは`common_view`を使用する必要があります。
+
+```cpp
+int main() {
+  auto even_seq = std::views::iota(1)
+    | std::views::filter([](int n) { return n % 2 == 0; })
+    | std::views::take(10);
+
+  auto common = std::views::common(even_seq);
+
+  auto less_than_10 = [](int n) { return 10 < n;};
+  
+  // 古いやつ
+  auto it1 = std::find_if(common.begin(), common.end(), less_than_10);
+  std::cout << *it1 << '\n';  // 12
+  
+  // 新しいやつ
+  auto it2 = std::ranges::find_if(even_seq.begin(), even_seq.end(), less_than_10);
+  std::cout << *it2 << '\n';  // 12
+  
+  // rangeそのまま
+  auto it3 = std::ranges::find_if(even_seq, less_than_10);
+  std::cout << *it3 << '\n';  // 12
+
+  // 古いやつ
+  auto sum = std::accumulate(common.begin(), common.end(), 0u);
+  std::cout << sum << '\n';   // 110
+  
+  // まだない・・・
+  //auto sum2 = std::ranges::accumulate(even_seq.begin(), even_seq.end(), 0u);
+  //auto sum3 = std::ranges::accumulate(even_seq, 0u);
+}
+```
+
+### `common_view<R>`の諸特性
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ
+    - `R`が`random_access_range`かつ`sized_range`の場合 : `R`のカテゴリに従う
+    - `R`が`forward_range`の場合 : `forward_range`
+    - それ以外の場合 : `input_range`
+- `common_range` : ◯
+- `sized_range` :  `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`R`が`random_access_range`かつ`sized_range`の時はそのイテレータをそのまま利用するため`R`のカテゴリを継承しますが、それ以外の場合は`common_iterator`を利用して元のイテレータをラップするため`R`のカテゴリと同じにはなりません。イテレータ型と番兵型が異なっている場合、`R`が`bidirectional`でもその番兵オブジェクトに`--`操作が求められておらず、その様なイテレータペアをラップした`common_iterator`も`--`操作を行えないため、`forward_iterator`となるのが精一杯です。そのため、`common_iterator`を利用する場合の`common_view`も`forward`にしかなりません。
+
+### `views::common`
+
+`common_view`に対応するRangeアダプタオブジェクトが`views::common`です。
+
+```cpp
+int main() {
+  auto even_seq = views::iota(1)
+    | views::filter([](int n) { return n % 2 == 0; })
+    | views::take(10);
+
+  auto common1 = views::common(even_seq);
+  
+  std::vector<int> vec(ranges::begin(common1), ranges::end(common1)); //ok
+
+
+  for (int n : vec) {
+    std::cout << n; // 2468101214161820
+  }
+}
+```
+
+```cpp
+int main() {
+  // パイプラインスタイル
+  auto even_seq = views::iota(1)
+    | views::filter([](int n) { return n % 2 == 0; })
+    | views::take(10)
+    | views::common;
+
+  std::vector<int> vec(ranges::begin(even_seq), ranges::end(even_seq)); //ok
+  
+  for (int n : vec) {
+    std::cout << n; // 2468101214161820
+  }
+}
+```
+
+`views::common`はカスタマイゼーションポイントオブジェクトであり、引数の式`r`によって`views::common(r)`のように呼び出されたとき、その効果は次の様になります
+
+1. `decltype((E))`が`common_range`の場合、`views::all(r)`
+2. それ以外の場合、`common_view{r}`
+
+結果の型を区別しなければ、あらゆる`range`オブジェクトに対して`common_view`相当のものを得ることができます。特に、`common_view`は`common_range`から構築することができないので、`common_view`が欲しい際は`views::common`を利用するとよりジェネリックです。
+
 ## `reverse_view`
 
 `reverse_view`は元となるシーケンスを逆順にしたシーケンスを生成する*View*です。
