@@ -7,6 +7,23 @@ geometry:
   height: 263mm
 #coverimage: cover.jpg
 #backcoverimage: backcover.jpg
+titlecolor:
+  color1:
+    r: 0.796078
+    g: 0.949020
+    b: 0.4
+    c: 25
+    m: 0
+    y: 80
+    k: 0
+  color2:
+    r: 0.207843
+    g: 0.631373
+    b: 0.419608
+    c: 75
+    m: 0
+    y: 65
+    k: 0
 okuduke:
   revision: 初版
   printing: ねこのしっぽ
@@ -132,7 +149,7 @@ concept borrowed_range =
 
 このコンセプトは3つの制約式から構成されています。この様に、コンセプトを構成する制約式としては`requires`式以外にもコンセプトそのものや、`bool`を返す任意の定数式を用いることができます。
 
-そして、`borrowed_range`はその定義中に`range`コンセプトを（`&&`によって繋ぐ形で）含んでいます。この場合`borrowed_range`は`range`コンセプトを完全に包含しており、この包含関係によってコンセプトの半順序が決定され、`borrowed_range`コンセプトによる制約は`range`コンセプトによる制約よりも強く順序付け（制約）されます（あえて記号で書くならば、`range ⊂ borrowed_range`、右側ほど強い）。2つのコンセプトの間に順序が付けられるとき、それらのコンセプトを用いてオーバーロードされている関数の間に呼び出しの優先順位を付けることができ、曖昧にならなくなります。ただし、制約式同士が`||`で繋がれている場合はこの限りではなく、ルールはより複雑になります・・・
+そして、`borrowed_range`はその定義中に`range`コンセプトを（`&&`によって繋ぐ形で）含んでいます。この場合`borrowed_range`は`range`コンセプトを完全に包含しており、この包含関係によってコンセプトの半順序が決定され、`borrowed_range`コンセプトによる制約は`range`コンセプトによる制約よりも強く順序付け（制約）されます（あえて記号で書くならば、`range` ⊂ `borrowed_range`、右側ほど強い）。2つのコンセプトの間に順序が付けられるとき、それらのコンセプトを用いてオーバーロードされている関数の間に呼び出しの優先順位を付けることができ、曖昧にならなくなります。ただし、制約式同士が`||`で繋がれている場合はこの限りではなく、ルールはより複雑になります・・・
 
 ```cpp
 // コンセプトを使用する時は、typenameのところにコンセプトを指定する
@@ -211,9 +228,7 @@ concept sized_range =
   requires(T& t) { ranges::size(t); };
 ```
 
-意味論要件は
-
-`T`から参照を取り除いた型のオブジェクト`t`について
+意味論要件は、`T`から参照を取り除いた型のオブジェクト`t`について
 
 - `ranges::size(t)`の計算量は償却定数であり`t`を変更せず、結果は`ranges::distance(t)`と等しくなる
 - `iterator_t<T>`が`std::forward_iterator`のモデルであるとき、`ranges::size(t)`は`ranges::begin(t)`の評価と関係なく呼び出し可能
@@ -3831,7 +3846,7 @@ namespace std::ranges {
 }
 ```
 
-`join_view`の入力となる`range`は`input_range`かつ`view`であり、その要素型が`input_range`である必要があります。まあ当然ですね。
+`join_view`の入力となる`range`は`input_range`であり、その要素型が`input_range`である必要があります。まあ当然ですね。
 
 ### 遅延評価
 

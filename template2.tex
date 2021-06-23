@@ -461,12 +461,21 @@ $endif$
 %%% https://ja.osdn.net/projects/luatex-ja/forums/25558/41527/
 \renewcommand{\jsParagraphMark}{}
 
-% colors
-\definecolor{darkslateblue}{RGB}{72,61,139}
-
+%%% 見出し修飾の色指定
+$if(titlecolor)$
+$if(color_cmyk)$
+\definecolor{titlecolor1}{cmyk}{$titlecolor.color1.c$,$titlecolor.color1.m$,$titlecolor.color1.y$,$titlecolor.color1.k$}
+\definecolor{titlecolor2}{cmyk}{$titlecolor.color2.c$,$titlecolor.color2.m$,$titlecolor.color2.y$,$titlecolor.color2.k$}
+$else$
+\definecolor{titlecolor1}{rgb}{$titlecolor.color1.r$,$titlecolor.color1.g$,$titlecolor.color1.b$}
+\definecolor{titlecolor2}{rgb}{$titlecolor.color2.r$,$titlecolor.color2.g$,$titlecolor.color2.b$}
+$endif$
+$else$
 \definecolor{titlecolor1}{rgb}{0.984314,0.894118,0.5}
 \definecolor{titlecolor2}{rgb}{0.960784,0.498039,0.356863}
+$endif$
 
+%%% 見出しの修飾設定
 \newcommand{\mytitle}[1]{
 \begin{tabular}{p{0.01\textwidth}p{0.99\textwidth}}
 \cellcolor{titlecolor1} &\cellcolor{titlecolor2} \textcolor{white}
@@ -482,11 +491,6 @@ $endif$
   \hspace{-1.0cm}
   \mytitle
 }
-
-% subsection
-%\titleformat{\subsection}[block]
-%{\Large\sffamily}{0pt}
-%{\color{titlecolor2}\titleline[l]{\rule[-4pt]{.2cm}{1em}\hspace{.3dm}\thepart\hspace{1em}#1}\titlerule}
 
 \titleformat{\subsection}[block]
 {}{}{0pt}
@@ -504,6 +508,16 @@ $endif$
 \\
 \vspace{-30pt}
 ]
+
+\titleformat{\subsubsection}[block]
+{}{}{0pt}
+{
+  \thispagestyle{headings}
+  \colorbox{titlecolor2}{\begin{picture}(1,10)\end{picture}}
+  %\hspace{0pt}
+  \normalfont \Large\sffamily \thesubsubsection
+  \hspace{1pt}
+}
 %%%
 
 %%% 目次のフォント修正
@@ -540,14 +554,19 @@ $else$
 \definecolor{listing-rule}{HTML}{B3B2B3}
 \definecolor{listing-numbers}{HTML}{B3B2B3}
 \definecolor{listing-text-color}{HTML}{000000}
-\definecolor{listing-keyword}{HTML}{435489}   % キーワードの色、識別子と同じ
-%\definecolor{listing-keyword}{cmyk}{100.0, 45.0, 0.0, 0.0}   % キーワードの色、識別子と同じ
 \definecolor{listing-keyword-2}{HTML}{1284CA}
 \definecolor{listing-keyword-3}{HTML}{9137CB}
-\definecolor{listing-identifier}{HTML}{435489}
-%\definecolor{listing-identifier}{cmyk}{100.0, 45.0, 0.0, 0.0}
 \definecolor{listing-string}{HTML}{00999A}
 \definecolor{listing-comment}{HTML}{8E8E8E}
+
+$if(color_cmyk)$
+\definecolor{listing-keyword}{cmyk}{100.0, 45.0, 0.0, 0.0}   % キーワードの色、識別子と同じ
+\definecolor{listing-identifier}{cmyk}{100.0, 45.0, 0.0, 0.0}
+$else$
+\definecolor{listing-keyword}{HTML}{435489}   % キーワードの色、識別子と同じ
+\definecolor{listing-identifier}{HTML}{435489}
+$endif$
+
 $endif$
 
 % 基本スタイル
