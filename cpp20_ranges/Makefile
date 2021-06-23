@@ -6,13 +6,14 @@ ifeq ($(OS),Windows_NT)
     EMBED_MFONT = "Consolas"
 endif
 
-COMMON_OPTION = --toc --toc-depth 4 -N -V titlepage=true -V documentclass=bxjsarticle -V mainfont:$(EMBED_JFONT) -V CJKmainfont:$(EMBED_JFONT) -V monofont:$(EMBED_MFONT) -V CJKmonofont:$(EMBED_JFONT) --highlight-style=zenburn --template ../template.tex document.md
+COMMON_OPTION = --toc --toc-depth 4 -N -V titlepage=true -V documentclass=bxjsarticle --file-scope --listings -V listings-disable-line-numbers -V indent=true -V mainfont:$(EMBED_JFONT) -V CJKmainfont:$(EMBED_JFONT) -V monofont:$(EMBED_MFONT) -V CJKmonofont:$(EMBED_JFONT) --template ../template2.tex document.md
+FONT_OPTION = -V mainfont:"NotoSerifCJKjp-Regular.otf" -V CJKmainfont:"NotoSerifCJKjp-Regular.otf" -V sansfont:"NotoSansCJKjp-Regular.otf" -V CJKsansfont:"NotoSansCJKjp-Regular.otf" -V monofont:"NotoMono-Regular.ttf" -V CJKmonofont:"NotoSansCJKjp-Regular.otf"
 
 #PC表示用PDF生成
 pdf : document.md
 	pandoc $(COMMON_OPTION) --pdf-engine=xelatex -o book.pdf
 
-book.tex : document.md ../template.tex
+book.tex : document.md ../template2.tex
 	pandoc $(COMMON_OPTION) -M pdfx1a=true -M separate_cover=true -o book.tex
 
 #入稿用PDF生成、texは2回実行しないと目次を生成しない・・・

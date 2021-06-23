@@ -1,0 +1,821 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode$for(hyperrefoptions)$,$hyperrefoptions$$endfor$}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+$if(colorlinks)$
+\PassOptionsToPackage{dvipsnames,svgnames*,x11names*}{xcolor}
+$endif$
+$if(dir)$
+$if(latex-dir-rtl)$
+\PassOptionsToPackage{RTLdocument}{bidi}
+$endif$
+$endif$
+%
+
+%%% PDF/X-1a出力用
+$if(pdfx1a)$
+\begin{filecontents*}{\jobname.xmpdata}
+  \Title{C++book}
+  \Author{$author$}
+  \Keywords{C++}
+\end{filecontents*}
+$endif$
+%%%
+
+\documentclass[
+$if(fontsize)$
+  $fontsize$,
+$endif$
+$if(lang)$
+  $babel-lang$,
+$endif$
+$if(papersize)$
+  $papersize$paper,
+%%% 長さでの用紙サイズ指定
+$else$
+$if(geometry)$
+  paper={$geometry.width$}{$geometry.height$},
+$endif$
+$endif$
+$if(beamer)$
+  ignorenonframetext,
+$if(handout)$
+  handout,
+$endif$
+$if(aspectratio)$
+  aspectratio=$aspectratio$,
+$endif$
+$endif$
+$for(classoption)$
+  $classoption$$sep$,
+$endfor$
+]{$documentclass$}
+$if(beamer)$
+$if(background-image)$
+\usebackgroundtemplate{%
+  \includegraphics[width=\paperwidth]{$background-image$}%
+}
+$endif$
+\usepackage{pgfpages}
+\setbeamertemplate{caption}[numbered]
+\setbeamertemplate{caption label separator}{: }
+\setbeamercolor{caption name}{fg=normal text.fg}
+\beamertemplatenavigationsymbols$if(navigation)$$navigation$$else$empty$endif$
+$for(beameroption)$
+\setbeameroption{$beameroption$}
+$endfor$
+% Prevent slide breaks in the middle of a paragraph
+\widowpenalties 1 10000
+\raggedbottom
+$if(section-titles)$
+\setbeamertemplate{part page}{
+  \centering
+  \begin{beamercolorbox}[sep=16pt,center]{part title}
+    \usebeamerfont{part title}\insertpart\par
+  \end{beamercolorbox}
+}
+\setbeamertemplate{section page}{
+  \centering
+  \begin{beamercolorbox}[sep=12pt,center]{part title}
+    \usebeamerfont{section title}\insertsection\par
+  \end{beamercolorbox}
+}
+\setbeamertemplate{subsection page}{
+  \centering
+  \begin{beamercolorbox}[sep=8pt,center]{part title}
+    \usebeamerfont{subsection title}\insertsubsection\par
+  \end{beamercolorbox}
+}
+\AtBeginPart{
+  \frame{\partpage}
+}
+\AtBeginSection{
+  \ifbibliography
+  \else
+    \frame{\sectionpage}
+  \fi
+}
+\AtBeginSubsection{
+  \frame{\subsectionpage}
+}
+$endif$
+$endif$
+$if(beamerarticle)$
+\usepackage{beamerarticle} % needs to be loaded first
+$endif$
+$if(fontfamily)$
+\usepackage[$for(fontfamilyoptions)$$fontfamilyoptions$$sep$,$endfor$]{$fontfamily$}
+$else$
+\usepackage{lmodern}
+$endif$
+$if(linestretch)$
+\usepackage{setspace}
+$endif$
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[$if(fontenc)$$fontenc$$else$T1$endif$]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+$if(mathspec)$
+  \ifxetex
+    \usepackage{mathspec}
+  \else
+    \usepackage{unicode-math}
+  \fi
+$else$
+  \usepackage{unicode-math}
+$endif$
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+$if(mainfont)$
+  \setmainfont[$for(mainfontoptions)$$mainfontoptions$$sep$,$endfor$]{$mainfont$}
+$endif$
+$if(sansfont)$
+  \setsansfont[$for(sansfontoptions)$$sansfontoptions$$sep$,$endfor$]{$sansfont$}
+$endif$
+$if(monofont)$
+  \setmonofont[$for(monofontoptions)$$monofontoptions$$sep$,$endfor$]{$monofont$}
+$endif$
+$for(fontfamilies)$
+  \newfontfamily{$fontfamilies.name$}[$for(fontfamilies.options)$$fontfamilies.options$$sep$,$endfor$]{$fontfamilies.font$}
+$endfor$
+$if(mathfont)$
+$if(mathspec)$
+  \ifxetex
+    \setmathfont(Digits,Latin,Greek)[$for(mathfontoptions)$$mathfontoptions$$sep$,$endfor$]{$mathfont$}
+  \else
+    \setmathfont[$for(mathfontoptions)$$mathfontoptions$$sep$,$endfor$]{$mathfont$}
+  \fi
+$else$
+  \setmathfont[$for(mathfontoptions)$$mathfontoptions$$sep$,$endfor$]{$mathfont$}
+$endif$
+$endif$
+$if(CJKmainfont)$
+  \ifxetex
+    \usepackage[space]{xeCJK}
+    \setCJKmainfont[$for(CJKoptions)$$CJKoptions$$sep$,$endfor$]{$CJKmainfont$}
+  \fi
+$endif$
+%%% ゴシックフォントとコードブロックでの和文フォントの指定
+%%% 参考 : https://blog.atusy.net/2019/05/14/rmd2pdf-any-font/
+$if(CJKmonofont)$
+  \ifxetex
+    \usepackage[space]{xeCJK}
+    \usepackage{zxjatype}
+    \setCJKmonofont[]{$CJKmonofont$}
+  \fi
+$endif$
+$if(CJKsansfont)$
+  \ifxetex
+    \usepackage[space]{xeCJK}
+    \usepackage{zxjatype}
+    \setCJKsansfont[]{$CJKsansfont$}
+  \fi
+$endif$
+%%%
+$if(luatexjapresetoptions)$
+  \ifluatex
+    \usepackage[$for(luatexjapresetoptions)$$luatexjapresetoptions$$sep$,$endfor$]{luatexja-preset}
+  \fi
+$endif$
+$if(CJKmainfont)$
+  \ifluatex
+    \usepackage[$for(luatexjafontspecoptions)$$luatexjafontspecoptions$$sep$,$endfor$]{luatexja-fontspec}
+    \setmainjfont[$for(CJKoptions)$$CJKoptions$$sep$,$endfor$]{$CJKmainfont$}
+  \fi
+$endif$
+\fi
+$if(beamer)$
+$if(theme)$
+\usetheme[$for(themeoptions)$$themeoptions$$sep$,$endfor$]{$theme$}
+$endif$
+$if(colortheme)$
+\usecolortheme{$colortheme$}
+$endif$
+$if(fonttheme)$
+\usefonttheme{$fonttheme$}
+$endif$
+$if(mainfont)$
+\usefonttheme{serif} % use mainfont rather than sansfont for slide text
+$endif$
+$if(innertheme)$
+\useinnertheme{$innertheme$}
+$endif$
+$if(outertheme)$
+\useoutertheme{$outertheme$}
+$endif$
+$endif$
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[$for(microtypeoptions)$$microtypeoptions$$sep$,$endfor$]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+$if(indent)$
+\usepackage{indentfirst}
+$else$
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+$endif$
+$if(verbatim-in-note)$
+\usepackage{fancyvrb}
+$endif$
+\usepackage{xcolor, colortbl}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\hypersetup{
+$if(title-meta)$
+  pdftitle={$title-meta$},
+$endif$
+$if(author-meta)$
+  pdfauthor={$author-meta$},
+$endif$
+$if(lang)$
+  pdflang={$lang$},
+$endif$
+$if(subject)$
+  pdfsubject={$subject$},
+$endif$
+$if(keywords)$
+  pdfkeywords={$for(keywords)$$keywords$$sep$, $endfor$},
+$endif$
+$if(colorlinks)$
+  colorlinks=true,
+  linkcolor=$if(linkcolor)$$linkcolor$$else$Maroon$endif$,
+  filecolor=$if(filecolor)$$filecolor$$else$Maroon$endif$,
+  citecolor=$if(citecolor)$$citecolor$$else$Blue$endif$,
+  urlcolor=$if(urlcolor)$$urlcolor$$else$Blue$endif$,
+$else$
+  hidelinks,
+$endif$
+  pdfcreator={LaTeX via pandoc}}
+\urlstyle{same} % disable monospaced font for URLs
+$if(verbatim-in-note)$
+\VerbatimFootnotes % allow verbatim text in footnotes
+$endif$
+$if(geometry)$
+$if(beamer)$
+\geometry{$for(geometry)$$geometry$$sep$,$endfor$}
+$else$
+%%%\usepackage[$for(geometry)$$geometry$$sep$,$endfor$]{geometry}
+$endif$
+$endif$
+$if(beamer)$
+\newif\ifbibliography
+$endif$
+$if(listings)$
+\usepackage{listings}
+\newcommand{\passthrough}[1]{#1}
+\lstset{defaultdialect=[5.3]Lua}
+\lstset{defaultdialect=[x86masm]Assembler}
+$endif$
+$if(lhs)$
+\lstnewenvironment{code}{\lstset{language=Haskell,basicstyle=\small\ttfamily}}{}
+$endif$
+$if(highlighting-macros)$
+$highlighting-macros$
+$endif$
+$if(tables)$
+\usepackage{longtable,booktabs}
+$if(beamer)$
+\usepackage{caption}
+% Make caption package work with longtable
+\makeatletter
+\def\fnum@table{\tablename~\thetable}
+\makeatother
+$else$
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+$endif$
+$endif$
+$if(graphics)$
+%%\usepackage{graphicx}
+\usepackage[dvipdfmx,hiresbb]{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+$endif$
+$if(links-as-notes)$
+% Make links footnotes instead of hotlinks:
+\DeclareRobustCommand{\href}[2]{#2\footnote{\url{#1}}}
+$endif$
+$if(strikeout)$
+\usepackage[normalem]{ulem}
+% Avoid problems with \sout in headers with hyperref
+\pdfstringdefDisableCommands{\renewcommand{\sout}{}}
+$endif$
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+$if(numbersections)$
+\setcounter{secnumdepth}{$if(secnumdepth)$$secnumdepth$$else$5$endif$}
+$else$
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+$endif$
+$if(beamer)$
+$else$
+$if(block-headings)$
+% Make \paragraph and \subparagraph free-standing
+\ifx\paragraph\undefined\else
+  \let\oldparagraph\paragraph
+  \renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+  \let\oldsubparagraph\subparagraph
+  \renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+$endif$
+$endif$
+$if(pagestyle)$
+\pagestyle{$pagestyle$}
+$endif$
+$for(header-includes)$
+$header-includes$
+$endfor$
+$if(lang)$
+\ifxetex
+  % Load polyglossia as late as possible: uses bidi with RTL langages (e.g. Hebrew, Arabic)
+  \usepackage{polyglossia}
+  \setmainlanguage[$polyglossia-lang.options$]{$polyglossia-lang.name$}
+$for(polyglossia-otherlangs)$
+  \setotherlanguage[$polyglossia-otherlangs.options$]{$polyglossia-otherlangs.name$}
+$endfor$
+\else
+  \usepackage[shorthands=off,$for(babel-otherlangs)$$babel-otherlangs$,$endfor$main=$babel-lang$]{babel}
+$if(babel-newcommands)$
+  $babel-newcommands$
+$endif$
+\fi
+$endif$
+$if(dir)$
+\ifxetex
+  % Load bidi as late as possible as it modifies e.g. graphicx
+  \usepackage{bidi}
+\fi
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \TeXXeTstate=1
+  \newcommand{\RL}[1]{\beginR #1\endR}
+  \newcommand{\LR}[1]{\beginL #1\endL}
+  \newenvironment{RTL}{\beginR}{\endR}
+  \newenvironment{LTR}{\beginL}{\endL}
+\fi
+$endif$
+$if(natbib)$
+\usepackage[$natbiboptions$]{natbib}
+\bibliographystyle{$if(biblio-style)$$biblio-style$$else$plainnat$endif$}
+$endif$
+$if(biblatex)$
+\usepackage[$if(biblio-style)$style=$biblio-style$,$endif$$for(biblatexoptions)$$biblatexoptions$$sep$,$endfor$]{biblatex}
+$for(bibliography)$
+\addbibresource{$bibliography$}
+$endfor$
+$endif$
+$if(csl-refs)$
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newenvironment{cslreferences}%
+  {$if(csl-hanging-indent)$\setlength{\parindent}{0pt}%
+  \everypar{\setlength{\hangindent}{\cslhangindent}}\ignorespaces$endif$}%
+  {\par}
+$endif$
+
+$if(title)$
+\title{$title$$if(thanks)$\thanks{$thanks$}$endif$}
+$endif$
+$if(subtitle)$
+$if(beamer)$
+$else$
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\large #1 \par}}{}{}
+}
+\makeatother
+$endif$
+\subtitle{$subtitle$}
+$endif$
+$if(author)$
+\author{$for(author)$$author$$sep$ \and $endfor$}
+$endif$
+\date{$date$}
+$if(beamer)$
+$if(institute)$
+\institute{$for(institute)$$institute$$sep$ \and $endfor$}
+$endif$
+$if(titlegraphic)$
+\titlegraphic{\includegraphics{$titlegraphic$}}
+$endif$
+$if(logo)$
+\logo{\includegraphics{$logo$}}
+$endif$
+$endif$
+
+\usepackage{ascmac}
+
+%%% タイトルページ画像IN
+
+$if(graphics)$
+$else$
+\usepackage[dvipdfmx,hiresbb]{graphicx}
+$endif$
+
+%%% 奥付用
+\usepackage{booktabs}
+
+%%% PDF/X-1a出力
+$if(pdfx1a)$
+\usepackage[x-1a1]{pdfx}
+$endif$
+
+%%% セクション修飾  
+%%% 参考 : https://www.latexstudio.net/archives/2439?replytocom=41413
+%%% 参考 : https://qiita.com/krtx/items/deeec0843caf37b66054
+%%% 参考 : http://abenori.blogspot.com/2018/05/titlesec.html
+\usepackage[]{titlesec}
+
+%%% 見出し3の黒四角を抑制する
+%%% https://ja.osdn.net/projects/luatex-ja/forums/25558/41527/
+\renewcommand{\jsParagraphMark}{}
+
+% colors
+\definecolor{darkslateblue}{RGB}{72,61,139}
+
+\definecolor{titlecolor1}{rgb}{0.984314,0.894118,0.5}
+\definecolor{titlecolor2}{rgb}{0.960784,0.498039,0.356863}
+
+\newcommand{\mytitle}[1]{
+\begin{tabular}{p{0.01\textwidth}p{0.99\textwidth}}
+\cellcolor{titlecolor1} &\cellcolor{titlecolor2} \textcolor{white}
+{ \newline \sffamily \thesection .\ #1}
+\end{tabular}
+\arrayrulewidth=0.4pt
+}
+
+\titleformat{\section}[hang]{ \huge }
+{}{0pt}
+{
+  \thispagestyle{plain}
+  \hspace{-1.0cm}
+  \mytitle
+}
+
+% subsection
+%\titleformat{\subsection}[block]
+%{\Large\sffamily}{0pt}
+%{\color{titlecolor2}\titleline[l]{\rule[-4pt]{.2cm}{1em}\hspace{.3dm}\thepart\hspace{1em}#1}\titlerule}
+
+\titleformat{\subsection}[block]
+{}{}{0pt}
+{
+  \thispagestyle{headings}
+  \colorbox{titlecolor2}{\begin{picture}(0,10)\end{picture}}
+  \hspace{0pt}
+  \normalfont \Large\sffamily \thesubsection
+  \hspace{1pt}
+}
+[
+\begin{picture}(100,0)
+  \put(3,18){\color{titlecolor2}\line(1,0){390}}
+\end{picture}
+\\
+\vspace{-30pt}
+]
+%%%
+
+%%% 目次のフォント修正
+\usepackage{tocloft}
+\renewcommand{\cfttoctitlefont}{\large\bfseries\sffamily}
+%%%
+
+%%%
+%\newcommand{\mypagestyle}{\underline{\thesection . \ \  \section}}
+%%%
+
+
+
+
+%%% コードブロックの詳細指定
+$if(listings)$
+
+% 色
+% 入稿用PDFはsRGBをサポートしないバージョンなので、色指定はCMYKとして読み取れているらしい。そのため少し薄くなる
+% 入稿用の時は必要に応じてCMYKで色を指定する必要がありそう
+$if(listings-disable-color)$
+\definecolor{listing-background}{HTML}{F7F7F7}
+\definecolor{listing-rule}{HTML}{000000}
+\definecolor{listing-numbers}{HTML}{000000}
+\definecolor{listing-text-color}{HTML}{000000}
+\definecolor{listing-keyword}{HTML}{000000}   % キーワードの色、識別子と同じ
+\definecolor{listing-keyword-2}{HTML}{000000}
+\definecolor{listing-keyword-3}{HTML}{000000}
+\definecolor{listing-identifier}{HTML}{000000}
+\definecolor{listing-string}{HTML}{000000}
+\definecolor{listing-comment}{HTML}{000000}
+$else$
+\definecolor{listing-background}{HTML}{F7F7F7}
+\definecolor{listing-rule}{HTML}{B3B2B3}
+\definecolor{listing-numbers}{HTML}{B3B2B3}
+\definecolor{listing-text-color}{HTML}{000000}
+\definecolor{listing-keyword}{HTML}{435489}   % キーワードの色、識別子と同じ
+%\definecolor{listing-keyword}{cmyk}{100.0, 45.0, 0.0, 0.0}   % キーワードの色、識別子と同じ
+\definecolor{listing-keyword-2}{HTML}{1284CA}
+\definecolor{listing-keyword-3}{HTML}{9137CB}
+\definecolor{listing-identifier}{HTML}{435489}
+%\definecolor{listing-identifier}{cmyk}{100.0, 45.0, 0.0, 0.0}
+\definecolor{listing-string}{HTML}{00999A}
+\definecolor{listing-comment}{HTML}{8E8E8E}
+$endif$
+
+% 基本スタイル
+\lstdefinestyle{custom_cpp_style}{
+  language         = C++,
+$if(listings-disable-line-numbers)$
+  xleftmargin      = 0.6em,
+  framexleftmargin = 0.4em,
+$else$
+  numbers          = left,
+  xleftmargin      = 2.7em,
+  framexleftmargin = 2.5em,
+$endif$
+  backgroundcolor  = \color{listing-background},
+  basicstyle       = \color{listing-text-color}\linespread{1.0}$if(code-block-font-size)$$code-block-font-size$$else$\small$endif$\ttfamily{},
+  breaklines       = true,   % はみ出したときに自動改行するかどうか
+  frame            = single,  % 枠線の種類
+  framesep         = 0.19em,  % 枠線太さ
+  rulecolor        = \color{listing-rule},
+  frameround       = ffff,
+  tabsize          = 4,
+  numberstyle      = \color{listing-numbers},
+  aboveskip        = 1.0em,
+  belowskip        = 0.1em,
+  abovecaptionskip = 0em,
+  belowcaptionskip = 1.0em,
+  keywordstyle     = {\color{listing-keyword}\bfseries},
+  keywordstyle     = {[2]\color{listing-keyword-2}\bfseries},
+  keywordstyle     = {[3]\color{listing-keyword-3}\bfseries\itshape},
+  sensitive        = true,  % 大文字小文字の区別
+  identifierstyle  = \color{listing-identifier},
+  commentstyle     = \color{listing-comment},
+  stringstyle      = \color{listing-string},
+  showstringspaces = false,
+  escapeinside     = {/*@}{@*/} % コードブロック中でLatexコマンドを使うためのエスケープ文字列
+}
+\lstset{style=custom_cpp_style}
+
+% C++固有指定
+\lstdefinelanguage{C++}{
+  morekeywords={
+    % 予約語
+    break,case,catch,class,continue,default,virtual,
+    do,else,enum,export,for,if,new,private,auto,register,
+    protected,public,requires,return,static,switch,
+    this,throw,try,volatile,while,concept,template,typename,
+    co_await,co_return,co_yield,static_cast,reinterpret_cast,dynamic_cast,
+    % コンテキスト依存のキーワード
+    override,final,import,module
+  },
+  % データ型
+  morekeywords={[2]
+    bool,char,char8_t,chra16_t,char32_t,double,float,int,long,short,unsigned,void
+  },
+  % 組み込みリテラル
+  morekeywords={[3]
+    nullptr,true,false
+  },
+  sensitive = true,
+  morecomment  = [l]//,
+  morecomment  = [s]{/*}{*/},
+  morecomment  = [s]{/**}{*/},
+  morestring   = [b]",
+  morestring   = [b]',
+}
+
+$endif$
+%%%
+
+\begin{document}
+
+%%% タイトル画像挿入
+%%% 入稿時に表紙と本文が別になる場合は表紙を入れない
+$if(separate_cover)$
+
+$else$
+
+$if(coverimage)$
+
+\enlargethispage{\paperwidth}
+\thispagestyle{empty}
+\vspace*{-1truein}
+\vspace*{-\topmargin}
+\vspace*{-\headheight}
+\vspace*{-\headsep}
+\vspace*{-\topskip}
+\noindent\hspace*{-1in}\hspace*{-\oddsidemargin}
+\includegraphics[width=\paperwidth,height=\paperheight]{$coverimage$}
+
+$else$
+表紙
+$endif$
+
+\clearpage
+　%% 表紙裏の空白ページ
+\clearpage
+
+$endif$
+
+%%% 中表紙
+
+$if(has-frontmatter)$
+\frontmatter
+$endif$
+$if(title)$
+$if(beamer)$
+\frame{\titlepage}
+$else$
+\maketitle
+$endif$
+$if(abstract)$
+\begin{abstract}
+$abstract$
+\end{abstract}
+$endif$
+$endif$
+
+\clearpage  %%中表紙改ページ
+
+%%% ページスタイル変更
+\pagestyle{headings}
+%\markboth{\mypagestyle}{\mypagestyle}
+%\pagestyle{myheadings}
+
+$for(include-before)$
+$include-before$
+
+$endfor$
+$if(toc)$
+$if(toc-title)$
+\renewcommand*\contentsname{$toc-title$}
+$endif$
+$if(beamer)$
+\begin{frame}
+$if(toc-title)$
+  \frametitle{$toc-title$}
+$endif$
+  \tableofcontents[hideallsubsections]
+\end{frame}
+$else$
+{
+$if(colorlinks)$
+\hypersetup{linkcolor=$if(toccolor)$$toccolor$$else$$endif$}
+$endif$
+\setcounter{tocdepth}{$toc-depth$}
+\tableofcontents
+}
+$endif$
+$endif$
+$if(lot)$
+\listoftables
+$endif$
+$if(lof)$
+\listoffigures
+$endif$
+$if(linestretch)$
+\setstretch{$linestretch$}
+$endif$
+$if(has-frontmatter)$
+\mainmatter
+$endif$
+$body$
+
+$if(has-frontmatter)$
+\backmatter
+$endif$
+$if(natbib)$
+$if(bibliography)$
+$if(biblio-title)$
+$if(has-chapters)$
+\renewcommand\bibname{$biblio-title$}
+$else$
+\renewcommand\refname{$biblio-title$}
+$endif$
+$endif$
+$if(beamer)$
+\begin{frame}[allowframebreaks]{$biblio-title$}
+  \bibliographytrue
+$endif$
+  \bibliography{$for(bibliography)$$bibliography$$sep$,$endfor$}
+$if(beamer)$
+\end{frame}
+$endif$
+
+$endif$
+$endif$
+$if(biblatex)$
+$if(beamer)$
+\begin{frame}[allowframebreaks]{$biblio-title$}
+  \bibliographytrue
+  \printbibliography[heading=none]
+\end{frame}
+$else$
+\printbibliography$if(biblio-title)$[title=$biblio-title$]$endif$
+$endif$
+
+$endif$
+$for(include-after)$
+$include-after$
+
+$endfor$
+
+
+%% 奥付
+\clearpage
+
+%%% ページスタイル変更
+\pagestyle{empty}
+
+\begin{itemize}
+  \item 表紙・裏表紙のイラストを除いて、この本の内容はCC-BY4.0に基づくパブリックドメインです。ただし、必要である範囲において他の著作物を引用していることがあります。
+  \item 落丁・乱丁の場合は下記連絡先までご一報ください。
+  \item 内容について明らかな間違いや不備、軽微なtypoなどを見つけた場合は下記連絡先もしくはGithubリポジトリまでご一報ください。
+\end{itemize}
+
+\vspace*{\stretch{1}}
+
+\begin{center}
+\textsf{$title$}
+$if(subtitle)$
+$subtitle$
+$endif$
+
+\begin{tabular}{ll}
+$if(okuduke.revision)$
+$okuduke.revision$ & $date$ \\
+$endif$
+\end{tabular}
+
+\begin{tabular}{ll} \toprule
+  発行      & Cryptomycocolacales \\
+  著者      & $author$ \\
+  連絡先    & ↓のtwitterからお願いします \\
+  twitter  & \verb|@onihusube9| \\
+  Githubリポジトリ  & \verb|https://github.com/onihusube/books| \\
+  Webサイト & \verb|https://onihusube.hatenablog.com/| \\
+  $if(okuduke.printing)$
+  印刷      & $okuduke.printing$  \\
+  $endif$
+\end{tabular}
+\end{center}
+
+%%% 裏表紙画像挿入
+%%% 入稿時に表紙と本文が別になる場合は表紙を入れない
+$if(separate_cover)$
+
+$else$
+
+\clearpage
+　%% 裏表紙前の空白ページ
+\clearpage
+
+$if(backcoverimage)$
+
+\enlargethispage{\paperwidth}
+\thispagestyle{empty}
+\vspace*{-1truein}
+\vspace*{-\topmargin}
+\vspace*{-\headheight}
+\vspace*{-\headsep}
+\vspace*{-\topskip}
+\noindent\hspace*{-1in}\hspace*{-\evensidemargin}
+\includegraphics[width=\paperwidth,height=\paperheight]{$backcoverimage$}
+
+$else$
+裏表紙
+$endif$
+
+$endif$
+
+\end{document}

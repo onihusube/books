@@ -1,7 +1,7 @@
 ---
-title: C++20 <ranges>
+title: C++20 ranges
 author: onihusube
-date: 2021/05/05
+date: 2021/06/24
 geometry:
   width: 188mm
   height: 263mm
@@ -2973,18 +2973,19 @@ Rangeファクトリはシーケンスを生成するタイプの`view`なので
 
 ## Rangeアダプタオブジェクト
 
-Rangeファクトリに操作であるRangeファクトリオブジェクトがあったように、Rangeアダプタの操作もRangeアダプタオブジェクトが担います。Rangeアダプタオブジェクトには対応する`view`がありますが、Rangeアダプタ（*range adaptors*）とは操作である関数オブジェクトの事を指しており、こちらが主体であって対応する`view`はそれらRangeアダプタの実装の一部でしかありません。そのため多くの場合、対応する`view`型そのものを使用するよりもRangeアダプタオブジェクトを使用した方がジェネリックかつ自然に書くことができるようになっており、利用の際にもこれらのRangeアダプタオブジェクトを使用する事がほとんどでしょう。
+Rangeファクトリに操作であるRangeファクトリオブジェクトがあったように、Rangeアダプタの操作もRangeアダプタオブジェクト（*range adaptor object*）が担います。Rangeアダプタオブジェクトには対応する`view`がありますが、Rangeアダプタとは操作である関数オブジェクトの事を指しており、こちらが主体であって対応する`view`はそれらRangeアダプタの実装の一部でしかありません。そのため多くの場合、対応する`view`型そのものを使用するよりもRangeアダプタオブジェクトを使用した方がジェネリックかつ自然に書くことができるようになっており、利用の際にもこれらのRangeアダプタオブジェクトを使用する事がほとんどでしょう。
 
 Rangeアダプタオブジェクトは`std::ranges::views`名前空間に配置されており、簡易化のために`std::views`からも呼び出す事ができます。
 
 ### パイプライン演算子（`|`）と関数呼び出し
 
-Rangeアダプタオブジェクトはカスタマイゼーションポイントオブジェクト（CPO）であり、第1引数に`viewable_range`オブジェクトを受け取り、結果として`view`を返します。
+Rangeアダプタオブジェクトはカスタマイゼーションポイントオブジェクト（CPO）であり、第1引数に`viewable_range`を受け取り、結果として`view`を返します。中にはさらに追加の引数をとるものもあります。
 
 Rangeアダプタオブジェクトはさらに、パイプライン演算子（`|`）による`range`オブジェクトへの操作の適用もサポートしており、関数呼び出しとパイプライン演算子の両方によって利用する事ができます。そして、それらによる呼び出しはほとんど等価の振る舞いをします。
 
 ```cpp
 // R, R1, R2を任意のRangeアダプタオブジェクトとする
+
 viewable_range auto vr = views::iota(1);
 
 // この2つの呼び出しは同じViewを返す
@@ -2992,18 +2993,18 @@ view auto v1 = R(vr);
 view auto v2 = vr | R ;
 
 // この3つの呼び出しも同じViewを返す、さらにRangeアダプタが増えても同様
-view auto v1 = R2(R1(vr));
-view auto v2 = vr | R1 | R2;
-view auto v3 = vr | (R1 | R2);
+view auto v3 = R2(R1(vr));
+view auto v4 = vr | R1 | R2;
+view auto v5 = vr | (R1 | R2);
 
 // Rangeアダプタが追加の引数を取るときこのように書く事ができる
 // その時でも、この3つは同じViewを生成する
-view auto v1 = R(vr, args...);
-view auto v2 = R(args...)(vr);
-view auto v3 = vr | R(args...)
+view auto v6 = R(vr, args...);
+view auto v7 = R(args...)(vr);
+view auto v8 = vr | R(args...)
 ```
 
-ここでは`views::iota`を例に用いていますが、それが任意の`range`オブジェクトであっても同じ事が成り立ちます。なお、このパイプライン演算子は新しい演算子ではなく既存のビット論理和演算子をオーバーロードしたものです。
+ここでは`views::iota`を例に用いていますが、それが任意の`viewable_range`オブジェクトであっても同じ事が成り立ちます。なお、このパイプライン演算子は新しい演算子ではなく既存のビット論理和演算子をオーバーロードしたものです。
 
 Rangeアダプタは例えば次のように使用する事ができます。
 
@@ -3019,21 +3020,20 @@ int main() {
   {
     std::cout << v << ", ";
     // 36, 64, 100, 144, 196,
+  }
 ```
 
 各`view`が何をしているのかはこれから説明していきますが、パイプラインスタイルによる記述とその名前からどのような順序で何をしているかがかなり読み取りやすくなっているのがわかるかと思います。
 
-## `ref_view` (*All View*)
+## `ref_view` (All View)
 
 `ref_view`は他の`range`を参照するだけの`view`です。
 
 ```cpp
-#include <ranges>
-
 int main() {
   std::vector vec = {1, 3, 5, 7, 9, 11};
 
-  for (int n : std::ranges::ref_view(vec)) {
+  for (int n : ref_view(vec)) {
     std::cout << n; // 1357911
   }
 }
@@ -3044,22 +3044,15 @@ int main() {
 ぱっと見ると何に使うのか不明ですが、これは`std::vector`などのコピーが気軽にできない`range`の取り回しを改善するために利用できます。そのような`range`の軽量な参照ラッパとなることで、コピーされるかを気にしなくてよくなるなど可搬性が向上します。役割としては、通常のオブジェクトの参照に対する`std::reference_wrapper`に対応しています。例えば、`std::async`の追加の引数として渡すときなどのように*decay copy*されてしまう所に渡す場合に活用できるでしょう。
 
 ```cpp
-struct check {
-  check() = default;
-  check(const check&) {
-    std::cout << "コピーされたよ！" << std::endl;
-  }
-};
 
 int main() {
-  std::vector<check> vec{};
-  vec.emplace_back();
-  
+  std::vector<int> vec = {1, 2, 3};
+
   // vectorがコピーされる
   auto f1 = std::async(std::launch::async, [](auto&&) {}, vec); 
   
   // ref_viewがコピーされる
-  auto f2 = std::async(std::launch::async, [](auto&&) {}, ranges::ref_view{vec});  
+  auto f2 = std::async(std::launch::async, [](auto&&) {}, ref_view{vec});  
 }
 ```
 
@@ -3142,7 +3135,9 @@ int main() {
 2. `ref_view{r}`が構築可能ならば、`ref_view{r}`
 3. それ以外の場合、`subrange{r}`
 
-`views::all`は`ref_view`だけを生成するわけではないですが、結果の型を区別しなければ実質的に`ref_view`相当の`view`オブジェクトを得ることができます。これによって得られる`view`の事を総称して*All View*と呼びます。
+`views::all`は`ref_view`だけを生成するわけではないですが、結果の型を区別しなければ実質的に`ref_view`相当の`view`を得ることができます。これによって得られる`view`の事を総称して*All View*と呼びます。
+
+特に注記してはいませんが、Rangeアダプタオブジェクトの第一引数に来る`range`オブジェクトは`viewable_range`でなくてはなりません。したがって、第一引数に右辺値の`range`（`view`や`borrowed_range`ではなく）を渡すとコンパイルエラーとなります。以降も特に注記しませんが、これはすべてのRangeアダプタオブジェクトに共通することです。
 
 先ほど少し触れましたが、この`views::all`は他のRangeアダプタの実装に良く用いられ、その型を参照したいことがよくあります。そのため、`views::all_t`というエイリアステンプレートによって`views::all`の戻り値型を簡単に取得することができるようになっています。
 
@@ -3207,7 +3202,7 @@ namespace std::ranges {
 }
 ```
 
-`filter_view`の入力となる`range`は`input_range`かつ`view`でなければなりません。述語型`Pred`はオブジェクト型であるように制約されていますが、これは関数ポインタを排除するものではありません。
+`filter_view`の入力となる`range`は`input_range`でなければなりません。述語型`Pred`はオブジェクト型であるように制約されていますが、これは関数ポインタを排除するものではありません。
 
 ### 遅延評価
 
@@ -4573,7 +4568,7 @@ int main() {
 
 `view`を構築するときに元の`range`が`views::all`を通ることになるので完全にそのままとはなっていませんが、実質的には`reverse`の`reverse`で元の`range`に戻るようになっています。
 
-## `element_view`
+## `elements_view`
 
 `elements_view`は*tuple-like*な型の値のシーケンスから、指定された番号の要素を取り出したシーケンスを生成する`view`です。
 
@@ -4602,7 +4597,7 @@ int main() {
 }
 ```
 
-*tuple-like*な型のシーケンスのそれぞれの要素を指定された番号による`get<N>()`で射影し、その値のシーケンスを生成します。
+*tuple-like*な型のシーケンスのそれぞれの要素を指定された番号`N`による`get<N>()`で射影し、その値のシーケンスを生成します。
 
 `elements_view`には抽出する`tuple`要素の番号を非型テンプレートパラメータとして渡さなければならないため、クラステンプレートの実引数推論を利用できません。そのため、引数として渡す`range`の型を書く必要があります。その際は他の`view`がそうであるように`std::views::all_t`を使うのが便利なのですが、`decltype(())`としないと`views::all`に左辺値として渡せずにコンパイルエラーを起こします（`views::all`は右辺値をリジェクトします）。
 
@@ -4778,7 +4773,7 @@ int main() {
 }
 ```
 
-`view::keys/views::values`は`views::elements`の単なる特殊化です。
+`views::keys/views::values`は`views::elements`の単なる特殊化です。
 
 ```cpp
 namespace std::ranges::views {
@@ -4793,7 +4788,7 @@ namespace std::ranges::views {
 }
 ```
 
-これらを用いると、さらに意図を明確に書くことができます。
+連想コンテナについては、これらを用いると簡潔に書くことができる様になります。
 
 \clearpage
 
