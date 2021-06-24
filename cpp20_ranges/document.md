@@ -267,6 +267,26 @@ inline constexpr bool std::ranges::disable_sized_range<non_sized_range> = true;
 
 例えば、`std::forward_list`のようにサイズを求めることは（イテレータを用いて）出来るけれど計算量が償却定数にならないような実装になっている場合に活用できます（ただ、`std::forward_list`そのものは`ranges::size`でサイズを求められません）。
 
+## `common_range`
+
+`common_range`はその先頭イテレータと終端を指すイテレータ（番兵）とが同じ型となる`range`を定義するコンセプトです。
+
+```cpp
+template<class T>
+  concept common_range =
+    range<T> && same_as<iterator_t<T>, sentinel_t<T>>;
+```
+
+意味論要件はなく、見たままです。
+
+C++17まではイテレータに対してその範囲の終端を指すのは同じ型のイテレータだったので、当たり前のことを言っているように思えるかもしれません。
+
+しかしC++20からはむしろ逆で、`ranges::begin`で得られる先頭イテレータと`ranges::end`で得られる終端イテレータは別の型となっている事が前提とされるようになっています。そして、終端を指すものの事を番兵（*Sentinel*）と呼びます。”もの”と言っているように、番兵はイテレータとして扱える必要すらありません。
+
+C++17の世界ではあらゆるものが`common_range`でしたが、C++20の世界ではそうではなく、`common_range`は定義通りに単なる`range`よりも厳しい要求となっているのです。
+
+なお、範囲`for`はC++17の時に`common_range`ではない`range`に対しても動作するように改修されています。
+
 ## `input_range`
 
 `input_range`はそのイテレータが*input iterator*であるような*range*を定義するコンセプトです。
@@ -367,7 +387,7 @@ template<class I>
 - 範囲`[i, s)`を参照する`forward_iterator`から取得された`[i, s)`への参照やポインタは、`[i, s)`が範囲として有効である限り有効であり続ける。
 - マルチパス保証。
 
-`incrementable`はインクリメント（`++`）によるイテレータの進行を定義するコンセプトで、同時にコピー/ムーブ構築と代入、デフォルト構築を要求します。`sentinel_for`はイテレータ型に対する番兵型を定義するコンセプトで、`sentinel_for<I1, I2>`は型`I1`がイテレータ型`I2`の番兵であることを定義します。すなわち、`forward_iterator`である`I`は自分自身がその範囲の終端を表現できなければなりません。
+`incrementable`はインクリメント（`++`）によるイテレータの進行を定義するコンセプトで、同時にコピー/ムーブ構築と代入、デフォルト構築を要求します。`sentinel_for`はイテレータ型に対する番兵型を定義するコンセプトで、`sentinel_for<I1, I2>`は型`I1`がイテレータ型`I2`の番兵であることを定義します。すなわち、`forward_iterator`である`I`は自分自身との比較が可能でなければなりません。ただし、これは`forward_range`ならば`common_range`であることを意味せず、`forward_range`である様な範囲の終端イテレータは`I`と異なっていても構いません。`forward_range`における*forward*性はあくまでそのイテレータ型だけに対して定義されています。
 
 意味論要件は少し難解ですが、デフォルト構築されたイテレータが範囲の終端を指すようになり、かつ他のイテレータはそれと常に比較可能であることや、イテレータの参照する要素の有効性は範囲の生存期間に従う（イテレータの操作と無関係になる）など、普通のイテレータに期待される振る舞いを定義しています。
 
@@ -423,6 +443,8 @@ template<class I>
 それれだけだとデクリメントが何をするものなのか不明瞭ですので、意味論要件によってデクリメントによるイテレータの後退という操作を定義しています。一つ前の要素が無いと後退できないとか、デクリメントしてもイテレータそのもののアドレスが変わるわけではないとか、デクリメントしてインクリメントすれば元に戻る、など*bidirectional iterator*に期待される振る舞いを定義しています。
 
 これも*forward iterator*と同様意味は同じですが求められる事が若干厳しくなっており、C++17までの*bidirectional iterator*はこのコンセプトを満たす事ができない場合があります。逆にC++20*bidirectional iterator*はC++17*bidirectional iterator*に対してほぼ後方互換性があります。
+
+`bidirectional_range`および`bidirectional_iterator`の*bidirectional*性はあくまでそのイテレータ型に対して定義されていることに注意してください。`bidirectional_range`である様な型`R`の終端イテレータ（番兵）に対しては何も規定しいないため、`bidirectional_range`だからと言って`common_range`であるわけではありません。
 
 ### 戻り値型の制約
 
@@ -511,8 +533,8 @@ template<class T>
 ```
 
 型`T&`の値`t`について
-- `to_address(ranges::begin(t)) == ranges::data(t)`
 
+- `to_address(ranges::begin(t)) == ranges::data(t)`
 
 `contiguous_range`は`random_access_iterator`でありそのイテレータが`contiguous_iterator`であることに加えて、`ranges::data(t)`という操作によってその範囲の存在するメモリ領域を指すポインタを取得することができます。そして、そのようなポインタ型はイテレータの要素型と一貫しており、取得されるポインタ値は先頭イテレータのアドレスと一致します。
 
@@ -546,25 +568,7 @@ template<class I>
 
 ただし、`std::to_address()`は`pointer_traits`か`operator->`のどちらかを利用して格納するポインタ値を取得するものなので、`operator->`を備えた非ポインタの自作イテレータを作成することは出来ます。とはいえその時でも、*contiguous iterator*はポインタの極薄いラッパとなるでしょう。
 
-## `common_range`
-
-`common_range`はその先頭イテレータと終端を指すイテレータ（番兵）とが同じ型となる`range`を定義するコンセプトです。
-
-```cpp
-template<class T>
-  concept common_range =
-    range<T> && same_as<iterator_t<T>, sentinel_t<T>>;
-```
-
-意味論要件はなく、見たままです。
-
-C++17まではイテレータに対してその範囲の終端を指すのは同じ型のイテレータだったので、当たり前のことを言っているように思えるかもしれません。
-
-しかしC++20からはむしろ逆で、`ranges::begin`で得られる先頭イテレータと`ranges::end`で得られる終端イテレータは別の型となっている事が前提とされるようになっています。そして、終端を指すものの事を番兵（*Sentinel*）と呼びます。”もの”と言っているように、番兵はイテレータとして扱える必要すらありません。
-
-C++17の世界ではあらゆるものが`common_range`でしたが、C++20の世界ではそうではなく、`common_range`は定義通りに単なる`range`よりも厳しい要求となっているのです。
-
-なお、範囲`for`はC++17の時に`common_range`ではない`range`に対しても動作するように改修されています。
+ここでも、性質は`range`のイテレータ型だけについて定義されています。結局、`range`のカテゴリが何であれ、それは`common_range`である事とは無関係です。
 
 ## `view`
 
@@ -575,7 +579,6 @@ template<class T>
   concept view =
     range<T> &&
     movable<T> &&
-    default_initializable<T> &&
     enable_view<T>;
 ```
 
@@ -583,12 +586,11 @@ template<class T>
 - `T`のデストラクトは定数時間
 - `T`はコピー不可であるか、`T`のコピー構築/代入は定数時間
 
-構文的には、ムーブ構築・代入とデフォルト構築が可能な`range`です。これだけだと普通のコンテナも当てはまっていますが、`std::vector`が`view`であると思う人は多分居ないでしょう。
+構文的には、ムーブ構築・代入が可能な`range`です。これだけだと普通のコンテナも当てはまっていますが、`std::vector`が`view`であると思う人は多分居ないでしょう。
 
-意味論要件は、コピーやムーブ、破棄などの操作の計算量が全て定数時間であることを言っており、`view`はその表現する範囲の要素数と無関係にコピーやムーブなどの基本操作が可能であることを意味しています。これはすなわち、`view`となる`range`はその表す範囲を所有せずに参照していることを意味しています。範囲を所有している場合、定数時間での破棄は不可能です。
+意味論要件は、コピーやムーブ、破棄などの操作の計算量が全て定数時間であることを言っており、`view`はその表現する範囲の要素数と無関係にコピーやムーブなどの基本操作が可能であることを意味しています。これはすなわち、`view`となる`range`はその表す範囲を所有せずに参照していることを意味しています。範囲を所有している場合、通常は定数時間での破棄は不可能です。
 
 このように、`view`コンセプトの定義の大部分は意味論要件によってなされており、構文的な制約だけでは通常のコンテナも`view`となってしまいます。そのため、`view`コンセプトはデフォルトでは殆どの型について無効化されており、オプトインでの有効化が必要になります。それは構成する最後の制約式、`enable_view`変数テンプレートによって行います。
-
 
 ```cpp
 namespace std::ranges {
@@ -1920,7 +1922,7 @@ class subrange {
 public:
 
   // デフォルトコンストラクタ (1)
-  subrange() = default;
+  subrange() requires default_initializable<I> = default;
 
   // イテレータペアからのコンストラクタ (2)
   constexpr subrange(convertible-to-non-slicing<I> auto i, S s) requires (!StoreSize);
@@ -1950,7 +1952,7 @@ public:
 
 また難解ですが、`subrange`には全部で5つのコンストラクタがあります。デフォルトコンストラクタを除くと、イテレータペアと`range`オブジェクトを受け取るコンストラクタの2種類があり、別の見方をすると長さ`n`を受け取るか受け取らないかで2種類のコンストラクタがあります。
 
-(1)のデフォルトコンストラクタは`view`コンセプトによる要請です。このコンストラクタから構築されている事は`.empty()`メンバ関数によってチェックできます。
+(1)はデフォルトコンストラクタです。イテレータ型`I`がデフォルト構築可能である場合に使用できます（`S`へのそれは`sentinel_for`コンセプトに含まれています）。
 
 (2)のコンストラクタはおそらく最も使用されるであろう、イテレータペアを受けとるコンストラクタです。後置`requires`節に現れている`StoreSize`は`K == subrange_kind::sized`なのに`I, S`が`sized_sentinel_for<S, I>`を満たさない事を検出するものです。そのような指定は可能であり意図的に許可されていますが、その場合にこのコンストラクタから初期化する事はできません。  
 (4)のコンストラクタはその`range`版です。`range`型`R`は`subrange`自身と同じ型ではなく`borrowed_range`であり、`K == subrange_kind::sized`ならば`sized_sentinel_for<S, I>`が満たされているか、`R`が`sized_range`である必要があります。
@@ -2022,15 +2024,25 @@ subrange(R&&, make-unsigned-like-t<range_difference_t<R>>) ->
 
 \clearpage
 
-# dangling iterator handling
+# Rangeアルゴリズム
 
-関数の引数などとして`range`を取りまわす時、`range`をコピーして取りまわすなんてことをするはずはなく、`view`や`borrowed_range`の様な範囲を参照する形でやり取りすることになります。その際に問題となるのは、参照先の範囲の寿命が先に尽きて、その範囲への参照あるいはイテレータが無効になってしまう事です。これは未定義動作に繋がり、そのような参照やイテレータの事をダングリング参照/イテレータと呼びます。
+`<algorithm>`ヘッダに従来からある各種アルゴリズム関数は古くから存在しており、コンセプトやRangeライブラリに合わせた設計にはなっていません。とはいえ削除したりインターフェースを変更したりすると後方互換を破壊してしまうので今更変更を加えることはできません。
+
+そこで、従来のアルゴリズム関数をリファインしたRangeアルゴリズム関数を`std::ranges`名前空間の下に追加します。Rangeアルゴリズム関数はRangeライブラリをベースとして設計されており、効果そのものは大きく変わりませんがより利用しやすくなっています。
+
+本書では、`<algorithm>`ヘッダに用意されている各種関数群のことを単に「アルゴリズム」と呼び、`std::ranges`名前空間にある各種アルゴリズムに対応した新規関数群を「Rangeアルゴリズム」と呼びます。
+
+## dangling iterator handling
+
+Rangeアルゴリズムに入る前に、そこで利用されている面白い仕組みを先に見ておきます。
+
+関数の引数などとして`range`を取りまわす時、`range`オブジェクトをコピーして取りまわすなんてことをするはずはなく、`view`や`borrowed_range`の様な範囲を参照する形でやり取りすることになります。その際に問題となるのは、参照先の範囲の寿命が先に尽きて、その範囲への参照あるいはイテレータが無効になってしまう事です。これは未定義動作に繋がり、そのような参照やイテレータの事をダングリング参照/イテレータと呼びます。
 
 Rangeライブラリでは安全のためにダングリングとなる場合を可能な範囲でコンパイル時に検出しようとします。たとえば`viewable_range`コンセプトは入力となる`range`がダングリングとならない事を保証しようとするコンセプトでした。基本的には`viewable_range`同様に、入力となる`range`が右辺値であり自身の処理の結果ダングリングなものを返しうるとき、コンパイルエラーとなるようになっています。
 
-他にも、入力`range`から取得したイテレータ/`subrange`を返す処理において、戻り値の利用が安全でない場合に代わりの型を返す仕組みが用意されています。
+Rangeアルゴリズムでも、入力`range`から取得したイテレータ/`subrange`を返す処理において、戻り値の利用が安全でない場合に代わりの型を返す仕組みが用意されています。
 
-## `dangling`
+### `dangling`
 
 `ranges::dangling`は出力となるイテレータがダングリングとなる場合に代わりに返されるタグ型です。
 
@@ -2118,7 +2130,7 @@ int main() {
 
 少し変数宣言が長くなってしまうのが欠点ですが、それに見合った恩恵はあるかと思われます。特に、intellisenseのようなリアルタイムのコードチェックが働いている環境だと、より素早く的確に`dangling`が返されていることに気付くことができるでしょう。
 
-## `borrowed_iterator_t/borrowed_subrange_t`
+### `borrowed_iterator_t/borrowed_subrange_t`
 
 `ranges::borrowed_iterator_t/ranges::borrowed_subrange_t`は`ranges::dangling`の利用を簡易化するエイリアステンプレートです。
 
@@ -2168,17 +2180,7 @@ borrowed_subrange_t<R> my_algo_ret_subr(R&& r) {
 
 `dangling`を返す場合でも内部の処理が通常通り行われている事が気になるかもしれませんが、`dangling`を返している場合というのは通常コンパイル時に気付くはずで、`dangling`を返している処理が実行されることはないはずです。もしコンパイル時に気付かなかったとすれば、それは戻り値を無視しているという事なのでそれはそれでバグでしょう。いずれにせよ、利用側では変数に対するコンセプトなどによって`dangling`が返されていることに素早く気付くようにしておく事が推奨されます。
 
-\clearpage
-
-# Rangeアルゴリズム
-
-`<algorithm>`ヘッダに従来からある各種アルゴリズム関数は古くから存在しており、コンセプトやRangeライブラリに合わせた設計にはなっていません。とはいえ削除したりインターフェースを変更したりすると後方互換を破壊してしまうので今更変更を加えることはできません。
-
-そこで、従来のアルゴリズム関数をリファインしたRangeアルゴリズム関数を`std::ranges`名前空間の下に追加します。Rangeアルゴリズム関数はRangeライブラリをベースとして設計されており、効果そのものは大きく変わりませんがより利用しやすくなっています。
-
-本書では、`<algorithm>`ヘッダに用意されている各種関数群のことを単に「アルゴリズム」と呼び、`std::ranges`名前空間にある各種アルゴリズムに対応した新規関数群を「Rangeアルゴリズム」と呼びます。
-
-## 従来アルゴリズムとの差異
+## Rangeアルゴリズムの従来アルゴリズムとの差異
 
 C++17までのアルゴリズムはイテレータペアを受け取って処理を行うものでしたが、C++20からのRangeアルゴリズムはイテレータペアに加えて`range`を直接受け取ることができます。
 
@@ -2601,7 +2603,7 @@ namespace std::ranges {
 }
 ```
 
-これは他の`view`の実装において、入力によって空の範囲を返す必要がある場合などに使用されているようです。
+これは他の`view`（特にRangeアダプタ）の実装において、入力によって空の範囲を返す必要がある場合などに使用されているようです。
 
 ### `empty_view<T>`の諸特性
 
@@ -2622,6 +2624,8 @@ namespace std::ranges {
 - `sized_range` : `sized_range`コンセプトのモデルとなるか
 - `const-iterable` : `const`化したときでも`range`でいられるか
 - `borrowed_range` : `borrowed_range`コンセプトのモデルとなるか
+
+`const-iterable`であることは、`range`型`R`に対して`input_range<const R>`の様にコンセプトで表現されます。`range`を`const`にしても依然として`input_range`であるならば、それは`const-iterable`であり、その`range`オブジェクトの変更を伴わずに範囲をイテレートできます。ただし、`const-iterable`であることは、`const`な`range`の要素についての`const`性を必ずしも意味していないことに注意が必要です。特に、範囲を所有しないタイプの`view`型がそれに当たります。
 
 ### `views::empty`
 
@@ -2753,7 +2757,7 @@ int main() {
 namespace std::ranges {
   // iota_viewの定義の例
   template<weakly_incrementable W, semiregular Bound = unreachable_sentinel_t>
-    requires weakly-equality-comparable-with<W, Bound> && semiregular<W>
+    requires weakly-equality-comparable-with<W, Bound> && copyable<W>
   class iota_view : public view_interface<iota_view<W, Bound>> {
     // ...
   };
@@ -2762,7 +2766,7 @@ namespace std::ranges {
 
 型`W, Bound`はそれぞれ生成する範囲の先頭、終端を表す型です。それぞれのオブジェクトを`w, b`とすると、`[w, b)`の範囲のシーケンスを生成します。`W`は`weakly_incrementable`であるので、`++`によるインクリメントが可能でありさえすればどんな型のシーケンスでも生成する事ができます。`Bound`はその上界（番兵）を指定するもので、デフォルトで指定されている`unreachable_sentinel_t`はあらゆる型との比較に常に`true`を返す特殊な番兵型で、別の方法で範囲の終端が指定される場合に用いる事ができるものです。すなわち、1引数で`iota_view`を構築した場合にこれが使用され、`W`の単調増加無限列を表すことになります。
 
-`requires`節の制約は`W, Bound`が`== !=`で相互に比較可能であり、`W`が`int`型などの基本型と同程度に単純な型である事を要求しています。`semiregular`コンセプトは型がコピー可能でありデフォルト構築可能であれば満たす事ができます。
+`requires`節の制約は`W, Bound`が`== !=`で相互に比較可能であり、`W`が`int`型などの基本型と同程度に単純な型である事を要求しています。`copyable`コンセプトは名前通り、型がコピー構築/代入可能であることを要求しています。
 
 この性質によって例えば、ポインタ型やイテレータ型のシーケンスを作成可能です。
 
@@ -2910,14 +2914,10 @@ namespace std::ranges {
              stream-extractable<Val, CharT, Traits>
   class basic_istream_view : public view_interface<basic_istream_view<Val, CharT, Traits>> {
   public:
-    basic_istream_view() = default;
     constexpr explicit basic_istream_view(basic_istream<CharT, Traits>& stream);
 
-    constexpr auto begin()
-    {
-      if (stream_) {
-        *stream_ >> value_;
-      }
+    constexpr auto begin() {
+      *stream_ >> value_;
       return iterator{*this};
     }
 
@@ -2926,8 +2926,8 @@ namespace std::ranges {
   private:
     // プライベートメンバは説明専用
     struct iterator;
-    basic_istream<CharT, Traits>* stream_ = nullptr;
-    Val value_ = Val();
+    basic_istream<CharT, Traits>* stream_;
+    Val value_;
   };
 }
 ```
@@ -2940,7 +2940,7 @@ namespace std::ranges {
 
 `basic_istream_view`は遅延評価されます。`basic_istream_view`によって生成されるシーケンスは`basic_istream_view`オブジェクトを構築した時点では生成されていません。
 
-まず、`basic_istream_view`オブジェクトから`begin()`によってイテレータを取得した時点で最初の要素が計算（読み取り）されます（これは先ほどの定義の`begin()`に見ることができます）。そして、インクリメント（`++i/i++`）のタイミングで1つづつ後続の要素が計算されます。
+まず、`basic_istream_view`オブジェクトから`begin()`によってイテレータを取得した時点で最初の要素が計算（ストリームから読み取り）されます（これは先ほどの定義の`begin()`に見ることができます）。そして、インクリメント（`++i/i++`）のタイミングで1つづつ後続の要素が計算されます。
 
 ```cpp
 int main() {
@@ -2959,7 +2959,7 @@ int main() {
 }
 ```
 
-読み取られた要素は`basic_istream_view`オブジェクトの内部に保存されており、仮に同じオブジェクトからイテレータを2つ以上取得していても、片方のイテレータの操作はもう片方のイテレータに影響を与えます。すなわち、`basic_istream_view`の生成するシーケンスは一方向性でマルチパス保証がありません。
+読み取られた要素は`basic_istream_view`オブジェクトの内部に保存されており、仮に同じ`basic_istream_view`オブジェクトからイテレータを2つ以上取得していても、片方のイテレータの操作はもう片方のイテレータに影響を与えます。すなわち、`basic_istream_view`の生成するシーケンスは一方向性でマルチパス保証がありません。
 
 この事によって、`basic_istream_view`によるシーケンスは通常のシーケンスとは異なりメモリ上に空間的に存在するのではなく、ストリーム上に時間的に存在しています。すなわち、`basic_istream_view`を構築したタイミングで入力データが全て到着している必要はなく、任意のタイミングで到着しても構いません。この事は、C#におけるLINQに対するRxの対応と同じです。
 
@@ -2974,9 +2974,9 @@ int main() {
 - `const-iterable` : ×
 - `borrowed_range` : ×
 
-番兵型は常に`std::default_sentinel_t`が利用されるため`common_range`にはならず、シーケンスにマルチパス保証がないため常に`input_range`であり、そのサイズをあらかじめ求めることもできません。
+番兵型は常に`std::default_sentinel_t`が利用されるため`common_range`にはならず、シーケンスにマルチパス保証がないため常に`input_range`であり、自身の内部に読み取った要素を保存する事から`borrowed_range`や`const-iterable`となれず、そのサイズをあらかじめ知ることもできません。
 
-`basic_istream_view`は、そのイテレータをコピーすることができず、`range`型としてほとんど最低限の操作しかできない、少し特殊な`view`です。しかし、この様な扱いの難しいシーケンスであっても`view`という形に落とし込むことができるという例でもあり、プログラム外部環境に依存するなど特殊なシーケンスを`view/range`化する際の参考にすることができます。
+`basic_istream_view`は、そのイテレータをコピーすることもできない`range`型としてほとんど最低限の操作しかできない、少し特殊な`view`です。しかし、この様な扱いの難しいシーケンスであっても`view`という形に落とし込むことができるという例でもあり、プログラム外部環境に依存するなど特殊なシーケンスを`view/range`化する際の参考にすることができます。
 
 \clearpage
 
@@ -3071,7 +3071,7 @@ int main() {
 }
 ```
 
-またほかの`view`、特にRangeアダプタの実装にも利用されます。`view`を作ろうとするとデフォルト構築とムーブ構築/代入が求められますが、`range`オブジェクトへの参照を直接持つと代入演算子やデフォルトコンストラクタが定義できなくなり、ポインタを利用すると`nullptr`を気にしなければなりません。`view`コンセプトの定義を思い出すと、すべての`view`はデフォルト構築可能でムーブ構築/代入が可能であり、`ref_view`もまたそれに従います。そのため、`ref_view`（正確には`views::all`）を用いて`range`を受け取り保持するようにすることでその辺りの考慮の必要性がなくなり、`view`の実装を幾分か楽にすることができます。
+またほかの`view`、特にRangeアダプタの実装にも利用されます。`view`を作ろうとするとムーブ構築/代入が求められますが、`range`オブジェクトへの参照を直接持つと代入演算子やデフォルトコンストラクタが定義できなくなり、ポインタを利用すると`nullptr`を気にしなければなりません。`view`コンセプトの定義を思い出すと、すべての`view`はムーブ構築/代入が可能であり、`ref_view`もまたそれに従います。そのため、`ref_view`（正確には`views::all`）を用いて`range`を受け取り保持するようにすることでその辺りの考慮の必要性がなくなり、`view`の実装を幾分か楽にすることができます。
 
 `ref_view`の定義は次のようになっています。
 
@@ -3081,9 +3081,8 @@ namespace std::ranges {
     requires is_object_v<R>
   class ref_view : public view_interface<ref_view<R>> {
   private:
-    R* r_ = nullptr;  // 説明専用メンバ
+    R* r_;  // 説明専用メンバ
   public:
-    constexpr ref_view() noexcept = default;
 
     template<different-from<ref_view> T>
       requires /*...*/
@@ -4401,7 +4400,26 @@ int main() {
 }
 ```
 
+`common_view`は次の様に宣言されています。
+
+```cpp
+namespace std::ranges {
+  template<view V>
+    requires (!common_range<V> && copyable<iterator_t<V>>)
+  class common_view : public view_interface<common_view<V>>{
+    // ...
+  };
+
+  template<class R>
+    common_view(R&&) -> common_view<views::all_t<R>>;
+}
+```
+
+入力となる`range`は`common_range`ではなく、そのイテレータがコピー可能である必要があります。すなわち、すでに`common_range`である`range`に対しては`common_view`を使用できません。
+
 ### `common_view<R>`の諸特性
+
+ここでの`R`は常に`common_range`では無い事を意識してください。
 
 - `reference` : `range_reference_t<R>`
 - `range`カテゴリ
@@ -4413,7 +4431,9 @@ int main() {
 - `const-iterable` : `R`が`const-iterable`の場合
 - `borrowed_range` : `R`が`borrowed_range`の場合
 
-`R`が`random_access_range`かつ`sized_range`の時はそのイテレータをそのまま利用するため`R`のカテゴリを継承しますが、それ以外の場合は`common_iterator`を利用して元のイテレータをラップするため`R`のカテゴリと同じにはなりません。イテレータ型と番兵型が異なっている場合、`R`が`bidirectional`でもその番兵オブジェクトに`--`操作が求められておらず、その様なイテレータペアをラップした`common_iterator`も`--`操作を行えないため、`forward_iterator`となるのが精一杯です。そのため、`common_iterator`を利用する場合の`common_view`も`forward`にしかなりません。
+`R`が`random_access_range`かつ`sized_range`の時はイテレータに対してサイズを`+/+=`すれば、`O(1)`の操作で終端イテレータが同じイテレータ型で得られ、`R`のイテレータをそのまま利用できるため`R`のカテゴリを継承します。
+
+それ以外の場合は`common_iterator`を利用して元のイテレータをラップするため`R`のカテゴリと同じにはなりません。イテレータ型と番兵型が異なっている場合、`R`が`bidirectional`でもその番兵（`sentinel_t<R>`）に対して`--`操作が定義されておらず、その様なイテレータペアをラップした`common_iterator`も`--`操作を行えないため、`forward_iterator`となるのが精一杯です。そのため、`common_iterator`を利用する場合の`common_view`も`forward`にしかなりません。
 
 ### `views::common`
 
@@ -4494,9 +4514,11 @@ namespace std::ranges {
 
 ### 遅延評価
 
-`reverse_view`は遅延評価によって逆順範囲を生成します。とはいえ、逆順範囲にの生成と管理を`reverse_iterator`に丸投げしているので、`reverse_view`の行うことは`begin()`によってイテレータを取得するタイミングで`reverse_iterator`を適切に構築することです。
+`reverse_view`は遅延評価によって逆順範囲を生成します。とはいえ、逆順範囲の生成と管理を`reverse_iterator`に丸投げしているので、`reverse_view`の行うことは`begin()`によってイテレータを取得するタイミングで`reverse_iterator`を適切に構築することです。
 
 そこではまず、元の`range`が`common_range`であればその終端イテレータ（`end()`で取得できるイテレータ）を使って`std::reverse_iterator`を構築します。元の`range`が`common_range`ではない場合、元の`range`のイテレータを`ranges::next()`によって終端まで進めて、それによって`reverse_iterator`を構築します。
+
+`reverse_iterator`は自身のインクリメントのタイミングなどで元のイテレータを逆に進める事でイテレータの逆順走査を行なっており、こちらも遅延評価されています。
 
 ```cpp
 auto seq = std::views::iota(1, 10)
@@ -4529,7 +4551,7 @@ int n = *it;
 - `const-iterable` : `const R`が`common_range`の場合
 - `borrowed_range` : `R`が`borrowed_range`の場合
 
-`reverse_view`のイテレータは`reverse_iterator`を利用しているので、`reverse_view`は常に`common_range`となります。一方、`R`の`contiguous`性は継承されません。そのほかは`R`の性質を継承します。
+`reverse_view`のイテレータは`reverse_iterator`を利用しているので、`reverse_view`は常に`common_range`となります。一方、`R`の`contiguous`性は継承されません。また、`R`が`common_range`では無い場合は`begin()`の呼び出しでキャッシュするので`const-iterable`ではありません。そのほかは`R`の性質を継承します。
 
 ### `views::reverse`
 
@@ -4612,7 +4634,7 @@ int main() {
 }
 ```
 
-*tuple-like*な型のシーケンスのそれぞれの要素を指定された番号`N`による`get<N>()`で射影し、その値のシーケンスを生成します。
+*tuple-like*な型のシーケンスのそれぞれの要素を指定された番号`N`による`get<N>()`で射影し、その値のシーケンスを生成します。*tuple-like*な型であって`std::tuple`でなければならないわけでは無いので、`pair`とか`array`などのシーケンスに対しても使用できます。
 
 `elements_view`には抽出する`tuple`要素の番号を非型テンプレートパラメータとして渡さなければならないため、クラステンプレートの実引数推論を利用できません。そのため、引数として渡す`range`の型を書く必要があります。その際は他の`view`がそうであるように`std::views::all_t`を使うのが便利なのですが、`decltype(())`としないと`views::all`に左辺値として渡せずにコンパイルエラーを起こします（`views::all`は右辺値をリジェクトします）。
 
