@@ -3983,6 +3983,30 @@ int main() {
 
 ややこしいですが、`join_view`のところで外側/内側`range`と言っていたのは`join_view`への入力`range`に対しての話で、ここでの内側/外側は`lazy_split_view`からの出力`range`の話です。
 
+```cpp
+namespace std::ranges {
+  // lazy_split_viewの定義例
+  template<input_range V, forward_range Pattern>
+    requires view<V> && view<Pattern> &&
+             indirectly_comparable<iterator_t<V>, iterator_t<Pattern>, ranges::equal_to> &&
+             (forward_range<V> || tiny-range<Pattern>)
+  class lazy_split_view : public view_interface<lazy_split_view<V, Pattern>> {
+    // ...
+  };
+
+  template<class R, class P>
+    lazy_split_view(R&&, P&&) -> lazy_split_view<views::all_t<R>, views::all_t<P>>;
+
+  template<input_range R>
+    lazy_split_view(R&&, range_value_t<R>)
+      -> lazy_split_view<views::all_t<R>, single_view<range_value_t<R>>>;
+}
+```
+
+やたらとややこしいですが、入力となる`range`は`input_range`である必要があり、デリミタ（`Pattern`）は`forward_range`でなくてはなりません。入力`range`のイテレータとデリミタのイテレータは`ranges::equal_to`によって`indirectly_comparable`である必要があります。これは、それぞれのイテレータを間接参照して得られた要素が`ranges::equal_to`で比較可能であることを要求しています。`requires`節3行目の制約は、入力`range`が`forward_range`でないならばデリミタは`tiny-range`でなければならないと言っています。`tiny-range<R>`は`R`が`sized_range`であり、その`size()`が静的メンバ関数かつ`constexpr`呼び出し可能で、そのサイズが1以下であるような`range`を指しています。これは殆ど実質的に`single_view`を指定しており、3行目の制約式は`input_range`を分割する時はデリミタの長さが1以下であることを規定しています。
+
+用意されている推論補助の2つ目のものは、デリミタに非`range`の単一要素を指定した場合に選択され、それを`single_view`で包んで`range`化して`lazy_split_view`のインスタンス化を行います。`requires`節3行目の制約式は、この推論補助を利用して`lazy_split_view`がインスタンス化されることを前提としています。
+
 ### 遅延評価
 
 `lazy_split_view`もまた遅延評価によって分割処理と`view`の生成を行います。
@@ -4023,6 +4047,75 @@ bool f = inner_it == std::ranges::end(inner_range); // false
 
 `lazy_split_view`の結果が複雑となる一因は、この遅延評価を行うことによるところがあります。
 
+### `input_range`の分割
+
+先ほど見た定義にも現れていて、少し驚くべきことかもしれませんが、`lazy_split_view`は`input_range`を分割することができます。
+
+```cpp
+int main() {
+  // 標準入力には「4 0 123 0 1 6 700 0 8 3 0 9 7 0」と入力
+  input_range auto in = istream_view<int>(std::cin);
+
+  // 0をデリミタとして分割
+  for (auto inner : lazy_split_view{in, 0}) {
+    for (auto n : inner) {
+      std::cout << n;
+    }
+    std::cout << '\n';
+  }
+  /*
+    4
+    123
+    16700
+    83
+    97
+  */
+}
+```
+
+`input_range`では基本的にイテレータによるマルチパスな走査ができなたいめ、一見すると分割することは出来ないのではないかと思ってしまいます。しかし、デリミタの長さが最大でも1で固定されている事が分かっていて、かつ遅延評価を行う事によって、`input_range`の範囲でもシングルパスの走査によって分割を行う事ができます。その際、入力`range`のイテレータ（`input_iterator`）はコピーして取りまわせないために`lazy_split_view`の内部に保存され、`lazy_split_view`のイテレータはそれを参照して動作するようになります。すなわち、複数のイテレータによる走査時には互いに影響を及ぼし合い、`input_range`の分割時の外側`range`は常に`input_range`となります。
+
+これは外側イテレータと内側イテレータが協調動作することで実現されています。外側イテレータの進行時には次に出てくるデリミタ要素が見つかるまで元イテレータを進めます。その際、まだ文字列を分割しません。内側`range`のイテレータの進行時もそのまま元イテレータを進め、分割しません。内側`range`の終端チェック時、現在の要素がデリミタと一致するかを調べ、一致する場合に終端であると判定され内側`range`は終了します。すなわち、内側`range`の終了によって仮想的に元`range`の分割を行っているわけです。
+
+外側イテレータと内側イテレータは両方とも`lazy_split_view`の内部に保存されている元`range`のイテレータを使用して元`range`の走査を行っており、外側イテレータと内側イテレータが1つの元イテレータを共有しながら進行と終端チェックをそれぞれで行う事で、シングルパスでの分割という作業を実現しています。
+
+```cpp
+auto sv = lazy_split_view{istream_view<int>(std::cin), 0};
+
+auto outer_it = ranges::begin(sv);
+// 外側イテレータ取得時には特に何もしない
+
+++outer_it;
+// 外側イテレータの進行時
+// 次に出現するデリミタ要素の次まで元rangeのイテレータを進める
+
+auto outer_end = ranges::end(sv);
+
+bool b = outer_it == outer_end;
+// 外側rangeの終端チェック、以下の事をチェック
+// 1. 元rangeの終端に到達しているか
+// 2. 一番最後の要素がデリミタそのものであるか
+
+auto inner = *outer_it;
+// 内部rangeの取得、特に何もしない
+
+auto inner_it = ranges::begin(inner);
+// 内部イテレータ取得、特に何もしない
+
+++inner_it;
+// 内部イテレータの進行は、元rangeのイテレータを進める
+
+auto inner_end = ranges::end(inner);
+
+bool b2 = inner_it == inner_end;
+// 内部rangeの終端チェック時、以下の事をチェック
+// 1. 元rangeの終端に到達しているか
+// 2. デリミタ長が0ではないか
+// 3. 現在位置にデリミタ要素が現れていないか
+```
+
+ところがこれをよく見ると、具体的にしていることは先程説明した遅延評価と同じである事が分かります。細かい動作の差はあれど、`lazy_split_view`は入力`range`のカテゴリに関わらず、シングルパスの走査によって分割を行っているわけです。この強力な遅延評価機構はしかし、`lazy_split_view`を複雑にすると共に文字列分割で使用しづらくしています。
+
 ### `lazy_split_view<R, P>`の諸特性
 
 `lazy_split_view`は`range`の`range`を生成する`view`であり、外側`range`と内側`range`の2つを意識する必要があります。
@@ -4037,6 +4130,8 @@ bool f = inner_it == std::ranges::end(inner_range); // false
 - `sized_range` :  ×
 - `const-iterable` : `R`および`const R`が共に`forward_range`である場合
 - `borrowed_range` : ×
+
+外側`range`は`R`が`input_range`であるときは`input_range`となり、内部に`R`のイテレータを保持するため`const-iterable`となりません。また、遅延評価を行うためにインクリメント以外でイテレータを進行させることが出来ないため、`forward_range`より強くなりません。
 
 内側`range`は外側`range`の`reference`であり入力`range`（`R`）の部分要素ですが、`subrange`を用いるわけではなく独自の`range`型となります。
 
@@ -4157,7 +4252,7 @@ namespace std::ranges {
 }
 ```
 
-文字列に特化したと言いつつ、実際のところ入力となる`range`は`forward_range`であればよく、デリミタ（`Pattern`）も`forward_range`であればOKです。例えば`std::list`などを、あるいはそれによって分割する事ができるわけです。また、デリミタに単一要素を指定しても`single_view`を用いて`range`化する事で、デリミタを常に`range`として統一的に扱っている事が推論補助から見て取れます。
+文字列に特化したと言いつつ、実際のところ入力となる`range`は`forward_range`であればよく、デリミタ（`Pattern`）も`forward_range`であればOKです。例えば`std::list`などを、あるいはそれによって分割する事ができるわけです。しかし、`input_range`の分割をサポートしていないことがここからわかります。それによって、`lazy_split_view`が行っていたような複雑な遅延評価を行う必要が無くなっています。また、デリミタに単一要素を指定しても`single_view`を用いて`range`化する事で、デリミタを常に`range`として統一的に扱っている事が推論補助から見て取れます。
 
 たとえば、文字列を文字列で分割することができます。
 
@@ -4231,7 +4326,7 @@ char c = *inner_it; // a
 // 元のシーケンスのイテレータのデリファレンスと等価
 ```
 
-`lazy_split_view`の様に過度な一般化と過度な遅延評価を行わない事によって、文字列分割時に結果を文字列に簡単に変換可能である様に実装されています。
+`lazy_split_view`の様に過度な一般化と過度な遅延評価を行わない事によって、文字列分割時に結果を文字列に簡単に変換可能である様に実装されています。一方、`begin()`の呼び出しで最初のデリミタ位置の探索を行っているため、`range`コンセプトの意味論要件を満たすために常にキャッシュが使用されます。これによって、`split_view`の外側`range`は`const-iterable`でも`borrowed_range`でもなくなります（とはいえそれは`lazy_split_view`とほぼ同じことです）。
 
 ### `split_view<R, P>`の諸特性
 
@@ -4244,6 +4339,8 @@ char c = *inner_it; // a
 - `const-iterable` : ×
 - `borrowed_range` : ×
 
+`input_range`サポートを切ったためカテゴリは常に`forward_range`となります（`forward`より強くならないのは`lazy_split_view`と同様の理由による）。
+
 内側`range`は入力`range`（`R`）のイテレータによる`subrange`であるので、`R`の性質をそのまま受け継ぎます。
 
 - `reference` : `range_reference_t<R>`
@@ -4253,7 +4350,7 @@ char c = *inner_it; // a
 - `const-iterable` : `R`が`const-iterable`の場合
 - `borrowed_range` : ◯
 
-特に、内側`range`の性質が大きく改善された事によって、文字列分割への適性が向上しています。
+内側`range`とそのイテレータが何もしなくなったことによって、内側`range`の性質が大きく改善されています。これによって、文字列分割への適性が大きく向上しています。
 
 ### `views::split`
 
