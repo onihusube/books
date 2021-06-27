@@ -1,12 +1,12 @@
 ---
 title: C++20 ranges
 author: onihusube
-date: 2021/06/24
+date: 2021/07/11
 geometry:
   width: 188mm
   height: 263mm
-#coverimage: cover.jpg
-#backcoverimage: backcover.jpg
+coverimage: cover.jpg
+backcoverimage: backcover.jpg
 titlecolor:
   color1:
     r: 0.796078
@@ -3861,7 +3861,7 @@ int n = *it;
 
 1つの内側`range`をイテレートしている間は内側イテレータの終端チェックのみが行われますが、その終端に到達した時（2つの内側`range`を接続する時）は外側`range`のイテレータのインクリメントと終端チェックが入るため、少し処理が重くなります。
 
-`join_view`は少し複雑ですが、入力となるシーケンスについて内側`range`と外側`range`を意識すると、`join_view`の仕事は内側`range`同士を接続しているだけであることが見えやすくなるかもしれません。
+`join_view`は少し複雑ですが、入力となるシーケンスについて内側`range`と外側`range`を意識すると、`join_view`の仕事は内側`range`同士を接続しているだけであることが見えやすくなるかもしれません。次の図は、`join_view`が`range`の`range`を接続する様子を描いたものです。
 
 ![](img/join_view.png)
 
@@ -3974,6 +3974,12 @@ int main() {
 
 ややこしいですが、`join_view`のところで外側/内側`range`と言っていたのは`join_view`への入力`range`に対しての話で、ここでの内側/外側は`lazy_split_view`からの出力`range`の話です。
 
+`lazy_split_view`の結果はとても複雑で一見非自明です。たとえば`"abc,12,cdef,3"`という文字列を`,`で分割するとき、`lazy_split_view`の様子は次のようになっています。
+
+![](img/split_view.png)
+
+実際の実装は元のシーケンスのイテレータを可能な限り使いまわすのでもう少し複雑になりますが、概ねこの図のような関係性の`range`の`range`が生成されます。
+
 ```cpp
 namespace std::ranges {
   // lazy_split_viewの定義例
@@ -4037,6 +4043,9 @@ bool f = inner_it == std::ranges::end(inner_range); // false
 ```
 
 `lazy_split_view`の結果が複雑となる一因は、この遅延評価を行うことによるところがあります。
+
+
+
 
 ### `input_range`の分割
 
@@ -4682,12 +4691,12 @@ int main() {
 int main() {
   std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 
-  for (int n : vec | views::reverse  // vector<int> -> reverse_view
-                   | views::reverse  // reverse_view -> ref_view<vector<int>>
-                   | views::reverse  // ref_view<vector<int>> -> reverse_view
-                   | views::reverse  // reverse_view -> ref_view<vector<int>>
-      )
-  {
+  auto rv = vec | views::reverse  // vector<int> -> reverse_view
+                | views::reverse  // reverse_view -> ref_view<vector<int>>
+                | views::reverse  // ref_view<vector<int>> -> reverse_view
+                | views::reverse; // reverse_view -> ref_view<vector<int>>
+
+  for (int n : rv) {
     std::cout << n; // 123456789
   }
 }
@@ -4921,7 +4930,7 @@ namespace std::ranges::views {
 
 # 謝辞
 
-　本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者・執筆者の方々に厚く御礼申し上げます。
+本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者・執筆者の方々に厚く御礼申し上げます。
 
 - cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
