@@ -12,18 +12,18 @@ titlecolor:
     r: 0.796078
     g: 0.949020
     b: 0.4
-    c: 25
-    m: 0
-    y: 80
-    k: 0
+    c: 0.25
+    m: 0.0
+    y: 0.80
+    k: 0.0
   color2:
     r: 0.207843
     g: 0.631373
     b: 0.419608
-    c: 75
-    m: 0
-    y: 65
-    k: 0
+    c: 0.75
+    m: 0.0
+    y: 0.65
+    k: 0.0
 okuduke:
   revision: 初版
   printing: ねこのしっぽ
@@ -36,7 +36,8 @@ okuduke:
 
 Rangeライブラリのベースとなっているコンセプト機能については必要になったタイミングで適宜説明を入れていますが、サンプルコードの不足など不十分であるかもしれません。適宜cpprefjpのコンセプトページを参照されると理解が深まるかと思います。
 
-- [C++20 コンセプト - cpprefjp](https://cpprefjp.github.io/lang/cpp20/concepts.html)
+- C++20 コンセプト - cpprefjp  
+  https://cpprefjp.github.io/lang/cpp20/concepts.html
 
 また、本書はRangeライブラリの実体やその設計思想などを理解しようと試みるものであり、ライブラリリファレンスではありません。そのため、必ずしも使用するために十分な情報が記載されていないかもしれません。
 
@@ -536,7 +537,7 @@ template<class T>
 
 - `to_address(ranges::begin(t)) == ranges::data(t)`
 
-`contiguous_range`は`random_access_iterator`でありそのイテレータが`contiguous_iterator`であることに加えて、`ranges::data(t)`という操作によってその範囲の存在するメモリ領域を指すポインタを取得することができます。そして、そのようなポインタ型はイテレータの要素型と一貫しており、取得されるポインタ値は先頭イテレータのアドレスと一致します。
+`contiguous_range`は`random_access_iterator`でもあり、かつそのイテレータが`contiguous_iterator`であることに加えて、`ranges::data(t)`という操作によってその範囲の存在するメモリ領域を指すポインタを取得することができます。そして、そのようなポインタ型はイテレータの要素型と一貫しており、取得されるポインタ値は先頭イテレータのアドレスと一致します。
 
 *random access iterator*までは知っていると思われますが、*contiguous iterator*というのは初めて聞くかもしれません。これはイテレータの指す範囲がメモリ上で連続している場合のイテレータを表すものです（普通の配列におけるポインタなど）。概念だけがC++17で導入され、C++20でコンセプト導入とともに実体を持ちました。
 
@@ -715,7 +716,6 @@ auto my_algo(Range&& range_obj) {
   // 修飾なしで呼び出す
   auto it = begin(range_obj);
   auto end = end(range_obj);
-
   // ...
 }
 ```
@@ -753,7 +753,7 @@ C++20からのコンセプトはそのような問題を解決します。その
 ```cpp
 namespace std {
 
-  // rangeコンセプトを満たす型だけが呼べるように制約してある新しいbegin()関数とする
+  // コンセプトによって制約された新しいbegin()関数
   template<range C>
   constexpr auto begin(C& c) -> decltype(c.begin());  // (1)
 }
@@ -878,7 +878,8 @@ int main() {
 2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
 3. `T`が配列型なら、`r + 0`
       - 先頭のポインタを返す
-4. `decay-copy(r.begin())`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(r.begin())`
+4. `decay-copy(r.begin())`が呼び出し可能であり、その戻り値型が  
+   `input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(r.begin())`
       - メンバ関数の`begin()`を呼び出す 
 5. `T`はクラス型か列挙型であり、`decay-copy(begin(r))`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(begin(r))`
       - ADLによって`begin()`を呼び出す
@@ -1022,7 +1023,7 @@ namespace std::ranges {
 
 どちらにおいても`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
 
-`ranges::cbegin(r)`の呼び出しが有効であるときの戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::cend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
+`ranges::cbegin(r)`の呼び出しが有効な時の戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::cend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
 
 これは従来の`std::cbegin()/std::cend()`フリー関数がやっていたこととさほど変わりありません。`const`イテレータは`const`なオブジェクトに対する`begin/end`によって取得されます。
 
@@ -1070,7 +1071,8 @@ namespace std::ranges {
 
 1. `r`が右辺値であり、かつ`enable_borrowed_range<remove_cv_t<T>> == false`の場合、*ill-formed*
 2. `T`が配列型であり、`remove_all_extents_t<T>`が不完全型を示す場合、*ill-formed*
-3. `decay-copy(r.rbegin())`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(r.rbegin())`
+3. `decay-copy(r.rbegin())`が呼び出し可能であり、その戻り値型が  
+   `input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(r.rbegin())`
       - メンバ関数の`rbegin()`を呼び出す 
 4. `T`はクラス型か列挙型であり、`decay-copy(rbegin(r))`が呼び出し可能であり、その戻り値型が`input_or_output_iterator`コンセプトのモデルとなるなら、`decay-copy(rbegin(r))`
       - ADLによって`rbegin()`を呼び出す
@@ -1092,7 +1094,7 @@ namespace std::ranges {
 
 どちらにおいても`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
 
-`ranges::rbegin(r)`の呼び出しが有効であるときの戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::rend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
+`ranges::rbegin(r)`の呼び出しが有効な時の戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::rend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
 
 基本的には`ranges::begin/ranges::end`とほとんど同じように`rbegin()/rend()`を探してきます。異なるのは配列型のケアを`ranges::begin/ranges::end`に委譲していることと、5番目のケースです。
 
@@ -1125,7 +1127,7 @@ namespace std::ranges {
 
 どちらにおいても`r`が右辺値であるとき、`r`を転送する所では`std::forward`を適切に使用したときと同様の完全転送が行われます。
 
-`ranges::crbegin(r)`の呼び出しが有効であるときの戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::crend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
+`ranges::crbegin(r)`の呼び出しが有効な時の戻り値型`I`は`input_or_output_iterator`コンセプトのモデルとなり、`ranges::crend(r)`の呼び出しが有効であるときの戻り値型`S`は`sentinel_for<S, I>`コンセプトのモデルとなります。
 
 `ranges::cbegin/ranges::cend`と同様に、`const`化した引数に対して`ranges::rbegin/ranges::rend`を呼び出すことで`const`逆イテレータ/番兵を取得します。したがって、`ranges::cbegin/ranges::cend`同様に`const`イテレータを必ずしも得ることができない場合があります。
 
@@ -1473,7 +1475,8 @@ namespace std {
     using difference_type = typename T::difference_type;
   };
 
-  // difference_typeを定義していないが、差分を取ることができる型についての特殊化
+  // difference_typeを定義していないが
+  // -によって差分を取ることができる型についての特殊化
   template<class T>
     requires (!requires { typename T::difference_type; } &&
               requires(const T& a, const T& b) { { a - b } -> integral; })
@@ -1672,7 +1675,7 @@ void f(R& r, ranges::range_reference_t<R> v) {
 
 これは比較的よく使いそうな気がします。`range`のイテレータの間接参照の型そのものが使いたい時や、イテレータから要素を取り出すときに受ける型が欲しい時などに使用できます。
 
-## `range_rvalue_reference_t/iter_rvalue_reference_t`
+## `range_rvalue_reference_t`/\newline `iter_rvalue_reference_t`
 
 `ranges::range_reference_t`は`range`の要素を指す右辺値参照型を取得します。
 
@@ -1897,7 +1900,8 @@ subrange_kind K = sized_sentinel_for<S, I> ? subrange_kind::sized : subrange_kin
 requires (K == subrange_kind::sized || !sized_sentinel_for<S, I>)
 ```
 
-残った`requires`節による制約は、`K`が`subrange_kind::unsized`ならば`I, S`が`sized_sentinel_for<S, I>`を満たさない事をチェックしています。というのも、`subrange`に明示的に型と値を指定して特殊化してしまえば`K`の値を`I, S`によらずに指定することができてしまうためです。ただし、`K == subrange_kind::sized`であれば`I, S`はどうなっていても良いことがここから読み取ることができ、これはあえての事です。
+残った`requires`節による制約は、`K`が`subrange_kind::unsized`ならば`I, S`が  
+`sized_sentinel_for<S, I>`を満たさない事をチェックしています。というのも、`subrange`に明示的に型と値を指定して特殊化してしまえば`K`の値を`I, S`によらずに指定することができてしまうためです。ただし、`K == subrange_kind::sized`であれば`I, S`はどうなっていても良いことがここから読み取ることができ、これはあえての事です。
 
 ## コンストラクタと推論補助
 
@@ -2212,9 +2216,9 @@ namespace std::ranges {
 }
 ```
 
-見辛いですね。どこが関数名なのかすら少し迷ってしまいます・・・
+見辛いですね。どこが関数名なのかすら少し迷ってしまいます。説明のために、関数名を含む最低限のシグネチャだけを抜き出して比べてみると
 
-関数名を含む最低限のシグネチャだけを抜き出して比べてみると
+\clearpage
 
 ```cpp
 // 従来のfind
@@ -2249,8 +2253,8 @@ int main() {
 
 そして、従来のアルゴリズムとRangeアルゴリズムの特徴的な差異はRangeアルゴリズムのテンプレートパラメータは全てコンセプトによって制約されていることです。今度はRangeアルゴリズムのテンプレートパラメータの宣言部だけを見てみましょう。
 
-// ranges::find 1
 ```cpp
+// ranges::find 1
 template<input_iterator I, sentinel_for<I> S, class T, class Proj = identity>
   requires indirect_binary_predicate<ranges::equal_to, projected<I, Proj>, const T*>
 
@@ -2267,7 +2271,8 @@ template<input_range R, class T, class Proj = identity>
 
 一方で`range`を受け取る方は、それが`input_range`であることをシンプルに表現しています。
 
-最後に残ったのは`indirect_binary_predicate`というコンセプトです。`indirect_binary_predicate<F, I1, I2>`は間接参照可能な型（イテレータやポインタ型）`I1, I2`の参照先の型によって`F`が呼び出し可能であり、その結果が`bool`となることを定義するコンセプトです。これは、`F, I1, I2`のオブジェクトをそれぞれ`pred, i1, i2`とすると、`bool c = pred(*i1, *i2)`の様な呼び出しが可能であることを表しています。
+最後に残ったのは`indirect_binary_predicate`というコンセプトです。  
+`indirect_binary_predicate<F, I1, I2>`は間接参照可能な型（イテレータやポインタ型）`I1, I2`の参照先の型によって`F`が呼び出し可能であり、その結果が`bool`となることを定義するコンセプトです。これは、`F, I1, I2`のオブジェクトをそれぞれ`pred, i1, i2`とすると、`bool c = pred(*i1, *i2)`の様な呼び出しが可能であることを表しています。
 
 C++STLでは、1つ以上の引数を受け取ってそれについて何かを判定してその結果を`bool`で返す、様な関数の事を述語（*predicate*）と呼んでいます。この場合の`F`は2つの引数を受け取る必要があるため二項述語（*binary predicate*）と呼ばれ、さらにその引数は間接参照（*indirect read*）の結果として与えられる、という事を`indirect_binary_predicate`という名前は表しています。
 
@@ -2376,7 +2381,7 @@ template<input_range R, class T, class Proj = identity>
   requires indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
 constexpr borrowed_iterator_t<R>
     find(R&& r, const T& value, Proj proj = {});
-                                ^^^^^^^^^^^^^^
+                             // ^^^^^^^^^^^^^^
 ```
 
 プロジェクションとは、入力シーケンスの1つの要素からその要素が内包する1つのメンバ変数を取り出す関数呼び出し可能なものの事を言います。ラムダ式はそのもっともわかりやすい例でしょう。
@@ -2388,7 +2393,8 @@ constexpr borrowed_iterator_t<R>
 vector<pair<int, double>> vec = { ... };
 
 // pairの1つ目のメンバでソートしたい
-sort(vec.begin(), vec.end(), [](const auto& p1, const auto& p2) { return p1.first < p2.first; });
+sort(vec.begin(), vec.end(), 
+     [](const auto& p1, const auto& p2) { return p1.first < p2.first; });
 ```
 
 ここでやりたい本来の事は`pair`のシーケンスの1つ目のメンバでソートを行う事ですが、実際に指定しているのは2つの`pair`オブジェクトの比較をどう行うか、という事を書かされています。別に比較がカスタマイズしたいわけではなく、`pair`の1つ目のメンバを取り出したいだけなのです。
@@ -2397,13 +2403,16 @@ sort(vec.begin(), vec.end(), [](const auto& p1, const auto& p2) { return p1.firs
 
 ```cpp
 // 比較演算子の指定を間違えた
-sort(vec.begin(), vec.end(), [](const auto& p1, const auto& p2) { return p1.first > p2.first; });
+sort(vec.begin(), vec.end(),
+     [](const auto& p1, const auto& p2) { return p1.first > p2.first; });
 
 // 比較するメンバを間違えた
-sort(vec.begin(), vec.end(), [](const auto& p1, const auto& p2) { return p1.first < p2.second; });
+sort(vec.begin(), vec.end(),
+     [](const auto& p1, const auto& p2) { return p1.first < p2.second; });
 
 // 比較する変数を間違えた
-sort(vec.begin(), vec.end(), [](const auto& p1, const auto& p2) { return p1.first < p1.first; });
+sort(vec.begin(), vec.end(),
+     [](const auto& p1, const auto& p2) { return p1.first < p1.first; });
 ```
 
 このようなカスタム比較を指定するこれまでのカスタマイズの方法は、特定のメンバ変数の引き当てと比較のカスタマイズという2つの事を同時に指定せざるを得ないために記述量が増え、些細な、しかし気付き辛いバグの原因となってしまっていました。
@@ -2451,6 +2460,8 @@ constexpr I find(I first, S last, const T& value, Proj proj = {}) {
 
 `std::invoke`は関数呼び出し可能なものから可能な限り関数呼び出しを行おうとします。そして、その中にはメンバ変数ポインタからの呼び出しが含まれています。これを利用すると、先ほどのソートは次のように書くことができます。
 
+\clearpage
+
 ```cpp
 // pairの1つ目のメンバでソートする
 ranges::sort(vec.begin(), vec.end(), {}, &pair<int, double>::first);
@@ -2487,8 +2498,10 @@ Rangeアルゴリズムにプロジェクションを何も指定しない場合
 
 ```cpp
 template<input_range R, class T, class Proj = identity>
-  requires indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
-                                                       ^^^^^^^^^
+  requires indirect_binary_predicate<ranges::equal_to, 
+                                     projected<iterator_t<R>, Proj>,
+                                  // ^^^^^^^^^
+                                     const T*>
 ```
 
 `indirect_binary_predicate`を含めて`indirect_xxx`というコンセプトがいくつかあるのですが、それらは基本的に`indirectly_readable`な型（間接参照可能な型）で使用するために設計されているため、「イテレータの間接参照結果を射影した結果」を直接用いることができません。`ranges::find`の場合は比較する値として`T`の値を受けますが、それはイテレータでもなくそれを間接参照しても意味はないので直接使えず、`const T*`を代わりに渡すことで解決しています。
@@ -2597,7 +2610,7 @@ namespace std::ranges {
 
 ### `empty_view<T>`の諸特性
 
-諸特性とは`view`あるいは`range`全般に共通して見出すことのできる性質で、利用するにあたって予め知っておくと便利なものです。しかし、`view`の種類や`view`の元となる`range`によって変化し、場合によってはどうなっているか判断するのが難しいものです。
+`view`の諸特性とは`view`あるいは`range`全般に共通して見出すことのできる性質で、利用するにあたって予め知っておくと便利なものです。しかし、`view`の種類や`view`の元となる`range`によって変化し、場合によってどうなっているか判断するのが難しい事があります。
 
 - `reference` : `T&`
 - `range`カテゴリ : `contiguous_range`
@@ -2616,6 +2629,8 @@ namespace std::ranges {
 - `borrowed_range` : `borrowed_range`コンセプトのモデルとなるか
 
 `const-iterable`であることは、`range`型`R`に対して`input_range<const R>`の様にコンセプトで表現されます。`range`を`const`にしても依然として`input_range`であるならば、それは`const-iterable`であり、その`range`オブジェクトの変更を伴わずに範囲をイテレートできます。ただし、`const-iterable`であることは、`const`な`range`の要素についての`const`性を必ずしも意味していないことに注意が必要です。特に、範囲を所有しないタイプの`view`型がそれに当たります。
+
+\clearpage
 
 ### `views::empty`
 
@@ -2708,9 +2723,7 @@ int main() {
 }
 ```
 
-この`views::single`はカスタマイゼーションポイントオブジェクトであり、引数の式`arg`によって`views::single(arg)`のように呼び出された時、`single_view<decay_t<decltype((arg))>>(arg)`を返します。
-
-ただし、このCPOは1引数しか受け付けないため、*in place*コンストラクタを呼び出すことはできません。
+この`views::single`はカスタマイゼーションポイントオブジェクトであり、引数の式`arg`によって`views::single(arg)`のように呼び出された時、`single_view<decay_t<decltype((arg))>>(arg)`を返します。ただし、このCPOは1引数しか受け付けないため*in place*コンストラクタを呼び出すことはできません。
 
 ## `iota_view`
 
@@ -2771,8 +2784,6 @@ int main() {
   for (int* p : iva) {
     std::cout << *p;  // 246810
   }
-
-  std::cout << '\n';
 
   std::list list = {1, 3, 5, 7, 9}; 
 
@@ -2847,6 +2858,8 @@ int main() {
 }
 ```
 
+\clearpage
+
 この`views::iota`はカスタマイゼーションポイントオブジェクトであり、引数の式`w`によって`views::iota(w)`のように呼び出された時、あるいは`w, b`によって`views::iota(w, b)`のように呼び出された時、その効果は次のようになります
 
 1. 1引数で呼ばれた場合 : `iota_view(w)`
@@ -2880,6 +2893,8 @@ int main() {
 ### `basic_istream_view`
 
 `istream_view<T>`は操作に対応する関数（Rangeファクトリ）であり、実体は`basic_istream_view`というクラスによって実装されています。
+
+\clearpage
 
 ```cpp
 namespace std::ranges {
@@ -3212,6 +3227,8 @@ namespace std::ranges {
 
 `filter_view`によるシーケンス生成は遅延評価されます。構築時に最初の要素だけが計算され、残りの要素はイテレータのインクリメントのタイミングで計算されます。
 
+\clearpage
+
 ```cpp
 filter_view fv{views::iota(1, 10), [](int n) { return n % 2 == 0; }};
 
@@ -3310,6 +3327,8 @@ namespace std::ranges {
 ### 遅延評価
 
 `transform_view`もまた、遅延評価によってシーケンスを生成します。イテレータの`opreator*`による間接参照のタイミングで要素の読み出しと変換の適用が行われます。
+
+\clearpage
 
 ```cpp
 std::ranges::transform_view tv{std::views::iota(1, 5), [](int n) { return n * 2; }};
@@ -3454,6 +3473,8 @@ int main() {
 
 `take_view`もまた、遅延評価によってシーケンスを生成します。ただ、`take_view`は元となる`range`の極薄いラッパーなので、ほとんどの操作はベースにあるイテレータの操作をそのまま呼び出すだけで、特別な事は行ないません。`take_view`が行なっている事はほぼその長さの管理だけです。それは主に`==`による終端チェック時に行われます。また、`std::counted_iterator`が使用される場合はそのためにインクリメントのタイミングで残りの距離の計算（単純なカウンタのデクリメントによる）が行われます。
 
+\clearpage
+
 ```cpp
 take_view tv{views::iota(1), 5};
 // take_vieww構築時には何もしない
@@ -3496,8 +3517,6 @@ int main() {
   for (int n : views::take(views::iota(1), 5)) {
     std::cout << n;
   }
-  
-  std::cout << '\n';
 
   // パイプラインスタイル
   for (int n : views::iota(1) | views::take(5)) {
@@ -3523,6 +3542,8 @@ int main() {
 ## `take_while_view`
 
 `take_while_view`は元となるシーケンスから指定された条件を満たす連続要素によるシーケンスを生成する`view`です。
+
+\clearpage
 
 ```cpp
 int main() {
@@ -3559,6 +3580,8 @@ namespace std::ranges {
 
 `take_while_view`もまた、遅延評価によってシーケンスを生成します。ただ、`take_while_view`は元となる`range`の極々薄いラッパーなので、ほとんどの操作はベースにあるイテレータの操作をそのまま呼び出すだけです。`take_while_view`が行なっている事は範囲終端の管理だけで、`==`による終端チェックのタイミングで現在の要素が条件を満たすか否かをチェックします。また、同時に現在の位置が元のシーケンスの終端に到達しているかもチェックすることでオーバーランを防止します。
 
+\clearpage
+
 ```cpp
 take_while_view tv{views::iota(1), [](int n) { return n < 7; }};
 // take_while_view構築時には何もしない
@@ -3588,7 +3611,8 @@ it == fin;
 - `range`カテゴリ : `R`のカテゴリに従う
 - `common_range` : ×
 - `sized_range` :  ×
-- `const-iterable` : `R`が`const-iterable`かつ`const P`と`R`のイテレータが`indirect_unary_predicate`である場合
+- `const-iterable` : `R`が`const-iterable`かつ`const P`と`R`のイテレータが  
+    `indirect_unary_predicate`である場合
 - `borrowed_range` : ×
 
 `take_while_view`は元の範囲`R`の薄いラッパではあるのですが、範囲の終端が条件`P`で指定されているために`sized`ではなく、番兵との`==`の比較時にそれをチェックすることから番兵型を自前で提供せざるを得ないため`common`でもありません。`borrowed`でもないのは、`filter_view`同様に`P`のオブジェクトを内部に保持しているためです。
@@ -3655,15 +3679,14 @@ auto it = ranges::begin(tv);
 
 `drop_view<R>`の`begin()`の呼び出しは`R`が`forward_range`であるとき、`begin()`の処理結果はキャッシュされます。これによって`drop_view`の`begin()`の計算量は償却定数となります。ただし、`R`に対して`const R`が`random_access_range`かつ`sized_range`である時、キャッシュは使用されず`begin()`メンバ関数は`const`修飾され、`drop_view`は`const`状態でもイテレート可能となります。なぜなら、`R`が`random_access_range`かつ`sized_range`である場合、その範囲の現在の長さの取得とイテレータの適切な進行操作の両方を`O(1)`で行う事ができるため、キャッシュを使用しなくても`range`コンセプトの要件を満たす事ができるためです。なお、入力が`input_range`であるときは、`begin()`の呼び出しは最初の一度だけ有効です（それ以降は`range`コンセプトのモデルとならなくなります）。
 
-### `droo_view<R>`の諸特性
+### `drop_view<R>`の諸特性
 
 - `reference` : `range_reference_t<R>`
 - `range`カテゴリ : `R`のカテゴリに従う
 - `common_range` : `R`が`common_range`の場合
 - `sized_range` :  `R`が`sized_range`の場合
 - `const-iterable` : `R`が`const-iterable`であり`random_access_range`かつ`sized_range`の場合
-- `borrowed_range` : `R`が`borrowed_range`の場合
-
+- `borrowed_range` : `R`が`borrowed_range`の
 `const-iterable`だけは少し複雑になっていますが、`drop_view`はイテレータ取得時に元のイテレータを進めて返すだけなので、元の`range`の性質をほぼそのまま受け継ぎます。
 
 ### `views::drop`
@@ -3718,9 +3741,7 @@ int main() {
 
 ### オーバーラン防止と遅延評価
 
-`drop_while_view`も`drop_view`と同様の方法によって遅延評価とオーバーランの防止を行なっています。
-
-すなわち、`drop_while_view`はそのイテレータの取得時（`begin()`の呼び出し時）に元となるシーケンスの先頭イテレータを条件を満たさない最初の要素まで進めて返します。その際、元のシーケンス上で終端チェックを行いながら進めることでオーバーランしないようになっています。これはC++20から追加された`ranges::find_if_not(base_view, pred)`を使用して行われます。
+`drop_while_view`も`drop_view`と同様の方法によって遅延評価とオーバーランの防止を行なっています。すなわち、`drop_while_view`はそのイテレータの取得時（`begin()`の呼び出し時）に元となるシーケンスの先頭イテレータを条件を満たさない最初の要素まで進めて返します。その際、元のシーケンス上で終端チェックを行いながら進めることでオーバーランしないようになっています。これはC++20から追加された`ranges::find_if_not(base_view, pred)`を使用して行われます。
 
 ```cpp
 std::ranges::drop_while_view dv{"     drop while view", [](char c) { return c == ' '; }};
@@ -3761,8 +3782,6 @@ int main() {
   for (char c : views::drop_while("     drop while view", skip_ws)) {
     std::cout << c;
   }
-  
-  std::cout << '\n';
 
   // パイプラインスタイル
   for (char c : "     drop while view" | views::drop_while(skip_ws)) {
@@ -3781,7 +3800,7 @@ int main() {
 int main() {
   std::vector<std::vector<int>> vecvec = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
 
-  ranges::join_view jv{vecvec};
+  join_view jv{vecvec};
   
   for (int n : jv) {
     std::cout << n; // 1234567891011
@@ -3802,8 +3821,6 @@ int main() {
   for (int n : jv1) {
     std::cout << n; // 1234567891011
   }
-
-  std::cout << '\n';
 
   std::deque<int> arrdeq[] = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
 
@@ -3839,6 +3856,8 @@ namespace std::ranges {
 `join_view`によるシーケンスもまた遅延評価によって生成されます。`join_view`の仕事の殆どは元となるシーケンスの内側の`range`同士を接続することにあり、イテレータのインクリメントのタイミングでそれを行います。
 
 `join_view`は元となるシーケンスの内側`range`のイテレータを利用して1つの内側`range`のイテレートを行います。そのイテレータが終端に達した時（1つの内側`range`の終端に達した時）、外側`range`のイテレータを1つ進めてそこから次の内側`range`のイテレータを取得します。ただ、そのままだと内側`range`が空の場合に上手くいかないため、すぐに内側`range`の終端チェックを行い空でない内側`range`が見つかるまで外側`range`をイテレートします。そうして外側イテレータが終端に達したとき、そこが`join_view`の終端となります。
+
+\clearpage
 
 ```cpp
 std::vector<std::vector<int>> vecvec = { {1, 2, 3}, {}, {}, {4}, {5, 6, 7, 8, 9}, {10, 11}, {} };
@@ -4022,8 +4041,10 @@ auto outer_it = std::ranges::begin(sv);
 // 外側イテレータの取得、特に何もしない
 
 ++outer_it;
-// 外側イテレータのインクリメント時、元のシーケンスから次に出現するデリミタを探す
+// 外側イテレータのインクリメント時は
+// 元のシーケンス上で次に出現するデリミタ位置を探す
 // 内部rangeは"lazy_split_view"->"takes"へ進む
+
 
 auto inner_range = *outer_it;
 // 内側rangeの取得、特に何もしない
@@ -4032,20 +4053,19 @@ auto inner_it = std::ranges::begin(inner_range);
 // 内側イテレータの取得、特に何もしない
 
 ++inner_it;
-// 内側イテレータのインクリメントは、元のシーケンスのイテレータのインクリメントとほぼ等価
+// 内側イテレータのインクリメントは
+// 元のシーケンスのイテレータのインクリメントとほぼ等価
 
 char c = *inner_it; // a
 // 元のシーケンスのイテレータのデリファレンスと等価
 
 bool f = inner_it == std::ranges::end(inner_range); // false
 // 内側rangeの終端チェック
-// 元のシーケンスの終端と、デリミタが空かどうか、現在の位置でデリミタが出現しているかどうか、を調べる
+// 元のシーケンスの終端と、デリミタが空かどうか、
+// 現在の位置でデリミタが出現しているかどうか、を調べる
 ```
 
 `lazy_split_view`の結果が複雑となる一因は、この遅延評価を行うことによるところがあります。
-
-
-
 
 ### `input_range`の分割
 
@@ -4097,18 +4117,19 @@ bool b = outer_it == outer_end;
 // 2. 一番最後の要素がデリミタそのものであるか
 
 auto inner = *outer_it;
-// 内部rangeの取得、特に何もしない
+// 内側rangeの取得、特に何もしない
+
 
 auto inner_it = ranges::begin(inner);
-// 内部イテレータ取得、特に何もしない
+// 内側イテレータ取得、特に何もしない
 
 ++inner_it;
-// 内部イテレータの進行は、元rangeのイテレータを進める
+// 内側イテレータの進行は、元rangeのイテレータを進める
 
 auto inner_end = ranges::end(inner);
 
 bool b2 = inner_it == inner_end;
-// 内部rangeの終端チェック時、以下の事をチェック
+// 内側rangeの終端チェック時、以下の事をチェック
 // 1. 元rangeの終端に到達しているか
 // 2. デリミタ長が0ではないか
 // 3. 現在位置にデリミタ要素が現れていないか
@@ -4301,7 +4322,8 @@ split_view sv{"split_view takes a view and a delimiter", ' '};
 
 auto outer_it = ranges::begin(sv);
 // 外側イテレータの取得時、最初にデリミタ列に一致する部分範囲を計算
-// 外側イテレータは、文字列先頭位置と次に出現するデリミタ位置をイテレータで管理
+// 外側イテレータは、文字列先頭位置と次に出現するデリミタ位置を
+// イテレータで管理している
 
 ++outer_it;
 // 外側イテレータのインクリメント時、次に出現するデリミタ列を探し更新
@@ -4310,18 +4332,20 @@ auto outer_it = ranges::begin(sv);
 
 bool b = outer_it == ranges::end(sv); // false
 // 外側range終端チェック
-// 元のシーケンス上での終端チェックと、現在の位置でデリミタが出現しているかどうかを調べる
+// 元のシーケンス上での終端チェックと
+// 現在の位置でデリミタが出現しているかどうかを調べる
 
 auto inner_range = *outer_it;
 // 内側rangeの取得、subrangeを作って返す
-// 現在の文字列先頭位置イテレータ(cur)と次に出現するデリミタ列の先頭イテレータ(next)
-// から、subrange{cur, next}を返す
+// 現在の文字列先頭位置イテレータ(cur)と
+// 次に出現するデリミタ列の先頭イテレータ(next)から、
+// subrange{cur, next}を返す
 
 auto inner_it = ranges::begin(inner_range);
 // 内側イテレータは元のrangeのイテレータを返す
 
 ++inner_it;
-// 内側イテレータのインクリメントは、元のシーケンスのイテレータのインクリメント
+// 内側イテレータのインクリメントは、元の範囲のイテレータのインクリメント
 
 char c = *inner_it; // a
 // 元のシーケンスのイテレータのデリファレンスと等価
@@ -4352,6 +4376,8 @@ char c = *inner_it; // a
 - `borrowed_range` : ◯
 
 内側`range`とそのイテレータが何もしなくなったことによって、内側`range`の性質が大きく改善されています。これによって、文字列分割への適性が大きく向上しています。
+
+\clearpage
 
 ### `views::split`
 
@@ -4448,7 +4474,8 @@ int main() {
     | views::take(10);
 
   // イテレータ型と終端イテレータ型が合わないためエラー 
-  std::vector<int> vec(ranges::begin(even_seq), ranges::end(even_seq)); // ng
+  std::vector<int> vec(ranges::begin(even_seq), 
+                       ranges::end(even_seq));  // ng
   
   common_view common{even_seq};
   
@@ -4497,6 +4524,8 @@ int main() {
   //auto sum3 = std::ranges::accumulate(even_seq, 0u);
 }
 ```
+
+\clearpage
 
 `common_view`は次の様に宣言されています。
 
@@ -4561,7 +4590,8 @@ int main() {
     | views::take(10)
     | views::common;
 
-  std::vector<int> vec(ranges::begin(even_seq), ranges::end(even_seq)); //ok
+  std::vector<int> vec(ranges::begin(even_seq), 
+                       ranges::end(even_seq));  //ok
   
   for (int n : vec) {
     std::cout << n; // 2468101214161820
@@ -4790,7 +4820,8 @@ auto it = ranges::begin(ev1);
 // インクリメント等進行操作はほぼ元のイテレータそのまま
 
 auto&& elem = *it;
-// 間接参照時に元のイテレータの間接参照結果にget<N>を適用して1要素だけを取り出す
+// 間接参照時に元のイテレータの間接参照結果に
+// get<N>を適用して1要素だけを取り出す
 ```
 
 `elements_view`が行う殆どの事はそのイテレータの間接参照時に集中しており、そのほかの操作は元のイテレータの薄いラッパとなります。
@@ -4884,6 +4915,8 @@ C++20からはエイリアステンプレートの実引数推論が導入され
 
 さらに、`keys_view/values_view`に対応するRangeアダプタオブジェクトも用意されています。
 
+\clearpage
+
 ```cpp
 using namespace std::string_view_literals;
 
@@ -4925,6 +4958,22 @@ namespace std::ranges::views {
 ```
 
 連想コンテナについては、これらを用いると簡潔に書くことができる様になります。
+
+\clearpage
+
+# おわりに
+
+他のモダンな言語でのシーケンス操作に触れたことがある人には、C++20 Rangeライブラリの機能、特に`view`は物足りなく映ることでしょう。全部で17個しかない`view`の中には、例えば`zip`や`concat`等のよく利用されるものが含まれていませんから・・・
+
+とはいえ、Rangeライブラリはこれで終わりではありません。Rangeライブラリのほとんどの部分は*range-v3*というライブラリでの経験をベースにしています（そもそも、提案者がその作者のEric Nieblerさんだったりします）が、それは巨大なライブラリであり、そのすべてを一度にC++に導入しようとすると膨大な作業が必要となります。ともすれば、十分な議論を尽くすことができず、将来に遺恨を残すことになりかねません。
+
+そのため、C++20ではRangeライブラリの基礎となるコンセプトとユーティリティ、及び基本的な`view`だけに範囲を絞ったうえで提案され、採択されています。C++20のRangeライブラリが物足りないのはあえてのことです。
+
+ちなみに、この本を執筆している2021年6月終盤の時点で既にC++23にいくつかの新機能やバグ修正が採択されており、その中にはRangeライブラリに関わる物がいくつかあります。そして、その全てがバグ修正であり一部はC++20に対する欠陥報告として遡及して適用されています。C++20 Rangeライブラリは*range-v3*の経験をベースに時間をかけて議論されてきたはずですが、それでも決して少なくはない問題を抱えてしまっていたわけです。この事実からも、慎重な議論と検討が必要であることが理解できるかと思います。
+
+C++23に向けては既にいくつかの`view`の提案が出されており、本格的にRangeライブラリの拡張が始まる予定です。そこには`view`だけではなく、`range`に対する*Algorithm*（`accumulate, inner_product`などの様な操作）や*Action*（`range`に直接作用する`sort, copy`などの操作）も含まれています。「P2214R0 A Plan for C++23 Ranges(http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2214r0.html)」に展望が描かれています。
+
+とは言えやはり、C++は長期感使われることを見越した上で機能が安定していることを重視しており、議論は慎重に十分な時間をかけて行われます。そのため一度に全部とはいかず、優先度を付けながら、すこしづつ新しいものを導入していく事になります。
 
 \clearpage
 
