@@ -194,7 +194,7 @@ int main() {
 
 ## 特殊化のアクセスチェック
 
-## `default`コピーコンストラクタの`const`ミスマッチの解消
+## `default`コピーコンストラクタの`const`ミスマッチを`delete`するようにする
 
 - P0641R2 Resolving Core Issue #1331 (const mismatch with defaulted copy constructor)  
   (https://wg21.link/P0641R2)
@@ -316,6 +316,91 @@ A f(int* p) {
 この様な変換は多くの場合にバグである可能性が高いことから、コードの破損よりもそのような変換をコンパイル時に検出できるメリットの方が大きいと判断されたようです。なお、これはC++17へのDRです。
 
 ## 暗黙のムーブ対象の拡大
+
+- P1825R0 Merged wording for P0527R1 and P1155R3 (https://wg21.link/P1825R0)
+- P0527R1 Implicitly move from rvalue references in return statements (https://wg21.link/P0527R1)
+- P1155R3 More implicit moves (https://wg21.link/P1155R3)
+
+暗黙のムーブとは、ある関数から値をコピーして返す場合に暗黙的にムーブを行うことでコピーを省略する最適化の事です。C++17で規定された値のコピー省略保証（RVO）とやることは同じですが対象は少し異なります。
+
+RVOが`return`ステートメントで直接構築されたオブジェクトだけを対象としていたのに対して、暗黙のムーブは関数内のローカル変数などにも対象を広げるものです。
+
+(N)RVOも含めた暗黙のムーブと呼ばれる最適化はC++11から許可されました。それが起こると関数からの`return`に際するコピーが省略され、コピーが一切できないような型のオブジェクトを関数から値で返すことができます。
+
+```cpp
+struct Widget {
+  Widget(Widget&&);
+};
+
+Widget one(Widget w) {
+  return w;  // 暗黙ムーブ、C++11から
+}
+
+struct RRefTaker {
+  RRefTaker(Widget&&);
+};
+
+RRefTaker two(Widget w) {
+  return w;  // 暗黙ムーブされて構築、C++11(CWG1579)
+}
+```
+
+これらはC++11の時点で許可されていた暗黙のムーブによる最適化の一例です。関数ローカルの変数（値で宣言された関数引数）を自動でムーブして戻り値を返すことができます。
+
+C++17までは、暗黙のムーブ対象は関数ローカルのオブジェクト（値、参照やポインタでない）だけでした。C++20からは、右辺値参照でバインドされたオブジェクトが暗黙のムーブ対象になるようになります。
+
+```cpp
+RRefTaker three(Widget&& w) {
+  return w;  // 暗黙ムーブ、C++20(P0527)
+}
+```
+
+さらに、暗黙のムーブが起こるコンテキストが拡張され、`throw`式やコンストラクタによらない暗黙変換が起こる場合にも暗黙のムーブが行われるようになります。
+
+```cpp
+void four(Widget w) {
+  throw w;  // 暗黙ムーブ、C++20(P1155)
+}
+
+struct From {
+  From(Widget const &);
+  From(Widget&&);
+};
+
+struct To {
+  operator Widget() const &;
+  operator Widget() &&;
+};
+
+From five() {
+  Widget w;
+  return w;  // 暗黙ムーブ、C++11
+}
+
+Widget six() {
+  To t;
+  return t;  // 暗黙ムーブ、C++20(P1155)
+}
+
+struct Fowl {
+  Fowl(Widget); // 値で受け取るコンストラクタ
+};
+
+Fowl seven() {
+  Widget w;
+  return w;  // 暗黙ムーブ、C++20(P1155)
+}
+
+// DerivedはBaseを公開継承しているとき
+Base eight() {
+  Derived result;
+  return result;  // 暗黙ムーブ（基底クラスへの変換）、C++20(P1155)
+}
+```
+
+暗黙のムーブが可能なローカル変数を`return`する時、その戻り値型を構築するためのオーバーロード解決において、対象変数を右辺値（*rvalue*）としてオーバーロード解決を行い、それによって選択されたコンストラクタ（変換関数）を選択することによって暗黙のムーブが実行されるようになります。
+
+ただし、これら暗黙のムーブは値のコピー省略保証とは異なり必ず実行されるものではなく、あくまでコピー省略による最適化を明示的に許可するものであり、実装によっては行われない可能性があります。
 
 ## 異なる例外指定がなされた`default`メンバ関数の許可
 
