@@ -150,7 +150,10 @@ okuduke:
 C++17より、ネストした名前空間定義を`A::B::C`のように`::`で繋げて簡略化することができます。しかし、`inline`名前空間はその対象ではなく、ネストした名前空間定義に`inline`名前空間が挟まると、その定義を分割しなければなりませんでした。
 
 ```cpp
+// ほんとはこう書きたいけど
+// namespace A::B::C { ... }
 namespace A {
+  // inline名前空間が間にあるので個別定義せざるを得ない
   inline namespace B {
     namespace C {
       int f(int n);
