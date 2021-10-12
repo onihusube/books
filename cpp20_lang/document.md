@@ -147,7 +147,7 @@ okuduke:
 
 ## `__VA_OPT__`
 
-- P0306R4 Comma omission and comma deletion (http://wg21.link/p0306r4)
+- P0306R4 Comma omission and comma deletion (https://wg21.link/p0306r4)
 
 可変引数マクロを実現する`__VA_ARGS__`は与えられた引数がゼロの場合には空で置換され、場合によっては可変引数が来ることを想定して置いておいたカンマが余ってしまうというようなことがありました。
 
@@ -180,7 +180,7 @@ SDEF(bar, 1, 2);  // S bar = {1, 2};
 
 ## 添字演算子内カンマの非推奨化
 
-- P1161R3 Deprecate uses of the comma operator in subscripting expressions (http://wg21.link/p1161r3)
+- P1161R3 Deprecate uses of the comma operator in subscripting expressions (https://wg21.link/p1161r3)
 
 C++では添字演算子（`[]`）は複数の引数をとることはできませんが、カンマ演算子（`,`）オーバーロードによって擬似的にそのようなことを行えます。これは一部のテンプレートEDSLライブラリなどにおいて活用されていました（実際にはオープンソースコードベースの調査ではそのようなコードは見つからなかったようです）。
 
@@ -214,7 +214,7 @@ int main() {
 
 ## トリビアルな型のオブジェクトを暗黙的に構築する
 
-- P0593R6 Implicit creation of objects for low-level object manipulation (http://wg21.link/p0593r6)
+- P0593R6 Implicit creation of objects for low-level object manipulation (https://wg21.link/p0593r6)
 
 C++にはオブジェクトの生存期間（*lifetime*）という概念があり、オブジェクトは作成された時にその生存期間が開始されます。生存期間外のオブジェクトの操作は未定義動作となり、それによってC言語では問題のないプログラムがC++では未定義動作となることがあります。
 
@@ -463,7 +463,7 @@ DRとされた問題については一部のコンパイラは早期に実装し
 
 ## `new`式における配列要素数の推論
 
-- Array size deduction in new-expressions (http://wg21.link/p1009r2)
+- Array size deduction in new-expressions (https://wg21.link/p1009r2)
 
 配列の要素数について、動的ではない（`new`によらない）配列を`{}`によって初期化する際にはその要素数が初期化子の数から推定されます。しかし、同じことを`new`によって確保される配列に対して行うと要素数が推定できずにコンパイルエラーとなっていました。
 
@@ -480,7 +480,7 @@ int* p = new int[]{1, 2, 3};  // ng、要素数が推定できない
 
 ## ポインタ型から`bool`への変換を縮小変換とする
 
-- P1957R2 Converting from `T*` to `bool` should be considered narrowing (re: US 212) (http://wg21.link/p1957r2)
+- P1957R2 Converting from `T*` to `bool` should be considered narrowing (re: US 212) (https://wg21.link/p1957r2)
 
 C++17で導入された`std::variant`には当初、ポインタから`bool`への暗黙変換によって意図しない構築がなされるバグがありました。
 
