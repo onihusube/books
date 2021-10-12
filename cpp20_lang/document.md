@@ -145,6 +145,30 @@ okuduke:
 
 ## 入れ子`inline`名前空間定義の簡易化
 
+- P1094R2 Nested Inline Namespaces (https://wg21.link/p1094r2)
+
+C++17より、ネストした名前空間定義を`A::B::C`のように`::`で繋げて簡略化することができます。しかし、`inline`名前空間はその対象ではなく、ネストした名前空間定義に`inline`名前空間が挟まると、その定義を分割しなければなりませんでした。
+
+```cpp
+namespace A {
+  inline namespace B {
+    namespace C {
+      int f(int n);
+    }
+  }
+}
+```
+
+この制限は不便だったため、ネストした名前空間の簡易定義構文を拡張し、各段の名前空間名の前に`inline`キーワードを入れることでその名前空間を`inline`名前空間としてネストさせることができるようになります。
+
+```cpp
+namespace A::inline B::C {
+  int f(int n);
+}
+```
+
+この場合、`B`だけが`inline`名前空間となり、`A, C`は通常の名前空間となります。
+
 ## `__VA_OPT__`
 
 - P0306R4 Comma omission and comma deletion (https://wg21.link/p0306r4)
