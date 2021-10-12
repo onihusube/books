@@ -288,6 +288,58 @@ int main() {
 
 ## 特殊化のアクセスチェック
 
+- P0692R1 Access Checking on Specializations (https://wg21.link/p0692r1)
+
+クラス内で宣言されているローカルクラスがプライベートメンバである時、テンプレートの文脈からそれを参照する際の仕様と挙動の非一貫性が長いこと存在していました。
+
+```cpp
+template<class T>
+struct trait;
+
+class C1 {
+  class impl; // クラス内ローカルクラス
+};
+
+// C++標準としては許可されない(implがprivateのため)
+// しかし実際にはほぼ全てのコンパイラでエラーにならない
+template<>
+struct trait<C1::impl>;
+```
+
+プライベートローカルクラスに対するテンプレートの特殊化は、そのクラス外からは許可されません。しかし実際には、多くのコンパイラがそれを許可していました。ここで、このローカルクラス（`impl`）をローカルクラステンプレートにすると、コンパイラ間でも挙動に差異が生じます。
+
+```cpp
+template<class T>
+struct trait;
+
+class C2 {
+  template<class U>
+  struct impl;
+};
+
+// C++標準としては許可されない(implがprivateのため)
+// ng : clang, icc
+// ok : gcc, msvc
+template<class U>
+struct trait<C2::impl<U>>;
+```
+
+プライベートローカルクラステンプレートを特殊化した上でクラス外から参照しようとすると、calngやiccでは許可されないのに対して、gcc,msvcでは許可されます。
+
+C++20では、標準でプライベートローカルクラス（テンプレート）のテンプレートの文脈からの参照が許可され、標準と実装の差異及び実装間の差異がプログラマにとって望ましい形で解消されます。それによって、上記2種類のサンプルはどちらも標準仕様に則った正しいコードとなります。
+
+```cpp
+// C++20より、どちらもok
+
+template<>
+struct trait<C1::impl>;
+
+template<class U>
+struct trait<C2::impl<U>>;
+```
+
+これらのことは標準のいくつかの提案を実装しようとした時に問題となり、C++20での例として`<ranges>`の各種`view`のイテレータ型があります。`view`のイテレータ型はほとんどが`view`クラスのプライベートローカルクラステンプレートとして定義されており、この変更がなければそれらの型に対して`std::iterator_traits`をはじめとする`trait`テンプレートを適用する事が合法的かつポータブルに行えませんでした。
+
 ## `default`コピーコンストラクタの`const`ミスマッチを`delete`するようにする
 
 - P0641R2 Resolving Core Issue #1331 (const mismatch with defaulted copy constructor)  
