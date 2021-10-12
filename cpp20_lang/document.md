@@ -151,7 +151,37 @@ okuduke:
 
 ## 添字演算子内カンマの非推奨化
 
+- P1161R3 Deprecate uses of the comma operator in subscripting expressions (http://wg21.link/p1161r3)
+
+C++では添字演算子（`[]`）は複数の引数をとることはできませんが、カンマ演算子（`,`）オーバーロードによって擬似的にそのようなことを行えます。これは一部のテンプレートEDSLライブラリなどにおいて活用されていました（実際にはオープンソースコードベースの調査ではそのようなコードは見つからなかったようです）。
+
+C++20からは将来の添字演算子の可変長引数化に向けて、添字演算子にカンマ区切りで複数の引数を渡す事が非推奨とされます。同じように書きたい場合、`()`でそのようなカンマ区切りの引数リストを囲う事が推奨されます。
+
+```cpp
+template<typename A, typename I>
+void f(A arr, I x, I y) {
+  arr[x, y];    // C++20から非推奨
+  arr[(x, y)];  // ok
+}
+```
+
+非推奨化といってもコンパイルエラーとなるわけではありませんが、警告は出るようになるでしょう。
+
+これは、`std::mdspan`（多次元配列版`std::span`）で可変長`[]`オーバーロードを提供するための変更の第一歩です。
+
 ### C++23 Multidimensional subscript operator
+
+- P2128R6 Multidimensional subscript operator (https://wg21.link/p2128r6)
+
+この変更に引き続いて、C++23では可変長引数添字演算子のオーバーロードが許可されます。それによって、`[]`の扱いは関数呼び出し演算子`()`と全く同一になります。
+
+```cpp
+int main() {
+  int buffer[2*3*4]{};
+  auto s = std::mdspan<int, std::extents<2, 3, 4>>(buffer);
+  s[1, 1, 1] = 42;
+}
+```
 
 ## トリビアルな型のオブジェクトを暗黙的に構築する
 
