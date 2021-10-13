@@ -143,6 +143,63 @@ okuduke:
 
 ## `using enum`
 
+- P1099R5 Using Enum (https://wg21.link/p1099r5)
+
+C++11で導入された`enum class`は列挙値に対する名前空間みたいなものだと思うことができます。ただし、名前空間とは異なり列挙値を参照するにはその`enum class`名を省略することができません。`switch`文など同じ`enum class`の列挙値を何度も参照する場合にはこれは煩雑です。そのため、名前空間同様に`enum class`名を`using`することで省略できるようになります。
+
+```cpp
+// スコープ付き列挙型
+enum class rgba_color_channel { 
+  red, green, blue, alpha
+};
+
+// C++17まで、列挙型名を省略できない
+std::string_view to_string(rgba_color_channel channel) {
+  switch (channel) {
+    case rgba_color_channel::red:   return "red";
+    case rgba_color_channel::green: return "green";
+    case rgba_color_channel::blue:  return "blue";
+    case rgba_color_channel::alpha: return "alpha";
+  }
+}
+
+// C++20、using enum
+std::string_view to_string(rgba_color_channel channel) {
+  switch (channel) {
+    using enum rgba_color_channel;  // 名前空間のusingと似た働きをする
+
+    case red:   return "red";
+    case green: return "green";
+    case blue:  return "blue";
+    case alpha: return "alpha";
+  }
+}
+```
+
+これは通常の（スコープなし）列挙型に対しても使用可能です。それは、クラス（構造体）の中で入れ子定義されている列挙型をクラス外部で可視にするために使用できます。また、特定の列挙値だけを`using`することもできます。
+
+```cpp
+class foo {
+  enum bar {
+    A, B, C
+  };
+};
+
+enum class num {
+  one, two, three
+};
+
+int main() {
+  using enum foo::bar;
+
+  auto en = A;  // ok
+
+  using enum num::one;
+
+  auto n = one; // ok
+}
+```
+
 ## 入れ子`inline`名前空間定義の簡易化
 
 - P1094R2 Nested Inline Namespaces (https://wg21.link/p1094r2)
@@ -535,7 +592,7 @@ int main() {
 
 *destroying operator delete*を呼び出すために特殊なことをする必要はなく`delete`式がそれを判断してくれます。クラス（ここでは`S`）が仮想デストラクタを持たない場合は`delete`式の効果は単純にデストラクタ呼び出しをスキップして*destroying operator delete*を呼び出します。クラスが仮想デストラクタを持つ場合、`delete`式に指定されたポインタの動的型（実際の最派生オブジェクト型）に定義された*destroying operator delete*を呼び出します（これは通常の仮想関数呼び出しと同じことをします）。なお、`delete`式が*destroying operator delete*を考慮するかどうかはコンパイル時に判定することができるため、これによってそのほかの`delete`式にオーバーヘッドが追加される事はありません。
 
-*destroying operator delete*は例えば、`operator new`とともにオーバーロードする事であるクラスのヒープへの構築・破棄の状況をログとして出力したりなどに活用できるかもしれません。また、次のようなディスパッチを行うこともできます。
+*destroying operator delete*は例えば、`operator new`とともにオーバーロードする事であるクラスのヒープへの構築・破棄の状況をログとして出力したり、可変サイズオブジェクトの安全な実装などに活用できます。また、次のようなディスパッチを行うこともできます。
 
 ```cpp
 struct base {
