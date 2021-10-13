@@ -201,9 +201,7 @@ SDEF(foo);        // S foo;
 SDEF(bar, 1, 2);  // S bar = {1, 2};
 ```
 
-`__VA_OPT__(tokens...)`は`__VA_ARGS__`の数が0の時には空で置換され、1以上の時にかっこの中の`tokens...`へ置換されます。これによって、引数の数に応じてカンマを置く置かないなど柔軟な置換ができるようになります。
-
-## destroying operator delete
+`__VA_OPT__(tokens...)`は可変引数マクロ（引数を受け取るマクロのうち、`...`を含むもの）の定義部分で使用でき、`__VA_ARGS__`の数（すなわち実引数の数）が0の時には空で置換され、1以上の時にかっこの中の`tokens...`へ置換されます。これによって、引数の数に応じてカンマを置く置かないなど柔軟な置換ができるようになります。
 
 ## 添字演算子内カンマの非推奨化
 
@@ -480,6 +478,90 @@ X{}.foo();        // ok
 
 これは、`std::invoke`の使用時に恩恵を感じることがあるかもしれません。`std::invoke`は統一的な関数呼び出しを行うものですが、その呼び出し方法の1つにメンバポインタからの呼び出しがあります。
 
+## destroying operator delete
+
+- P0722R3 Efficient sized delete for variable sized classes (https://wg21.link/p0722r3)
+
+`delete`式は指定されたポインタの参照先にあるオブジェクトを破棄（デストラクタ呼び出し）してから`operator delete`によってそのメモリ領域を解放します。あるクラスについて`delete`演算子をオーバーロードしている場合、そのユーザー定義`delete`が呼ばれた時には対応するオブジェクトは破棄済みであり、クラスのメンバに安全にアクセスすることはできません。
+
+```cpp
+struct S {
+  std::string str;
+
+  void operator delete(void* p) {   // #1
+    // 未定義動作！
+    const S& self = *static_cast<S*>(p);
+    std::cout << self->str;
+
+    ::operator delete(p);
+  }
+};
+
+int main() {
+  S* p = new S{};
+
+  // Sのデストラクタ呼び出しの後#1が呼び出される
+  delete p;
+}
+```
+
+このような場合にオーバーロード`delete`からクラスメンバへアクセスしたいユースケースがあり、それを許可するために`operator delete`に新しい形式が追加されます。追加される形式は、2つ目の引数に`std::destroying_delete_t`を取るもので、その形式でオーバーロードしておくと`delete`式はデストラクタ呼び出しを省略した上でユーザー定義`operator delete`を呼び出すようになります。
+
+```cpp
+struct S {
+  std::string str;
+
+  void operator delete(void* p, std::destroying_delete_t) {  // #1
+    // ok、安全に参照できる
+    // まだデストラクタは呼ばれていない
+    const S& self = *static_cast<S*>(p);
+    std::cout << self.str;
+
+    // デストラクタ呼び出しをしなければならない
+    std::destroy(self);
+    ::operator delete(p);
+  }
+};
+
+int main() {
+  S* p = new S{};
+
+  // Sのデストラクタは呼ばれずに#1が呼び出される
+  delete p;
+}
+```
+
+`std::destroying_delete_t`はタグ型でありその値に意味はありません。この形式のオーバーロードのことを*destroying operator delete*と呼びます。
+
+*destroying operator delete*を呼び出すために特殊なことをする必要はなく`delete`式がそれを判断してくれます。クラス（ここでは`S`）が仮想デストラクタを持たない場合は`delete`式の効果は単純にデストラクタ呼び出しをスキップして*destroying operator delete*を呼び出します。クラスが仮想デストラクタを持つ場合、`delete`式に指定されたポインタの動的型（実際の最派生オブジェクト型）に定義された*destroying operator delete*を呼び出します（これは通常の仮想関数呼び出しと同じことをします）。なお、`delete`式が*destroying operator delete*を考慮するかどうかはコンパイル時に判定することができるため、これによってそのほかの`delete`式にオーバーヘッドが追加される事はありません。
+
+*destroying operator delete*は例えば、`operator new`とともにオーバーロードする事であるクラスのヒープへの構築・破棄の状況をログとして出力したりなどに活用できるかもしれません。また、次のようなディスパッチを行うこともできます。
+
+```cpp
+struct base {
+  // destroying operator delete宣言 #1
+  void operator delete(base* ptr, std::destroying_delete_t);
+};
+
+struct derived : base {
+  int n;
+};
+
+// #1に対応する定義
+void base::operator delete(base* ptr, std::destroying_delete_t) {
+  derived* pd = static_cast<derived*>(ptr);
+  // derivedのデストラクタを呼び出し、その領域を解放する
+  std::destroy(*pd);
+  ::operator delete(pd);
+}
+
+int main() {
+  base* p = new derived{};
+  // baseには仮想デストラクタが無いが、正しく破棄と解放が行われる
+  delete p;
+}
+```
+
 # Defact Report
 
 欠陥報告（*Defact Report* : DR）とは、仕様に対する欠陥（バグ）の報告に伴う解決のための提案であり、その変更は過去のバージョンに遡って適用されます。
@@ -717,6 +799,7 @@ P0929はこの問題を解決するものであり、関数や配列などの宣
 
 - cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
+- cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - yohhoyの日記(https://yohhoy.hatenadiary.jp/)
 
 表紙は友人のKさんに書いていただきました。可愛いキノコをありがとうございました！
