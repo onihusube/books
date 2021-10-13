@@ -141,6 +141,39 @@ okuduke:
 
 ## ビットフィールドのデフォルトメンバ初期化
 
+- P0683R1 Default member initializers for bit-fields (https://wg21.link/p0683r1)
+
+通常のメンバ変数に対するデフォルトメンバ初期化はC++11から可能になっていましたが、ビットフィールドに対しては許可されていませんでした。
+
+メンバ変数に対するデフォルトメンバ初期化の利便性をビットフィールドにももたらすべく、これができるようになります。
+
+```cpp
+struct S {
+  int n1 = 10;    // ok
+  int n2{10};     // ok
+  int b1 : 5 = 0; // C++20からok
+  int b2 : 6 {0}; // C++20からok
+};
+```
+
+ただし、ビットフィールドの`:`の後の幅の指定は文法上定数式を指定可能なため任意の式が来る可能性があり、後方互換を保つためにデフォルトメンバ初期化のつもりの構文でもそうパースされない場合があります。その場合は、幅を指定する式を`()`でくくったうえでデフォルトメンバ初期化を書く必要があります。
+
+```cpp
+int a;
+const int b = 0;
+
+struct S {
+  // 曖昧となる例
+  int y1 : true ? 8 : a = 42;      // ok、初期化されていない
+  int y2 : true ? 8 : b = 42;      // ng、b(const int)に代入できない
+  int z1 : 1 || new int { 0 };     // ok、初期化されていない
+
+  // ()でくくって曖昧さを解消する
+  int y3 : (true ? 8 : b) = 42;    // ok、42で初期化
+  int z2 : (1 || new int) { 0 };   // ok、0で初期化
+};
+```
+
 ## `using enum`
 
 - P1099R5 Using Enum (https://wg21.link/p1099r5)
@@ -166,7 +199,7 @@ std::string_view to_string(rgba_color_channel channel) {
 // C++20、using enum
 std::string_view to_string(rgba_color_channel channel) {
   switch (channel) {
-    using enum rgba_color_channel;  // 名前空間のusingと似た働きをする
+    using enum rgba_color_channel;  // using namespaceと似た働きをする
 
     case red:   return "red";
     case green: return "green";
@@ -176,10 +209,10 @@ std::string_view to_string(rgba_color_channel channel) {
 }
 ```
 
-これは通常の（スコープなし）列挙型に対しても使用可能です。それは、クラス（構造体）の中で入れ子定義されている列挙型をクラス外部で可視にするために使用できます。また、特定の列挙値だけを`using`することもできます。
+これは通常の（スコープなし）列挙型に対しても使用可能です。それは、クラス（構造体）の中で入れ子定義されている列挙型をクラス外部で可視にするために使用できます。また、特定の列挙値だけを`using`することもできます（この時は`using enum`ではありません）。
 
 ```cpp
-class foo {
+struct foo {
   enum bar {
     A, B, C
   };
@@ -194,7 +227,8 @@ int main() {
 
   auto en = A;  // ok
 
-  using enum num::one;
+  // 特定の列挙値のusing
+  using num::one;
 
   auto n = one; // ok
 }
