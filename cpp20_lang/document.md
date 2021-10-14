@@ -133,6 +133,68 @@ okuduke:
 
 ## 初期化式の指定
 
+C++17にて、`if, switch`文において初期化式を指定できるようになりましたが、範囲`for`文はその対象ではありませんでした。
+
+```cpp
+auto foo() -> std::vector<int>;
+void bar(int, std::size_t);
+
+int main() {
+  // 範囲forでカウンタを使用したい
+  {
+    std::size_t i = 0;
+    for (const auto& x : foo()) {
+      bar(x, i);
+      ++i;
+    }
+  }
+}
+```
+
+C++20では範囲`for`でも初期化式を取れるようになり、`for (init; decl : expr) {...}`のような文法で`init`のところに初期化式を指定します。
+
+```cpp
+int main() {
+  for (std::size_t i = 0; const auto& x : foo()) {
+    bar(x, i);
+    ++i;
+  }
+}
+```
+
+これは主に、範囲`for`で気をつけなければならない厄介なダングリング参照の問題を回避する1つの方法として導入されました。
+
+```cpp
+struct S {
+  std::vector<int> vec;
+
+  // メンバへの参照を返す
+  auto get_vec() -> std::vector<int>& {
+    return this->vec;
+  }
+};
+
+auto f() -> S;
+
+int main() {
+  // 未定義動作
+  for (const auto& x : f().get_vec()) {
+    // ループ内ではf()の戻り値の寿命が尽きており
+    // そのメンバvecへの参照はダングリングとなっている
+    ...
+  }
+
+  // ok
+  for (auto tmp = f(); const auto& x : tmp.get_vec()) {
+    // tmpとしてループの間f()の戻り値が生存する
+    // tmp.get_vec()の戻り値はダングリングとならない
+    ...
+  }
+}
+```
+
+これは範囲`for`がマクロのように通常の`for`ループによる処理に展開される事から生じている罠で、`f()`の戻り値からそのメンバを参照として取り出すような場合やメソッドチェーンなどで*prvalue*が間に生成される場合にワンライナーで書こうとするとこのような未定義動作に陥ります。初期化式で一時オブジェクトを受けておく事でこの問題の影響を低減できます。
+
 ## カスタマイゼーションポイント探索の変更（DR）
 
 # その他
