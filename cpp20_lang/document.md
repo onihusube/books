@@ -306,13 +306,85 @@ T& emplace(Args&&... args) {
 
 ## ユーザー宣言コンストラクタの禁止
 
+- P1008R1 Prohibit aggregates with user-declared constructors (https://wg21.link/p1008r1)
+
+C++11より集成体型では`default/delete`なコンストラクタを宣言することはできていましたが、C++20からは集成体型では一切のコンストラクタ宣言を行えなくなります。
+
+これは、`default/delete`なコンストラクタの意図と集成体初期化がかみ合っていなかったり、`explicit`なコンストラクタが集成体初期化と相性が悪かったための変更で、C++11以降のコードに対する破壊的変更となります。
+
+まず、非集成体型においてデフォルト構築を禁止するためにコンストラクタの`delete`宣言を行っている場合に、同時に集成体の要件を満たすがために集成体初期化が可能になってしまうという問題がありました。
+
+```cpp
+struct delete_defctor {
+  delete_defctor() = delete;
+};
+
+struct delete_init_int {
+  delete_defctor() = delete;
+  delete_defctor(int) = delete; // intから構築してほしくない
+
+  int n = 10;
+};
+
+int main() {
+  delete_defctor x;   // ng、デフォルトコンストラクタは削除されている
+  delete_defctor x{}; // ok、集成体初期化
+
+  delete_init_int x(3); // ng、コンストラクタは削除されている
+  delete_init_int x{3}; // ok、集成体初期化
+}
+```
+
+また、`default/delete`宣言の位置によって集成体であるか無いかが変化してしまっていました。コンストラクタ（というかメンバ関数全般）はその定義をクラス外で行うことができます。そして、`default/delete`宣言もクラス外で行うことができます。
+
+```cpp
+// C++17までは集成体
+struct aggregate {
+  aggregate() = default;
+
+  int n;
+};
+
+// 集成体ではない
+struct not_aggregate {
+  not_aggregate();
+
+  int n;
+};
+
+not_aggregate::not_aggregate() = default;
+
+
+int main() {
+  aggregate x{10};      // ok
+  not_aggregate y{10};  // ng
+}
+```
+
+さらに、`explicit`を`default/delete`と合わせて使用すると、集成体でありながら集成体初期化できない謎の型を生み出すことができてしまいます。
+
+```cpp
+// C++17までは集成体
+struct A {
+  int n;
+  explicit A() = default;
+};
+
+int main() {
+  A a1 = {1}; // ng
+  A a2{1};    // ng
+}
+```
+
+これらの非自明な挙動を修正するために、集成体型では一切のコンストラクタ宣言が禁止されました。
+
 # 範囲`for`
 
 ## 初期化式の指定
 
 - P0614R1 Range-based `for` statements with initializer (https://wg21.link/p0614r1)
 
-C++17にて、`if, switch`文において初期化式を指定できるようになりましたが、範囲`for`文はその対象ではありませんでした。
+C++17にて`if, switch`文において初期化式を指定できるようになりましたが、範囲`for`文はその対象ではありませんでした。
 
 ```cpp
 auto foo() -> std::vector<int>;
