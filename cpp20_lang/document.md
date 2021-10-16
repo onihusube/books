@@ -180,6 +180,8 @@ class hash_map {
 
 ## `[[likely]]/[[unlikely]]`
 
+- P0479R5 Proposed wording for likely and unlikely attributes (https://wg21.link/p0479r5)
+
 条件分岐（`if, switch`など）を書くとき、コードを書いている人から見るとその分岐の一方がどれくらいの頻度で実行されるのか、あるいはその条件が`true`となる可能性が高いのか低いのか、が良く見えている事はよくあります。しかし、その情報は必ずしもコンパイラには伝わらず、コンパイラはそのようなメタな情報に基づく条件分岐の最適化を行う事が出来ません。
 
 条件分岐にそのようなプログラマの認識を伝え最適化を促進するためにそのための手段を実装が用意していることがあります（GCC/clangの`__builtin_expect`など）。しかし、そのような手段は移植性が無く、コンパイラによっては代替手段が無い場合もありました。
@@ -219,13 +221,60 @@ void g(category cat) {
 
 ## `[[nodiscard("msg")]]`
 
+- P1301R4 `[[nodiscard("should have a reason")]]` (https://wg21.link/p1301r4)
+
+C++17から導入された`[[nodiscard]]`は、主に関数に付加してその戻り値が捨てられた場合に警告を表示します。しかし、そこにその理由を表示しておく方法がありませんでした。
+
+C++20から`[[nodiscard]]`は引数として文字列リテラルを取れるようになり、なぜそれを捨ててはいけないのかを表示することができるようになります。そして、そのメッセージはコンパイラの警告にも表示されます。
+
+```cpp
+struct data_holder {
+private:
+	std::unique_ptr<char[], data_deleter> ptr;
+	std::vector<int> indices;
+
+public:
+
+  // 戻り値を使用しないとメモリリークする
+	[[nodiscard("Possible memory leak.")]] 
+	char* release() { 
+    indices.clear();
+    return ptr.release();
+  }
+
+	void clear() {
+    indices.clear();
+    ptr.reset(nullptr);
+  }
+
+  // 戻り値を使用しないとき、clear()と間違えている可能性がある
+	[[nodiscard("Did you mean 'clear'?")]] 
+	bool empty() const {
+    return ptr != nullptr && !indices.empty();
+  }
+};
+
+int main () {
+	data_holder dh = /* ... */;
+
+	// 重大な間違い、警告される
+	dh.release();
+	// 軽微な間違い、警告される
+	dh.empty();
+
+	return 0;
+}
+```
+
+`[[nodiscard]]`はそれだけでもかなり有用性が高いですが、メッセージを付加できるようになった事でより的確に間違いを指摘することができるようになります。
+
 ## コンストラクタに対する`[[nodiscard]]`（DR）
 
 # 集成体
 
 ## Designated Intilization
 
-- P0329R4: Designated Initialization Wording (https://wg21.link/p0329r4)
+- P0329R4 Designated Initialization Wording (https://wg21.link/p0329r4)
 
 *Designated Initialization*（指示付初期化）とは、集成体初期化時にその集成体のメンバ名を指定する形で初期化する構文の事です。C言語ではC99から可能だったものでしたが、C++20よりC++にも導入されます。
 
