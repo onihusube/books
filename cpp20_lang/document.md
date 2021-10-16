@@ -166,6 +166,7 @@ EBOによるサイズ削減テクニックは特に、テンプレートパラ�
 template<typename Key, typename Value,
          typename Hash, typename Pred, typename Allocator>
 class hash_map {
+  // それぞれサイズが0なら余分な領域を取らない
   [[no_unique_address]] Hash hasher;
   [[no_unique_address]] Pred pred;
   [[no_unique_address]] Allocator alloc;
@@ -178,6 +179,43 @@ class hash_map {
 ただし、コンパイラは不明な（未実装の）属性を無視するため、`[[no_unique_address]]`の対応の有無、あるいはコンパイラに対するバージョン指定の有無でこの結果は静かに変化します。クラスレイアウトが変化するためそれはABIの破損を招き、ODR違反を起こします（それは診断不用の未定義動作のため、検出は困難）。この問題はMSVCのABI互換性保証を破損するため、MSVCでは`[[no_unique_address]]`による最適化を全てのC++バージョンにおいて当面無効化しています（代わりに`[[msvc::no_unique_address]]`が提供されてはいます）。
 
 ## `[[likely]]/[[unlikely]]`
+
+条件分岐（`if, switch`など）を書くとき、コードを書いている人から見るとその分岐の一方がどれくらいの頻度で実行されるのか、あるいはその条件が`true`となる可能性が高いのか低いのか、が良く見えている事はよくあります。しかし、その情報は必ずしもコンパイラには伝わらず、コンパイラはそのようなメタな情報に基づく条件分岐の最適化を行う事が出来ません。
+
+条件分岐にそのようなプログラマの認識を伝え最適化を促進するためにそのための手段を実装が用意していることがあります（GCC/clangの`__builtin_expect`など）。しかし、そのような手段は移植性が無く、コンパイラによっては代替手段が無い場合もありました。
+
+`[[likely]]/[[unlikely]]`属性はそれら実装の用意する条件分岐にプログラマの認識を伝えるための手段を標準化するもので、`[[likely]]`によってその分岐の分岐確率が高いことを、`[[unlikely]]`によってその分岐の分岐確率が低いことをコンパイラに囁きます。
+
+```cpp
+void f(int n) {
+  // n == 0はほぼ来ない事を知っている
+  if (n == 0) [[unlikely]] {
+    // ...
+  } else {
+    // ...
+  }
+}
+
+enum class category {
+  success, fail, done
+};
+
+void g(category cat) {
+  // ほぼ成功する事を知っていて、doneは殆ど無い事も知っている
+  switch (cat) {
+    [[likely]]
+    case category::success :
+      // ...
+    case category::fail : 
+      // ...
+    [[unlikely]]
+    case category::done :
+      // ...
+  }
+}
+```
+
+とはいえ現代のCPUの分岐予測の性能はかなり高く、あるいはそもそもの分岐確率によっては、これらを適切に指定したとしても速くなるとは限りません。
 
 ## `[[nodiscard("msg")]]`
 
