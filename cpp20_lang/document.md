@@ -123,6 +123,53 @@ DRとされた問題については一部のコンパイラは早期に実装し
 
 ## 構造化束縛した変数のキャプチャ
 
+- P1091R3 Extending structured bindings to be more like variable declarations (https://wg21.link/p1091r3)
+- P1381R1 Reference capture of structured bindings (https://wg21.link/p1381r1)
+
+C++17まで、構造化束縛の各変数はラムダ式でキャプチャできるかどうかは不透明でした。構造化束縛宣言で指定される各変数名は実のところ変数ではなかったため、その扱いは通常の変数とは少し異なっていたからです。このことはコンパイラの実装に配慮したものでしたが、構造化束縛をラムダ式でキャプチャする事を妨げる技術的な理由が無かったため、C++20からは明示的に許可されるようになります。
+
+```cpp
+struct Foo {
+  int a; 
+};
+
+int main() {
+  auto [a] = Foo{};
+
+  auto f1 = [a] { return a; };  // ok、aをコピーキャプチャする
+  auto f2 = [=] { return a; };  // ok、aをコピーキャプチャする
+  auto f3 = [&a] { return a; }; // ok、aを参照キャプチャする
+  auto f4 = [&]  { return a; }; // ok、aを参照キャプチャする
+}
+```
+
+GCCでは構造化束縛のキャプチャが早い段階から可能だったようです。
+
+ただし、ビットフィールドを構造化束縛した変数は参照キャプチャする事ができません。
+
+```cpp
+struct Foo {
+  int a : 1;
+  int b;
+};
+
+int main() {
+  auto [a, b] = Foo();
+
+  // ビットフィールドに対応する変数は常に参照キャプチャ禁止
+  auto f1 = [&] { return a; };      // ng、C++17から
+  auto f2 = [&a = a] { return a; }; // ng、C++17から
+  auto f3 = [&a] { return a; };     // ng、C++17から
+
+  // 非ビットフィールドに対応する変数はok
+  auto g1 = [&] { return b; };      // ok、C++20から
+  auto g2 = [&b = b] { return b; }; // ok、C++17から
+  auto g3 = [&b] { return b; };     // ok、C++20から
+}
+```
+
+ビットフィールドは特殊なメンバ変数であり、型がなくそのアドレスを取得する事ができないためビットフィールドへの参照を作成する事ができません。構造化束縛もそれに従います。
+
 # 構造化束縛
 
 ## `static/thread_local`の許可
