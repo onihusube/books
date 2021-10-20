@@ -109,9 +109,67 @@ DRとされた問題については一部のコンパイラは早期に実装し
 
 # ラムダ式
 
-## 暗黙のラムダキャプチャの簡易化（DR）
+## ジェネリックラムダのテンプレート構文
 
-## テンプレート構文
+- P0428R2 Familiar template syntax for generic lambdas (https://wg21.link/p0428r2)
+
+C++14でジェネリックラムダが導入され、ラムダ式はテンプレート`operator()`オーバーロードに近い表現力を手に入れました。ただ、テンプレート`operator()`オーバーロードと異なりテンプレートパラメータを明示的に指定するものではないため、少し使いづらいところがありました。
+
+```cpp
+// std::vectorの特殊化であるかをチェックする
+template <typename T>
+constexpr bool is_std_vector = false;
+template <typename T>
+constexpr bool is_std_vector<std::vector<T>> = true;
+
+auto f = [](auto vector) {
+  // 要素型は無視して、std::vectorだけを受け入れたい
+  static_assert(is_std_vector<decltype(vector)>::value);  // #1
+
+  // vectorの要素型を取得
+  using T = typename decltype(vector)::value_type;  // #2
+};
+```
+
+#1の箇所では、ジェネリックラムダの引数型を取得する方法がないために、引数を`decltype`して型を取得しています。さらにそこからメンバ型を取得したい場合#2のように書くことになります。この時、引数によっては`std::remove_cvref`のようなものも必要になり、さらに書く事が増え面倒になります。
+
+また、可変長ジェネリックラムダにおいてその引数の完全転送（あるいはムーブ）を行う場合にも遭遇します。
+
+```cpp
+auto f = [](auto&&... args) {
+  return foo(std::forward<decltype(args)>(args)...);
+};
+```
+
+ジェネリックラムダではテンプレートパラメータパックを取得する手段がないので、関数パラメータパックの展開をしながら`decltype`するこのコードが最善でした。
+
+このように、通常の関数テンプレートでは簡単にできる事がジェネリックラムダでは遠回りをしなければならず、ジェネリックラムダの構文は柔軟さを欠いていました。C++20では、ジェネリックラムダにテンプレート構文が導入され、テンプレートパラメータを明示的に書く事ができるようになり、これらの問題を解決する事ができるようになります。
+
+先ほどの例は次のように書く事ができるようになります
+
+```cpp
+auto f1 = []<typename T>(const T& vector) {
+  // 要素型は無視して、std::vectorだけを受け入れたい
+  static_assert(is_std_vector<T>::value);
+
+  // vectorの要素型を取得
+  using V = typename T::value_type;
+};
+
+auto f2 = []<typename... Args>(Args&&... args) {
+  return foo(std::forward<Args>(args)...);
+};
+```
+
+ラムダ導入子（`[]`）の直後の`<>`内で通常の関数テンプレートと同様のテンプレートパラメータリストを書く事ができるようになります。このテンプレート構文は通常の関数テンプレートで`template<typename T, ...>`のように書くところの`<>`部分だけを書いているようなもので、同じ書き方をする事ができます。これによって、ジェネリックラムダは必要ならテンプレートパラメータ名を取得する事ができるようになり、それができない事で起きていた問題を解決できるようになります。
+
+なお、このテンプレート構文は`auto`引数宣言と同居する事ができます。
+
+```cpp
+auto f = []<typename T>(T t, auto n) {
+  // ...
+};
+```
 
 ## `[=, this]`
 
