@@ -97,6 +97,44 @@ DRとされた問題については一部のコンパイラは早期に実装し
 
 ## `auto`による関数テンプレートの簡易定義
 
+- P1141R2 Yet another approach for constrained declarations (https://wg21.link/p1141r2)
+
+C++14ではジェネリックラムダが導入され、ラムダ式の仮引数を`auto`で宣言する事ができるようになりました。
+
+```cpp
+// C++14、ジェネリックラムダ
+auto l = [](auto n, auto m) { return n; };
+```
+
+C++20では、この記法が通常の関数宣言にももたらされます。
+
+```cpp
+// auto引数宣言
+void f(auto n, auto m);
+
+// これは次の宣言と等価
+template<typename T, typename U>
+void f(T n, U m);
+```
+
+これは、制約付き`auto`によって制約された関数テンプレートを簡易定義できるようにするために導入されました。
+
+```cpp
+// コンセプトによる制約
+void f(std::integral auto n, std::floating_point auto m);
+```
+
+この`auto`は変数宣言や戻り値型の`auto`とほぼ同じ事が可能で、`auto&&`や`const auto&`などのようにもできます。ただ、`const`が入る時はコンセプト指定の位置に注意が必要です。
+
+```cpp
+// autoに対するコンセプトはautoの直前
+void f1(const std::integral auto& n);  // ok
+void f2(std::integral auto const & n); // ok
+void f3(std::integral const auto& n);  // ng
+```
+
+なお、この`auto`の位置に`decltype(auto)`を使用することはできません。
+
 ## `typename`の省略
 
 ## クラス型の非型テンプレート引数
