@@ -137,6 +137,86 @@ void f3(std::integral const auto& n);  // ng
 
 ## `typename`の省略
 
+- P0634R3 Down with `typename`! (https://wg21.link/p0634r3)
+
+テンプレートパラメータそのもの、あるいはそれに依存しているクラス名からそのメンバ型を取得する時、静的メンバ変数との区別がつかない事から`typename`によって型名であることを指定しなければなりません。ただし、このルールには僅かばかり例外があり、基底クラスのリストとコンストラクタ初期化子リストでは`typename`は不要でした（むしろその2カ所では`typename`を使用できません）。
+
+```cpp
+template<typename T>
+struct X {
+  using Y = T;
+};
+
+template<typename U>
+void f(U u) {
+  X<U>::Y y{};  // ng、typenameが必要
+}
+
+template<typename T>
+struct S : T::type  // ok、基底クラスリスト
+{
+  S() : T::type{}   // ok、コンストラクタ初期化子リスト
+  {};
+}
+```
+
+特別扱いされているこの2つの箇所では型のみが使用可能であり、型名以外が現れない事が明確であるため`typename`は不要とされていました。同様に型名以外が現れ得ない場所はいくつか存在しており、C++20からはそれらの所でも`typename`を省略できるようになります。
+
+型名しか現れないコンテキストとは次の場所です
+
+- `new`式の型名指定
+    - `auto* p = new T::type {};`
+- `using`による型エイリアス宣言の右辺
+- 型変換演算子宣言の型名指定
+- 後置戻り値型
+- テンプレートパラメータのデフォルト引数
+- 各種キャスト式の型名指定
+- 名前空間スコープの関数宣言の戻り値型
+- 名前空間スコープの変数宣言の変数の型
+- クラスメンバ宣言に指定する型名
+    - クラススコープに直接現れる型名指定のほぼすべて
+- メンバ関数の引数の型（デフォルト引数を持たない場合のみ）
+- ラムダ式の引数の型（デフォルト引数を持たない場合のみ）
+- `requires`式の引数の型（デフォルト引数を持たない場合のみ）
+- 非型テンプレート引数の型
+
+```cpp
+template<class T>
+T::R f();       // ok、名前空間スコープ関数宣言の戻り値型
+
+template<typename T>
+T::V var = {};  // ok、名前空間スコープ変数宣言の型
+
+template<class T>
+struct S {
+  using Ptr = PtrTraits<T>::Ptr;  // ok、usingエイリアスの右辺
+
+  T::R f(T::P p) {                // ok、クラススコープ
+    return static_cast<T::R>(p);  // ok、static_­cast
+  }
+
+  auto g() -> S<T*>::Ptr;         // ok、後置戻り値型
+
+  operator T::type() const {      // ok、型変換演算子の型名
+    return {};
+  };
+};
+
+template<typename T,
+         T::type NP,        // ok、NTTPの型名
+         class U = T::type  // ok、テンプレートパラメータのデフォルト引数
+        >
+void g();
+
+template<typename T>
+void f() {
+  T::X x{};     // ng、関数スコープ
+  void h(T::X); // ng、関数スコープ
+}
+```
+
+ここでokで示しているところは、C++17までは`typename`が必要でした。
+
 ## クラス型の非型テンプレート引数
 
 ## 集成体テンプレートのCTAD
