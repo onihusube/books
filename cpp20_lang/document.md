@@ -384,7 +384,7 @@ D d2 = {1, 2, 3}; // ok、{}省略可能
 - P1021R4 Filling holes in Class Template Argument Deduction (https://wg21.link/p1021r4)
 - P1814R0 Wording for Class Template Argument Deduction for Alias Templates (https://wg21.link/p1814r0)
 
-集成体と同様に、しかし異なる理由からあるクラステンプレートの初期化時にエイリアステンプレートを経由するとCTADは無効になっていました。
+集成体と同様に、しかし異なる理由から、あるクラステンプレートの初期化時にエイリアステンプレートを経由するとCTADは無効になっていました。
 
 ```cpp
 template<typename A, typename B>
@@ -422,7 +422,7 @@ int main() {
    - `template<typename A, typename B> my_pair(A, B) -> my_pair<A, B>`から
    - `A -> int, B -> T`の対応を得る
 2. その対応から元の推論補助にエイリアステンプレートのパラメータをフィードバックして置き換える
-   - `int -> A, T -> B`と代入する
+   - `int -> A, T -> B`へ代入する
    - `template<typename T> my_pair(int, T) -> my_pair<int, T>`
 3. 得られた推論補助の右辺と左辺をエイリアステンプレートで逆に置き換えることで、エイリアステンプレートの推論補助を生成する
    - `my_pair<int, T> -> pair_with_int<T>`へ置換
@@ -441,6 +441,91 @@ int main() {
 ```
 
 ## `explicit(bool)`
+
+- P0892R2 `explicit(bool)` (https://wg21.link/p0892r2)
+
+コンストラクタがテンプレートパラメータに応じて`explicit`であるかどうかを切り替えることはよく行われており、`std::pair`などでも見る事ができます。そこでは、テンプレートパラメータの型が暗黙変換可能であるかどうかによって2つのコンストラクタを切り替えるような実装が行われます。
+
+```cpp
+template<typename T>
+struct wrap1 {
+  T value;
+
+  // Tのexplicit性を考慮しない
+  template<typename U = T>
+  constexpr wrap1(U&& other)
+    : value(std::forward<U>(other))
+  {}
+};
+
+template<typename T>
+struct wrap2 {
+  T value;
+
+  template<typename U = T, std::enable_if_t<std::is_convertible_v<U, T>, std::nullptr_t> = nullptr>
+  constexpr wrap2(U&& other)
+    : value(std::forward<U>(other))
+  {}
+
+  // Tがexplicitであるときはexplicitにする
+  template<typename U = T, !std::enable_if_t<std::is_convertible_v<U, T>, std::nullptr_t> = nullptr>
+  explicit constexpr wrap2(U&& other)
+    : value(std::forward<U>(other))
+  {}
+};
+
+struct S1 {
+  explicit S1(int) {}
+};
+
+struct S2 {
+  S2(int) {}
+};
+
+int main() {
+  wrap1<S1> s1{1};     // ok
+  wrap1<S1> s2 = {1};  // ok、ngになってほしい
+  wrap1<S1> s3 = 1;    // ok、ngになってほしい
+  wrap1<S2> s4{1};     // ok
+  wrap1<S2> s5 = {1};  // ok
+  wrap1<S2> s6 = 1;    // ok
+
+  wrap2<S1> s7{1};     // ok
+  wrap2<S1> s8 = {1};  // ng、explicit性を継承
+  wrap2<S1> s9 = 1;    // ng、explicit性を継承
+  wrap2<S2> s10{1};    // ok
+  wrap2<S2> s11 = {1}; // ok
+  wrap2<S2> s12= 1;    // ok
+}
+```
+
+`explicit`コンストラクタは暗黙変換を禁止するためのコンストラクタなので、他の型で包まれた時でも暗黙変換されたくはありません。しかしそれを実現するにはかなり面倒で難解なコードを書かねばなりませんでした。ちなみに、この要素型の`explicit`性を継承するイディオムのことを*Perfect Initialization*と呼びます。
+
+これを簡易に書くために、C++20ではコンストラクタに付加する`explicit`が`bool`値を取れるようになり、その真偽によってそのコンストラクタの`explicit`性が変化するようになります。
+
+```cpp
+template<typename T>
+struct wrap {
+  T value;
+
+  // Tがexplicitであるときはexplicitにする
+  template<typename U = T>
+  explicit(!std::is_convertible_v<U, T>) constexpr wrap(U&& other)
+    : value(std::forward<U>(other))
+  {}
+};
+
+int main() {
+  wrap<S1> s1{1};     // ok
+  wrap<S1> s2 = {1};  // ng、explicit性を継承
+  wrap<S1> s3 = 1;    // ng、explicit性を継承
+  wrap<S2> s4{1};     // ok
+  wrap<S2> s5 = {1};  // ok
+  wrap<S2> s6 = 1;    // ok
+}
+```
+
+`explicit(bool)`の中が`true`である時そのコンストラクタは`explicit`となり、`false`である時は非`explicit`になります。これによって、*Perfect Initialization*のようなことを書くのにコンストラクタを2つ書いてあれこれしなくても良くなり、SFINAEしない事からコンパイル時間の削減も期待できます。
 
 # ラムダ式
 
