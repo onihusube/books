@@ -294,7 +294,90 @@ int main() {
 
 NTTPは`T n = arg`のように初期化されるため（例えば、`f2<"test">`と書くと`fixed_str fstr = "test"`のように初期化されている）、集成体初期化が効かずコンストラクタが必要になり、文字数を推論するために推論補助が必要となります。
 
-## 集成体テンプレートのCTAD
+## 集成体テンプレートの実引数からのテンプレート引数推論
+
+- P1021R4 Filling holes in Class Template Argument Deduction (https://wg21.link/p1021r4)
+- P1816R0 Wording for class template argument deduction for aggregates (https://wg21.link/p1816r0)
+
+C++17で導入されたクラステンプレートのテンプレート引数推論（CTAD）は非常に便利な機能ですが、集成体に対してはそのままでは使用できませんでした。
+
+```cpp
+template<typename T>
+struct vec3 {
+  T x, y, z;
+};
+
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5};  // ok、std::vector<int>
+
+  std::pair p = {1, 1.0}; // ok、std::pair<int, double>
+
+  vec3 = {1, 2, 3}; // ng
+}
+```
+
+これは対応するコンストラクタがある場合は推論が可能ですが、集成体はコンストラクタを持たないことからそのままでは推論できず、推論補助が必要になります。
+
+```cpp
+template<typename T>
+struct vec3 {
+  T x, y, z;
+};
+
+// これが必要
+template<typename T>
+vec3(T, T, T) -> vec3<T>;
+
+int main() {
+  vec3 = {1, 2, 3}; // ok
+}
+```
+
+C++20ではCTADが集成体に合わせて拡張され、集成体初期化時の初期化子と対応するメンバの型からテンプレート引数を推論してくれるようになります。
+
+```cpp
+template<typename T>
+struct vec3 {
+  T x, y, z;
+};
+
+int main() {
+  vec3 = {1, 2, 3}; // ok
+}
+```
+
+あるクラスについての推論補助の仕組みは、初期化子とマッチするコンストラクタおよび見つかった全ての推論補助を関数テンプレートとして抽出しオーバーロード解決によって1つを選んだうえで、コンストラクタの場合はそのテンプレートパラメータ、推論補助の場合はその戻り値型からテンプレート引数を補うものです。C++17までは集成体初期化がそこでは考慮されていなかったため推論補助が必要となっていました。
+
+C++20からは、集成体`C`の初期化時の引数リスト`{x1, ..., xi}`について、対応する`C`の要素`ei`が過不足なくぴったりと存在している場合に、`C`の要素`ei`の型`Ti`によって`C(T1, ..., Ti)`という仮想的なコンストラクタを考慮して同じ手順でテンプレート引数推論を行うようになります。
+
+この時、その集成体のテンプレート引数にメンバとなっているクラステンプレートが依存していると`{}`省略が出来なくなります。
+
+```cpp
+template <typename T>
+struct S {
+  T x;
+  T y;
+};
+
+template <typename T>
+struct C {
+  S<T> s; // テンプレートパラメータTに依存している
+  T t;
+};
+
+C c1 = {1, 2};        // ng
+C c2 = {1, 2, 3};     // ng、{}省略できない
+C c3 = {{1u, 2u}, 3}; // ok, C<int>
+
+template <typename T>
+struct D { 
+  S<int> s; // テンプレートな集成体だが、型は確定している
+  T t; 
+};
+
+D d1 = {1, 2};    // ng、{}省略するなら初期化子は3つ必要
+D d2 = {1, 2, 3}; // ok、{}省略可能
+```
 
 ## エイリアステンプレートのCTAD
 
