@@ -219,6 +219,81 @@ void f() {
 
 ## クラス型の非型テンプレート引数
 
+- P1907R1 Inconsistencies with non-type template parameters (https://wg21.link/p1907r1)
+
+C++17まで、非型テンプレートパラメータ（以下NTTPと省略）となれる型は整数型やポインタ型をはじめとする組み込み型の一部に限られていました。ユーザー定義のクラス型は当然として、浮動小数点数型もNTTPとして扱う事ができませんでした。
+
+C++20からは、クラス型や浮動小数点数型をNTTPとして扱えるようにNTTPとなれる型の制限が見直されます。C++20よりNTTPとなれる型は*structural type*と呼ばれる型のグループで、それは次のいずれかに該当するものです
+
+- スカラ型
+- 左辺値参照型
+- リテラル型
+    - 全ての基底クラスおよび非静的メンバ変数は`public`かつ`mutable`ではなく
+    - 全ての基底クラスおよび非静的メンバ変数の型は*structural type*である
+
+浮動小数点数型は1つ目のスカラ型に含まれており、クラス型は3つ目の条件を全て満たすものがNTTPとして利用可能です。なお、C++20のリテラル型の要件は（いずれかの）コンストラクタとデストラクタが定数式で実行可能である型です。ただし、2番目および3番目に該当する型では一時オブジェクトへの参照やポインタを保持する事が禁止されています。
+
+```cpp
+template<double F>
+double f1(double d) {
+  return F * d;
+}
+
+template<std::size_t N>
+struct fixed_str {
+  const char str[N];
+};
+
+template<fixed_str<5> fstr>
+void f2() {
+  std::cout << fstr.str << std::endl;
+}
+
+int main() {
+  // 共にok
+  f1<3.14>(2.0);
+  f2<fixed_str<5>{"test"}>();
+}
+```
+
+また、NTTPはC++17から`auto`による簡易構文が利用可能で、クラス型ではCTADを利用する事ができます。
+
+```cpp
+template<std::floating_point auto F>
+double f1(double d) {
+  return F * d;
+}
+
+template<std::size_t N>
+struct fixed_str {
+  char str[N];
+
+  constexpr fixed_str(const char(&arr)[N]) {
+    std::ranges::copy_n(arr, N, str);
+  }
+};
+
+template<std::size_t N>
+fixed_str(const char(&)[N]) -> fixed_str<N>;
+
+
+template<fixed_str fstr>
+void f2() {
+  std::cout << fstr.str << std::endl;
+}
+
+int main() {
+  // 共にok
+  f1<3.14>(2.0);
+  f2<"test fix string">();
+
+  // ng
+  f1<1>(0.0);
+}
+```
+
+NTTPは`T n = arg`のように初期化されるため（例えば、`f2<"test">`と書くと`fixed_str fstr = "test"`のように初期化されている）、集成体初期化が効かずコンストラクタが必要になり、文字数を推論するために推論補助が必要となります。
+
 ## 集成体テンプレートのCTAD
 
 ## エイリアステンプレートのCTAD
