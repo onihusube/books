@@ -77,6 +77,35 @@ DRとされた問題については一部のコンパイラは早期に実装し
 
 ## 仮想関数
 
+- P1064R0 Allowing Virtual Function Calls in Constant Expressions (https://wg21.link/p1064r0)
+
+従来、定数式で実行できるものは厳しく制限されており仮想関数は実行可能ではありませんでしたが、C++20からはそれが解禁されます。
+
+```cpp
+struct base {
+  virtual constexpr int f() const {
+    return 0;
+  }
+};
+
+struct derived : base {
+  constexpr int f() const override {
+    return 20;
+  }
+};
+
+constexpr int g(const base& b) {
+  return b.f();
+}
+
+int main() {
+  constexpr derived d{};
+  static_assert(g(d) == 20);  // ok
+}
+```
+
+定数式においては未定義動作はコンパイルエラーとする事が求められているため、定数式においてコンパイラはあるポインタ（参照）の指すオブジェクトの動的型（実際に構築されている型）を追跡しています。それを利用すれば定数式でも仮想関数を実行可能であるため、定数式で仮想関数呼び出しを禁止する理由がなかった事からこの制限は撤廃されました。これはまた、`std::error_code`をはじめとする`<system_error>`のものを改善しようとする行動の一環でもあります。
+
 ## `dynamic_cast/typeid`
 
 ## `try-catch`
@@ -99,7 +128,7 @@ DRとされた問題については一部のコンパイラは早期に実装し
 
 - P1141R2 Yet another approach for constrained declarations (https://wg21.link/p1141r2)
 
-C++14ではジェネリックラムダが導入され、ラムダ式の仮引数を`auto`で宣言する事ができるようになりました。
+C++14ではジェネリックラムダが導入され、ラムダ式の仮引数型を`auto`で宣言する事ができるようになりました。
 
 ```cpp
 // C++14、ジェネリックラムダ
