@@ -106,7 +106,87 @@ int main() {
 
 定数式においては未定義動作はコンパイルエラーとする事が求められているため、定数式においてコンパイラはあるポインタ（参照）の指すオブジェクトの動的型（実際に構築されている型）を追跡しています。それを利用すれば定数式でも仮想関数を実行可能であるため、定数式で仮想関数呼び出しを禁止する理由がなかった事からこの制限は撤廃されました。これはまた、`std::error_code`をはじめとする`<system_error>`のものを改善しようとする行動の一環でもあります。
 
+ちなみに、非`constexpr`な仮想関数を`constexpr`としてオーバーライドすることも、`constexpr`な仮想関数を非`constexpr`としてオーバーライドすることもでき、その場合は最派生クラスでオーバーライドされている関数（実際に呼ばれるもの）が`constexpr`であれば定数式で実行可能となります。
+
 ## `dynamic_cast/typeid`
+
+- P1327R1 Allowing `dynamic_cast`, polymorphic `typeid` in Constant Expressions (https://wg21.link/p1327r1)
+
+仮想関数が解禁されたのと同様の理由によって、定数式における`dynamic_cast`および多態的な型に対する`typeid`が許可されます。
+
+`dynamic_cast`の例
+
+```cpp
+struct base {
+  virtual constexpr int f() const {
+    return 0;
+  }
+};
+
+struct base2 {
+  virtual int g() const = 0;
+};
+
+struct derived3 : public base, public base2 {
+  constexpr int f() const override {
+    return 30;
+  }
+
+  constexpr int g() const override {
+    return 30;
+  }
+};
+
+constexpr int side_cast(const base* p) {
+  // コンパイル時サイドキャスト
+  const base2* b2 = dynamic_cast<const base2*>(p);
+  return b2->g();
+}
+
+int main() {
+  constexpr derived3 d{};
+  static_assert(side_cast(&d) == 30); // ok
+}
+```
+
+`typeid`の例
+
+```cpp
+struct base {
+  virtual constexpr int f() const {
+    return 0;
+  }
+};
+
+struct derived1 : public base {
+  constexpr int f() const override {
+    return 20;
+  }
+};
+
+struct derived2 : public base {
+  constexpr int f() const override {
+    return 30;
+  }
+};
+
+constexpr auto& get_typeinfo(const base* p) {
+  // コンパイル時に動的型のtype_infoを取得する
+  return typeid(*p);
+}
+
+int main() {
+  constexpr derived1 d1{};
+  constexpr derived2 d2{};
+
+  constexpr auto& tid1 = get_typeinfo(&d1); // ok
+  constexpr auto& tid2 = get_typeinfo(&d2); // ok
+
+  static_assert(tid1 != tid2);  // ok、C++23
+}
+```
+
+これは、`std::error_category`の改善（派生させて別のクラスにメンバを追加する）時に問題となり、仮想関数の許可の流れを受けて許可されることになりました。ただし、`std::type_info`オブジェクトの比較に関してはC++20に間に合わず、遅れてC++23で許可されます。
 
 ## `try-catch`
 
