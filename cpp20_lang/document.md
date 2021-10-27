@@ -182,13 +182,35 @@ int main() {
   constexpr auto& tid1 = get_typeinfo(&d1); // ok
   constexpr auto& tid2 = get_typeinfo(&d2); // ok
 
-  static_assert(tid1 != tid2);  // ok、C++23
+  static_assert(tid1 != tid2);  // ok、C++23から
 }
 ```
 
-これは、`std::error_category`の改善（派生させて別のクラスにメンバを追加する）時に問題となり、仮想関数の許可の流れを受けて許可されることになりました。ただし、`std::type_info`オブジェクトの比較に関してはC++20に間に合わず、遅れてC++23で許可されます。
+これは、`std::error_category`の改善（派生させて別のクラスにメンバを追加する）時に問題となり、仮想関数の流れを受けて許可されることになりました。ただし、`std::type_info`オブジェクトの比較に関してはC++20に間に合わず、遅れてC++23でできるようになります。
 
 ## `try-catch`
+
+- P1002R1 Try-catch blocks in constexpr functions (https://wg21.link/p1002r1)
+
+C++17まで、`try-catch`ブロックは定数式に現れてはならず、`constexpr`関数では書くことすらできませんでした。C++20からは単に現れるだけは許可されるようになります。ただし、`throw`式の定数式での実行は許可されていないため`try-catch`ブロックが定数式で実行されることはありません。
+
+```cpp
+template<typename F>
+constexpr int f(F&& fn) {
+  try {
+    return fn() + 1;
+  } catch(...) {
+    return -1;
+  }
+}
+
+int main() {
+  constexpr int n1 = f([]{ return 10; });           // ok
+  constexpr int n2 = f([]{ throw 10; return 0; });  // ng、throwは定数式で使用不可
+}
+```
+
+これは、`std::vector`などを`constexpr`対応させる際の障壁の一つとして問題となっていたため、許可することになりました。
 
 ## 共用体のアクティブメンバ切り替え
 
