@@ -248,6 +248,47 @@ int main() {
 
 ## トリビアルなデフォルト初期化
 
+- P1331R2 Permitting trivial default initialization in constexpr contexts (https://wg21.link/p1331r2)
+
+トリビアルなデフォルト初期化とは、型`T`の変数宣言において初期化子を書かずに初期化した際に、組み込み型およびコンストラクタがなくデフォルトメンバ初期化のされていないメンバだけを持つクラス型について行われる初期化方法のことです。つまりはその初期化に際してコンストラクタ呼び出しを行う必要がない初期化のことで、規格的にはその値は不定となり、通常の実装ではその初期化処理は省略されます。トリビアルなデフォルト初期化が可能な、組み込み型およびコンストラクタがなくデフォルトメンバ初期化のされていないメンバだけを持つクラス型、はまとめて*trivially default constructible*と呼ばれます。
+
+これは初期化後の値の読み取りが未定義動作となるため、定数式で現れることが禁止されていました。
+
+```cpp
+template <typename T>
+constexpr T f(const T& other) {
+  T t;    // #1、型によって初期化方法が変わる
+  t = other;
+  return t;
+}
+
+struct trivial {
+  bool b;   // 初期化子がない、トリビアル
+};
+
+struct non_trivial {
+  bool b{}; // 初期化子がある、非トリビアル
+};
+
+int main() {
+  constexpr auto x = f(1);              // ng、#1はトリビアルなデフォルト初期化
+  constexpr auto y = f(trivial{});      // ng、#1はトリビアルなデフォルト初期化
+  constexpr auto z = f(non_trivial{});  // ok、#1はデフォルト初期化
+}
+```
+
+この制限は、この例のようにテンプレートな`constexpr`関数において入力の型次第でエラーとなるか変化する問題を引き起こしており、`constexpr`関数の処理について実行時のものとコードを共有することを妨げていました。トリビアルなデフォルト初期化がされている変数でも、その値の読み取りをしなければ実行時でも未定義動作とはなりません。
+
+`constexpr`の実行時とコンパイル時の振る舞いを一貫させるためにこの制限は撤廃され、トリビアルなデフォルト初期化されている変数はその値が読み取られない限り定数式で現れることが許可されるようになります。
+
+```cpp
+int main() {
+  constexpr auto x = f(1);              // ok、C++20
+  constexpr auto y = f(trivial{});      // ok、C++20
+  constexpr auto z = f(non_trivial{});  // ok、C++11
+}
+```
+
 ## インラインアセンブリ
 
 ## `consteval`
