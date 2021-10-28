@@ -289,7 +289,30 @@ int main() {
 }
 ```
 
+## `std::is_constant_evaluated()`
+
+### `if consteval`
+
 ## インラインアセンブリ
+
+- P1668R1 Enabling `constexpr` Intrinsics By Permitting Unevaluated inline-assembly in `constexpr` Functions (https://wg21.link/p1668r1)
+
+前項の`std::is_constant_evaluated()`を用いると、1つの関数定義に実行時とコンパイル時の両方の処理を書いておくことができるようになりますが、インラインアセンブリを用いているコードは`asm`宣言が定数式で現れることができないため`constexpr`とするには別の関数にする必要がありました。インラインアセンブリを用いているコードを最小限の変更で定数化したいという需要から、`asm`宣言は定数式で評価することはできないものの`constexpr`関数に書くことができるようになります。
+
+```cpp
+constexpr double fma(double a, double b, double c) {
+  if (std::is_constant_evaluated()) {
+    // コンパイル時のコード
+    return a * b + c;
+  } else {
+    // 実行時のコード、定数式でここに到達するとエラー
+    asm volatile ("vfmadd213sd %0,%1,%2" : "+x"(a) : "x"(b),"x"(c));
+    return a;
+  }
+}
+```
+
+副次的ですが、このように定数式用のシンプルなコードと実行時用の複雑なアセンブラが併記されている事で、インラインアセンブリが何をしているのかがわかりやすくなります。
 
 ## `consteval`
 
