@@ -485,6 +485,44 @@ constexpr double fma(double a, double b, double c) {
 
 ## `constinit`
 
+- P1143R2 Adding the constinit keyword (https://wg21.link/p1143r2)
+
+グローバル変数（名前空間スコープの変数、静的変数）は定数初期化が可能なものはコンパイル時に初期化され、できないものは実行時（基本的にはプログラム開始時）に動的初期化されます。動的初期化においては一部の変数の初期化順序が不定となるため、初期化順に依存するコードが未定義動作に陥る「Static Initialization Order Fiasco」という問題がありました。
+
+静的変数は可能であれば静的初期化してコンパイル時に初期化を終わらせてしまうことでそのような問題を回避できますが、ある静的変数が動的初期化されているのかいないのか、あるいは静的初期化されているのかいないのかは簡単には判断できず、少しのコードの変更でそれが変化してしまっても気づくことは困難でした。
+
+`constinit`指定子は静的変数に対して付加して、その変数が静的初期化（特に、定数初期化）されていることを保証し、動的初期化が必要となる場合にコンパイルエラーとするものです。
+
+```cpp
+constinit int n = 10;       // ok
+constinit double pi = 3.14; // ok
+
+constinit double pi2 = pi * 2.0; // ng、piは定数式で使用不可
+
+int main() {
+  constinit static int m1 = 20; // ok
+
+  constinit int m2 = 30;  // ng、ローカル変数
+
+  n = 20; // ok、constinitは暗黙constではない
+}
+```
+
+`constinit`は変数宣言にのみ指定することができ、その変数は静的変数（グローバル変数や関数ローカル`static`変数など）である必要があります。`pi2`のように、その初期化がコンパイル時に完了しない`constinit`変数はコンパイルエラーとなります。
+
+定数初期化は非リテラル型のオブジェクトについても条件を満たせば行うことができて、そのようなクラス型には例えば`std::unique_ptr`や`std::mutex`があります。
+
+```cpp
+// 共ににok
+constinit std::mutex m{};
+constinit std::unique_ptr<int> p = nullptr;
+
+// これはng
+constinit std::unique_ptr<int> p = new int{};
+
+int main() {}
+```
+
 ## 動的メモリ確保
 
 # テンプレート
