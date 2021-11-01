@@ -289,31 +289,6 @@ int main() {
 }
 ```
 
-## `std::is_constant_evaluated()`
-
-### `if consteval`
-
-## インラインアセンブリ
-
-- P1668R1 Enabling `constexpr` Intrinsics By Permitting Unevaluated inline-assembly in `constexpr` Functions (https://wg21.link/p1668r1)
-
-前項の`std::is_constant_evaluated()`を用いると、1つの関数定義に実行時とコンパイル時の両方の処理を書いておくことができるようになりますが、インラインアセンブリを用いているコードは`asm`宣言が定数式で現れることができないため`constexpr`とするには別の関数にする必要がありました。インラインアセンブリを用いているコードを最小限の変更で定数化したいという需要から、`asm`宣言は定数式で評価することはできないものの`constexpr`関数に書くことができるようになります。
-
-```cpp
-constexpr double fma(double a, double b, double c) {
-  if (std::is_constant_evaluated()) {
-    // コンパイル時のコード
-    return a * b + c;
-  } else {
-    // 実行時のコード、定数式でここに到達するとエラー
-    asm volatile ("vfmadd213sd %0,%1,%2" : "+x"(a) : "x"(b),"x"(c));
-    return a;
-  }
-}
-```
-
-副次的ですが、このように定数式用のシンプルなコードと実行時用の複雑なアセンブラが併記されている事で、インラインアセンブリが何をしているのかがわかりやすくなります。
-
 ## `consteval`
 
 - P1073R3 Immediate functions (https://wg21.link/p1073r3)
@@ -390,6 +365,123 @@ int main() {
 これは`<=>`の比較カテゴリ型の超簡易な実装で、ゼロリテラルとの比較以外をコンパイルエラーとしています。`C`の`==`の引数にて`literal_zero`で比較対象の整数値を受けていますが、`literal_zero`の唯一のコンストラクタは`consteval`であり、整数リテラル->`literal_zero`の暗黙変換は必ずコンパイル時に行われ、`literal_zero`の`consteval`コンストラクタで行われる引数値のチェックもまた必ずコンパイル時に行われます。そして、値が`0`でない場合は`throw`式で例外を投げようとすることでコンパイルエラーを起こします。
 
 このテクニックはC++20で導入された`<format>`（文字列フォーマットライブラリ）にて、フォーマット文字列のコンパイル時チェックの実装に使用されています。
+
+## `std::is_constant_evaluated()`
+
+- P0595R2 `std::is_constant_evaluated()` (https://wg21.link/p0595r2)
+
+`constexpr`関数は実行時とコンパイル時の両方で実行可能な関数ですが、その実装は実行時とコンパイル時で共通でなければなりません。実行時により効率的な実装が選択できる場合など、実行時とコンパイル時で処理を切り替えたい場合がよくありました。
+
+そのために、`std::is_constant_evaluated()`が導入されます。これはコンパイル時に評価された場合に`true`を返し、それ以外の場合は`false`を返す関数です。これを用いると、コンパイル時に実行される処理と実行時の処理とで実装を分けることができます。
+
+```cpp
+constexpr double power(double b, int x) {
+  if (std::is_constant_evaluated() && x >= 0) {
+    // コンパイル時用実装
+    double r = 1.0, p = b;
+    unsigned u = (unsigned)x;
+    while (u != 0) {
+      if (u & 1) r *= p;
+      u /= 2;
+      p *= p;
+    }
+    return r;
+  } else {
+    // 実行時はstd::powを使用する
+    return std::pow(b, (double)x);
+  }
+}
+
+int main() {
+  constexpr double kilo = power(10.0, 3); // コンパイル時実行
+  int n = 3;
+  double mucho = power(10.0, n);  // 実行時実行
+}
+```
+
+ただし、`std::is_constant_evaluated()`は厳密には、定数式で`true`を返すのではなく定数式であることが確実な文脈で`true`を返すものです。そのため、`cosntexpr if`や`static_assert`の条件式では常に`true`となり、コンパイラの最適化の一環としてコンパイル時に評価される場合は`false`を返します。
+
+```cpp
+double thousand() {
+  return power(10.0, 3);  // 必ず実行時実行
+}
+
+int f() {
+  if constexpr (std::is_constant_evaluated()) {
+    return 0; // 常にこちらが選択される
+  } else {
+    return 1;
+  }
+}
+
+int main() {
+  int n = f();  // 常に0
+  static_assert(!std::is_constant_evaluated()); // 常にエラー
+}
+```
+
+`thousand()`自体は`constexpr`ではないのでその中で呼ばれている`power(10.0, 3)`は定数式で実行可能な文脈ではないとみなされ、`power()`定義の`std::is_constant_evaluated()`は常に`false`を返します。ただし、引数はコンパイル時に確定しているためコンパイラは最適化の一環としてコンパイル時に実行しようとするかもしれません。しかしその場合でも、`power()`定義の`std::is_constant_evaluated()`は常に`false`を返します。
+
+### `if consteval`
+
+- P1938R3 `if consteval`(https://wg21.link/p1938r3)
+
+`std::is_constant_evaluated()`は`constexpr if`で使用された時には常に`true`となります。しかし、この挙動はかなり非直感的でした。さらに、`consteval`関数とともに使用した時に分かりづらい振る舞いをすることがありました
+
+```cpp
+consteval int f(int i) { return i; }
+
+constexpr int g(int i) {
+  if (std::is_constant_evaluated()) {
+    return f(i) + 1; // ng
+  } else {
+    return 42;
+  }
+}
+
+consteval int h(int i) {
+  return f(i) + 1;  // ok
+}
+```
+
+関数`f()`を同じように呼び出しているはずですが、`g()`と`h()`で結果が異なっています。どちらの`f()`の呼び出しも必ずコンパイル時に呼ばれるはずで、何もおかしいところはないはずですが・・・
+
+`g()`と`h()`の差異は、関数引数`i`が定数式であるか否かです。`consteval`関数は必ずコンパイル時に呼び出されるのでその引数は必ず定数式ですが、`constexpr`関数は実行にも呼び出せるためそうではありません。そのため、`g()`内部では非定数式の`i`を用いて`consteval`関数`f()`を呼び出そうとしてエラーとなります。とはいえ、`std::is_constant_evaluated()`による分岐によって`f(i)`が呼び出されるのはコンパイル時だけであることは（プログラマからは）わかっています。
+
+C++23では、これらの問題の解消のために`if (std::is_constant_evaluated())`の糖衣構文である`if consteval`が導入されます。これによって、`constexpr if`で`std::is_constant_evaluated()`を使おうとする原因（`if`が実行時実行であるように思える）が取り除かれ、関数引数が定数式とみなされない問題も解消されます。
+
+```cpp
+constexpr int g(int i) {
+  if consteval {
+    return f(i) + 1; // ok
+  } else {
+    return 42;
+  }
+}
+```
+
+`if consteval`の`true`となるブロックは必ずコンパイル時に実行される文脈として特別扱いされ、`constexpr`関数の引数の扱いが`consteval`と同等になります。
+
+## インラインアセンブリ
+
+- P1668R1 Enabling `constexpr` Intrinsics By Permitting Unevaluated inline-assembly in `constexpr` Functions (https://wg21.link/p1668r1)
+
+前項の`std::is_constant_evaluated()`を用いると、1つの関数定義に実行時とコンパイル時の両方の処理を書いておくことができるようになりますが、インラインアセンブリを用いているコードは`asm`宣言が定数式で現れることができないため`constexpr`とするには別の関数にする必要がありました。インラインアセンブリを用いているコードを最小限の変更で定数化したいという需要から、`asm`宣言は定数式で評価することはできないものの`constexpr`関数に書くことができるようになります。
+
+```cpp
+constexpr double fma(double a, double b, double c) {
+  if (std::is_constant_evaluated()) {
+    // コンパイル時のコード
+    return a * b + c;
+  } else {
+    // 実行時のコード、定数式でここに到達するとエラー
+    asm volatile ("vfmadd213sd %0,%1,%2" : "+x"(a) : "x"(b),"x"(c));
+    return a;
+  }
+}
+```
+
+副次的ですが、このように定数式用のシンプルなコードと実行時用の複雑なアセンブラが併記されている事で、インラインアセンブリが何をしているのかがわかりやすくなります。
 
 ## `constinit`
 
