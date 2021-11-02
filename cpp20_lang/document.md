@@ -487,7 +487,7 @@ constexpr double fma(double a, double b, double c) {
 
 - P1143R2 Adding the constinit keyword (https://wg21.link/p1143r2)
 
-グローバル変数（名前空間スコープの変数、静的変数）は定数初期化が可能なものはコンパイル時に初期化され、できないものは実行時（基本的にはプログラム開始時）に動的初期化されます。動的初期化においては一部の変数の初期化順序が不定となるため、初期化順に依存するコードが未定義動作に陥る「Static Initialization Order Fiasco」という問題がありました。
+グローバル変数（名前空間スコープの変数、静的変数）は定数初期化が可能なものはコンパイル時に初期化され、できないものは実行時（基本的にはプログラム開始時）に動的初期化されます。動的初期化においては一部の変数の初期化順序が不定となるため、初期化順に依存するコードが未定義動作に陥る問題があり、「Static Initialization Order Fiasco」として知られています。
 
 静的変数は可能であれば静的初期化してコンパイル時に初期化を終わらせてしまうことでそのような問題を回避できますが、ある静的変数が動的初期化されているのかいないのか、あるいは静的初期化されているのかいないのかは簡単には判断できず、少しのコードの変更でそれが変化してしまっても気づくことは困難でした。
 
@@ -524,6 +524,64 @@ int main() {}
 ```
 
 ## 動的メモリ確保
+
+- P0784R7 More constexpr containers (https://wg21.link/p0784r7)
+
+当然のことながら、C++17までは定数式において動的メモリ確保（`new/delete`や`std::allocator`の使用）はできませんでした。C++20ではそれが許可され、同時に`std::string`と`std::vector`が定数式で使用できるようになります。
+
+```cpp
+constexpr int sum_vector(const std::vector<int>& vec) {
+  int sum = 0;
+
+  for (int n : vec) {
+    sum += n;
+  }
+
+  return sum;
+}
+
+constexpr bool check_string(const std::string& str) {
+  return str.find("cpp") != std::string::npos;
+}
+
+// どちらもok
+static_assert(sum_vector({1, 2, 3, 4, 5}) == 15);
+static_assert(check_string("cpp20 constexpr"));
+```
+
+これは、静的リフレクションにおいて`std::string`と`std::vector`をコンパイル時に利用できる必要性が生じたため、そのための障害を取り払うための変更です。
+
+この定数式における動的メモリ確保はユーザーコードでも行うことができます。その際に使用可能なメモリ確保/解放の方法は`new/delete`式と`std::allocator/std::allocator_trits`のみで、`malloc/free`などその他のものは許可されていません。また、それらが呼び出す`::operator new/::operator delete`演算子はグローバルに定義されたオリジナルなものだけで、オーバーロードされた`::operator new/::operator delete`演算子を定数式で呼び出すことはできません。
+
+当然ですが、動的に構築しようとしている型はリテラル型であり、定数式で構築（初期化）と破棄（デストラクタ呼び出し）ができる必要があります。
+
+```cpp
+constexpr int f() {
+  int* p = new int; // ok、C++20
+
+  *p = 20;
+  int n = *p;
+
+  delete p; // ok、C++20
+
+  return n;
+}
+```
+
+C++20時点では、コンパイル時に確保したメモリ領域を実行時に持ち越すことはできません。したがって、`new`で確保されたメモリは必ず`delete`されていなければならず、これは`std::allocator/std::allocator_trits`においても同じです。
+
+```cpp
+constexpr int f() {
+  int* p = new int; // ng、deleteされていない
+
+  *p = 20;
+  int n = *p;
+
+  return n;
+}
+```
+
+これらの、定数式で呼び出される`::operator new`演算子の呼び出しは、コンパイラの最適化の一環として常に省略され、代わりの領域（おそらくスタック領域）があてがわれています。`std::allocator/std::allocator_trits`も内部（`allocate()`）で`::operator new`を呼び出すため同様で、対応する`::operator delete`演算子の呼び出しも省略されます。すなわち、C++20コンパイル時動的メモリ確保は定数式にヒープ領域を導入しているのではなく、デフォルトの`::operator new`の呼び出しを別の領域をあてがう形に置き換えることで行われています。
 
 # テンプレート
 
