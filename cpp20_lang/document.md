@@ -454,6 +454,120 @@ concept has_value_type = requires {
 
 ### 制約とオーバーロード優先順位
 
+コンセプトをによって制約された関数テンプレート、クラス・変数テンプレートの部分特殊化はコンセプトの有無及びコンセプトの内容によってオーバーロード解決時に優先順位がつけられます。ただしその順序は半順序（順序付けできるとは限らない）であり、詳細はかなり複雑です。ここでは、最低限のところを簡単にさらっておきます。
+
+まず、コンセプトによる制約がない関数とある関数の間では、制約されている関数のほうが優先順位が高くなります（以下、関数テンプレートで説明しますがクラス・変数テンプレートでも同様です）。
+
+```cpp
+template<typename T>
+void f(T);  // (1)
+
+template<std::integral T>
+void f(T);  // (2)
+
+int main() {
+  f(10);  // (2)が呼ばれる
+}
+```
+
+次に、コンセプトによって制約されている関数の間では、片方の制約がもう片方の制約を完全に包含しているとき、包含しているほうが優先順位が高くなります。
+
+```cpp
+template<std::integral T>
+void f(T);  // (1)
+
+template<std::integral T>
+  requires (sizeof(T) == 4)
+void f(T);  // (2)
+
+
+int main() {
+  int n = 10;
+
+  f(n);  // (2)が呼ばれる
+}
+```
+
+制約の包含関係は、その制約が`&&`でつながれているとき、`&&`でつながれる各制約式が
+
+```cpp
+template<typename T>
+concept A = /*...*/;
+
+template<typename T>
+concept B = /*...*/;
+
+template<typename T>
+concept C = /*...*/;
+
+template<typename T>
+concept D = /*...*/;
+
+template<typename T>
+  requires A<T>;
+void f(); // (1)
+
+template<typename T>
+  requires A<T> && B<T>;
+void f(); // (2)
+
+template<typename T>
+  requires A<T> && B<T> && C<T>;
+void f(); // (3)
+
+template<typename T>
+  requires A<T> && B<T> && D<T>;
+void f(); // (4)
+```
+
+この時、各`f()`の制約の包含関係は`(1) ⊂ (2) ⊂ (3)`となり、`(3) > (2) > (1)`の順で優先順位が付きます。一方、`(3)`と`(4)`の間にはお互いに包含関係が成立しないため順序も付きません。したがって、`(3)`と`(4)`の間ではオーバーロードが曖昧となります。
+
+`&&`だけで繋がれている場合はこのように比較的簡単なのですが、ここに`||`が入ると一気に複雑になります。なるべく避けたほうがよいでしょう・・・
+
+そしてもう一つややこしいことに、`&&`で繋がれる各制約がコンセプトではなく制約式が混じってる場合、このような順序付けができなくなります。
+
+```cpp
+template<typename T>
+concept A = /*...*/;
+
+template<typename T>
+constexpr bool B = /*...*/;
+
+template<typename T>
+  requires A<T>;
+void f();
+
+template<typename T>
+  requires A<T> && B<T>;
+void f();
+```
+
+`A`はコンセプトなのに対して`B`は変数テンプレートです。このとき、`A, B`の両方を満たすような`T`に対して`f()`が呼ばれると、順序がつかずオーバーロード解決に失敗します。なぜかというと`B`がコンセプトではないのが原因です。これは`B`がほかの形の定数式であったとしても同じで（例えば、コンセプト`C`に対して`!C`も同様）、仮に全く同じ文字列で同じ結果となるとしても、コンセプトとして定義されていない制約式の間では先ほどのような包含関係を成立させることができません。コンセプトによってオーバーロード解決の順序付けを行う場合は、`&&`をなるべく使用するようにしたうえで使用する制約式は単一のコンセプトとして定義しておくことが推奨されます。
+
+```cpp
+// このf()も順序がつかない
+template<typename T>
+  requires !A<T>;
+void f();
+
+template<typename T>
+  requires !A<T> && B<T>;
+void f();
+
+// 個別のコンセプトにまとめる
+template<typename T>
+concept not_A = !A<T>;
+
+// このg()は順序がつく
+template<typename T>
+  requires not_A<T>;
+void g();
+
+template<typename T>
+  requires not_A<T> && B<T>;
+void g();
+```
+
 ### 特殊メンバ関数の条件付きトリビアル定義
 
 ## モジュール
