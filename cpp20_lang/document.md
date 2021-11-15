@@ -74,8 +74,8 @@ int main() {
   auto comp = a <=> b;
 
   if (comp < 0) {
-    std::cout << "a < b";
-  } else if (0 < comp) {
+    std::cout << "a < b"; // ここに来る
+  } else if (comp > 0) {
     std::cout << "a > b";
   } else if (comp == 0) {
     std::cout << "a = b";
@@ -103,14 +103,14 @@ int main() {
   // 以下6種類の比較が可能となる
   std::cout << (a == b) << '\n';
   std::cout << (a != b) << '\n';
-  std::cout << (a < b)  << '\n';
+  std::cout << (a <  b) << '\n';
   std::cout << (a <= b) << '\n';
-  std::cout << (a > b)  << '\n';
+  std::cout << (a >  b) << '\n';
   std::cout << (a >= b) << '\n';
 }
 ```
 
-クラス型に対して`<=>`を定義しておくと、`< <= > >=`の4つの演算子が自動で実装され、それが`dafault`の場合は`== !=`の2つも自動で実装されます。これらの自動で実装される比較演算子は`<=>/==`を利用して実装されます。`== !=`だけ扱いが異なるのは、`!=`は`==`演算子を用いて実装されていて、`<=>`が`default`で宣言されている場合は暗黙的に`==`も`default`定義されているためです。
+クラス型に対して`<=>`を定義しておくと`< <= > >=`の4つの演算子が自動で実装され、それが`dafault`の場合は`== !=`の2つも自動で実装されます。そして、これらの自動実装される比較演算子は`<=>/==`を利用して実装されています。`== !=`だけ扱いが異なるのは、`!=`は`==`演算子を用いて実装されていて、`<=>`が`default`で宣言されている場合は暗黙的に`==`も`default`定義されているためです。
 
 ```cpp
 struct C {
@@ -203,9 +203,9 @@ struct C {
     - `@`が`<=>`ならば、`0 <=> (b <=> a)`
     - `@`が`< <= > >=`のいずれかならば、`(a <=> b) @ 0`もしくは`0 @ (b <=> a)`
     - `@`が`!=`ならば、`!(a == b)`もしくは`!(b == a)`
-8. 元の呼び出し`a @ b`を生成された式で書き換える
+8. 元の呼び出し`a @ b`を7で生成された式で書き換える
 
-複雑ではありますが、この仕組みによって`T1`と`T2`が異なる場合の比較（異種型間比較）においても、片方の（例えば`T1, T2`の順に引数をとる）演算子さえ定義しておけば、逆順の比較演算子も自動で導出されます。
+複雑ではありますが、この仕組みによって`T1`と`T2`が異なる場合の比較（異種型間比較）においても、片方の（例えば`T1, T2`の順に引数をとる）演算子さえ定義しておけば、逆順（`T2, T1`の順）の比較演算子も自動で導出されます。
 
 ```cpp
 struct H {
@@ -248,7 +248,7 @@ int main() {
 
 このように、異種型間比較を行う場合でも最小の演算子の定義（2×2=4）で合計18個の演算子が利用可能となります。
 
-ただしこの場合、`default`定義されていない`<=>`があるので自身の比較のための`==`が暗黙定義されなくなり、異種型間比較のための`==`は自動実装されません。そのため、2つの`==`は明示的に書かなければなりません。とはいえ、自身の比較の`==`は`default`定義可能なので、比較そのものを書く必要があるのは異種型間比較のための2つだけです。
+ただしこの場合、`default`定義されていない`<=>`があるので自身の比較のための`==`が暗黙定義されなくなり、異種型間比較のための`==`は`default`定義できません。そのため、2つの`==`は明示的に書かなければなりません。とはいえ、自身の比較の`==`は`default`定義可能なので、比較そのものを書く必要があるのは異種型間比較のためのものだけです。
 
 ### 符号付整数型の内部表現は2の補数であると規定
 
@@ -261,6 +261,198 @@ C++の重箱の隅に詳しい人は、符号付整数型の内部表現は規�
 これによって、整数型は符号付も符号なしも含めて全順序の上での比較が可能となります。
 
 ## コンセプト
+
+テンプレートパラメータには任意の型を渡すことができ、それを制限したり条件付けしたりする方法（これをテンプレートパラメータの制約と言います）は提供されていませんでした。そのため、テンプレートなライブラリの使用者は予めそのテンプレートエンティティのテンプレートパラメータに要求されていることを知った上で利用することが求められており、テンプレートライブラリの利用を難しくしていました。また、SFINAEと呼ばれる高度で複雑なテクニックを駆使すればテンプレートパラメータに制約を行うことはできましたが、それはテンプレートを正しく書く事を困難にしコードの可読性を低下させていました。コンセプトはそのようなテンプレートパラメータに対する制約を簡単に行い、また制約を簡単に書けるようにするためのSFINAEに変わる言語機能です。
+
+コンセプトによる制約を行うには、予め定義されたコンセプト（ややこしいですが、これは事前定義された制約条件の事を指します）をテンプレートパラメータの`class/typename`の部分に指定する事で行います。
+
+```cpp
+// いくつかの基礎的なコンセプトが提供されている
+#include <concepts>
+
+template<std::integral T>
+void f(T);  // (1)、整数型用
+
+template<std::floating_point T>
+void f(T);  // (2)、浮動小数点数型用
+
+int main() {
+  f(10);  // (1)が呼ばれる
+  f(1.0); // (2)が呼ばれる
+}
+```
+
+（ここでは関数定義を省略しています）
+
+ここで使用されている`std::integral`と`std::floating_point`の2つのコンセプトは`<concepts>`ヘッダにて提供されている標準コンセプトで、それぞれ型が整数型、浮動小数点数型である事を制約するものです。このように、`template<C T>`のようにコンセプト`C`によって制約されたテンプレートパラメータ`T`は、`T`の型が`C`の制約を満たしていない場合にオーバーロードの候補から外され、それによって選択されなくなります（この時呼び出せる候補がない場合はコンパイルエラーとなります）。
+
+コンセプトによる制約はまた、`requires`節と呼ばれる構文を用いても行えます。
+
+```cpp
+#include <concepts>
+
+// 前置requires節
+template<typename T>
+  requires std::integral<T>
+void f1(T);
+
+template<typename T>
+  requires std::floating_point<T>
+void f1(T);
+
+// 後置requires節
+template<typename T>
+void f2(T) requires std::integral<T>;
+
+template<typename T>
+void f2(T) requires std::floating_point<T>;
+```
+
+最初の例の`f()`とここでの`f1(), f2()`は構文は違えど制約としての効果は同一となります。基本的に、`class/typename`の部分にコンセプトを指定する制約は制約が1つだけの場合に使用し、`requires`節は制約が複数ある場合に使用します。
+
+```cpp
+template<std::integral T>
+  requires (sizeof(T) == 4)
+void f(T);  // 整数型かつ4バイト
+
+template<typename T>
+  requires std::integral<T> || std::floating_point<T>
+void g(T);  // 整数型か浮動小数点数型
+
+template<typename T>
+  requires (!std::integral<T>)
+void h(T);  // 整数型ではない
+
+template<std::copyable T>
+  requires std::equality_comparable<T> && std::convertible_to<T, int>
+void i(T);  // コピー可能かつ、==/!=による比較が可能かつ、intに変換可能
+
+template<std::copyable T>
+  requires std::equality_comparable<T>
+void i(T) requires std::convertible_to<T, int>;  // i()と同じ
+```
+
+`requires`節において複数の制約を行う場合は、`&&`（かつ）`||`（または）によって制約を繋いで記述し、`!`（否定）も使用できます。複雑な事をしなければ、これは通常の論理演算と一致した結果になりますが、ド・モルガンの法則が成り立たないなど直感的でない部分があります。特に、`||`が入った場合のコンセプトによる関数呼び出しの優先順位付けは非常に難解なので、基本的にはそうしたことは避けたほうが無難です。
+
+`f()`の制約で行っているように、`requires`節では制約条件としてコンセプトだけではなく定数式で`bool`値に評価される任意の式を使用できます。コンセプトを単に`&& ||`で繋いでいく分には気にしなくていいのですが、`!`とか`==`などが制約条件に直接現れる場合は`()`が必須となります（上記`f(), h()`）。このように制約条件を記述した定数式で`bool`値に評価される式のことを制約式と呼びます。
+
+`class/typename`の部分の指定と`requires`節を同時に使用した場合は、それぞれに指定されている制約を`()`で括って`&&`でつないだ上で`requires`節に書いたようになります。
+
+また、後置`requires`節は特に、クラステンプレートの非テンプレートメンバ関数を制約するのに用いることができます。
+
+```cpp
+template<typename T>
+struct S {
+  T t;
+
+  // Tがムーブ可能なら有効化
+  auto move_get() requires std::movable<T> -> T;
+
+};
+```
+
+ここまで関数で例示してきましたが、コンセプトによる制約はクラステンプレートに対しても同じように行うことができます。ただし、後置`requires`節は利用できません。
+
+```cpp
+template<typename T>
+struct S1 {};
+
+template<std::integral T>
+struct S1<T> {};
+
+template<typename T>
+struct S2 {};
+
+template<typename T>
+  requires std::integral<T>
+struct S2<T> {};
+```
+
+変数テンプレートでできることはクラステンプレートに準じているので、変数テンプレートでも同様です。
+
+```cpp
+template<typename T>
+constexpr std::uint8_t v1 = 1;
+
+template<std::integral T>
+constexpr std::uint8_t v1<T> = 2;
+
+template<typename T>
+constexpr std::uint8_t v2 = 1;
+
+template<typename T>
+  requires std::integral<T>
+constexpr std::uint8_t v2<T> = 2;
+```
+
+ただし、クラス/変数テンプレートは関数テンプレートとは異なりそのままではオーバーロードできないため、オーバーロードを表現するためには部分特殊化として定義する必要があります。また、クラス/変数テンプレートの部分特殊化の仕様のために、プライマリテンプレートに制約を行うと謎のエラーに悩まされることになりますので、プライマリテンプレートには制約を行わないことをお勧めします（また、それを説明すると長くなるのでここでは説明しません）。
+
+ここまではコンセプトの利用側を見てきましたが、ここからはコンセプトを作成する方法を見ていきます。コンセプトは`concept`というキーワードを用いたテンプレートによって定義されます。例えば先程までよく見ていた`std::integral`などは例えば次のように定義されています
+
+```cpp
+template<typename T>
+concept integral = std::is_integral_v<T>;
+
+template<typename T>
+concept floating_point = std::is_floating_point_v<T>;
+```
+
+このように、テンプレートパラメータ宣言に続いて`concept name = expr;`のような形式で定義し、`expr`の部分には`requires`節の時と同じ記法によって任意の制約式を指定していくことができます。なお、コンセプトそのものに何らかの制約を行うことはできません。
+
+```cpp
+// 符号付整数型
+template<class T>
+concept signed_integral = integral<T> && is_signed_v<T>;
+
+// これはng
+template<integral T>
+concept signed_integral = is_signed_v<T>;
+```
+
+さらに細かい制約を行うために、`requires`式を使用できます。
+
+```cpp
+// TとUの値の間で+による和を取れる
+template<typename T, typename U>
+concept addable = requires(const T& t, const U& u) {
+  t + u;
+  u + t;
+};
+
+// Tがメンバ型value_typeを持つ
+template<typename T>
+concept has_value_type = requires {
+  typename T::value_type;
+};
+```
+
+この`requires`式では、`requires(Args...)`のようにして関数宣言と同じように引数を宣言することができ、この引数は`requires`式内で制約を書くのに使用できます。引数が必要ない場合は単に`requires { ... };`のようにもかけます。`requires`式内では任意の式を記述して、その式が利用可能であることを要求する制約を記述することができます。`requires`式はこれで1つの制約式であり、その全体は内部に記述された各式が全て利用可能であれば`true`となります。
+
+`requires`式内の各式に対して、その戻り値型をチェックすることもできます
+
+```cpp
+// TとUの値の間で+による和を取れる
+// +の結果は常にT
+template<typename T, typename U>
+concept addable = requires(const T& t, const U& u) {
+  {t + u} -> std::same_as<T>;
+  {u + t} -> std::same_as<T>;
+};
+
+// Tがメンバ型value_typeを持つ
+// value_typeはint
+template<typename T>
+concept has_value_type = requires {
+  typename T::value_type;
+  requires std::same_as<typename T::value_type, int>;
+};
+```
+
+`{ expr } -> constraint;`の形式で記述して、式`expr`の戻り値型が制約式`constraint`による制約を満たすことを表します。この場合、`expr`が利用可能であることに加えて、その型が`constraint`を満たしていなければなりません。
+
+メンバ型の制約は少し特殊な書き方（`requires constraint;`）をする必要があります。これは入れ子要件と呼ばれ、bool値を返す制約式`constraint`が満たされている事を`requires`式の中で表現するための構文です。`typename T::value_type;`によって`T`が`value_type`を持つ事、`requires std::same_as<typename T::value_type, int>;`によってその`value_type`が`int`である事を制約しています。
+
+### 制約とオーバーロード優先順位
 
 ### 特殊メンバ関数の条件付きトリビアル定義
 
