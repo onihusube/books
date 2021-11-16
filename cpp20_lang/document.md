@@ -329,7 +329,7 @@ void i(T);  // コピー可能かつ、==/!=による比較が可能かつ、int
 
 template<std::copyable T>
   requires std::equality_comparable<T>
-void i(T) requires std::convertible_to<T, int>;  // i()と同じ
+void j(T) requires std::convertible_to<T, int>;  // i()と同じ
 ```
 
 `requires`節において複数の制約を行う場合は、`&&`（かつ）`||`（または）によって制約を繋いで記述し、`!`（否定）も使用できます。複雑な事をしなければ、これは通常の論理演算と一致した結果になりますが、ド・モルガンの法則が成り立たないなど直感的でない部分があります。特に、`||`が入った場合のコンセプトによる関数呼び出しの優先順位付けは非常に難解なので、基本的にはそうしたことは避けたほうが無難です。
@@ -349,6 +349,31 @@ struct S {
   auto move_get() && requires std::movable<T> -> T;
 
 };
+```
+
+ちらっと出ていた`convertible_to`コンセプトがそうであるように、コンセプトのテンプレート引数は1つではなく、2つ以上のテンプレート引数を取ることができます。それを`requires`節で使用する場合は迷うことはないと思いますが、`class/typename`の部分には使用できなさそうに見えます。しかし、2つ以上の引数を取るコンセプトでも`class/typename`の部分に使用することができます。
+
+```cpp
+template<std::convertible_to<int> T>
+void f(T);
+
+template<typename T>
+  requires std::convertible_to<T, int>
+void f(T);
+```
+
+この二つの`f()`は同じ制約がなされています。つまり、2つ以上のテンプレート引数を取るコンセプトを`class/typename`の部分に使用するときは、第1引数は省略して第2引数以降を明示的に指定してやればいいわけです。
+
+2つ以上の引数をとるコンセプトを`class/typename`の部分に用いる場合、制約対象のテンプレートパラメータがその1つめの引数として暗黙に補われており、1引数コンセプトの場合は`<>`をも省略することができます。`std::convertible_to`コンセプトは`std::convertible_to<From, To>`のように`From -> To`への変換可能性を表現するコンセプトですが、この仕様によって`std::convertible_to<To> From`のように書いて使用して可読性の向上を図ることができます。
+
+```cpp
+// memory_resourceから派生したT
+template<std::derived_from<std::pmr::memory_resource> T>
+void f(T*);
+
+// int, double, char*から構築可能なT
+template<std::constructible_from<int, double, char*> T>
+void f(T);
 ```
 
 ここまで関数で例示してきましたが、コンセプトによる制約はクラステンプレートに対しても同じように行うことができます。ただし、後置`requires`節は利用できません。
@@ -402,11 +427,11 @@ concept floating_point = std::is_floating_point_v<T>;
 ```cpp
 // 符号付整数型
 template<class T>
-concept signed_integral = integral<T> && is_signed_v<T>;
+concept signed_integral = integral<T> && std::is_signed_v<T>;
 
 // これはng
 template<integral T>
-concept signed_integral = is_signed_v<T>;
+concept signed_integral = std::is_signed_v<T>;
 ```
 
 さらに細かい制約を行うために、`requires`式を使用できます。
@@ -426,7 +451,7 @@ concept has_value_type = requires {
 };
 ```
 
-この`requires`式では、`requires(Args...)`のようにして関数宣言と同じように引数を宣言することができ、この引数は`requires`式内で制約を書くのに使用できます。引数が必要ない場合は単に`requires { ... };`のようにもかけます。`requires`式内では任意の式を記述して、その式が利用可能であることを要求する制約を記述することができます。`requires`式はこれで1つの制約式であり、その全体は内部に記述された各式が全て利用可能であれば`true`となります。
+この`requires`式では、`requires(Args...)`のようにして関数宣言と同じように引数を宣言することができ、この引数は`requires`式内で制約を書くのに使用できます。引数が必要ない場合は単に`requires { ... };`のようにもかけます。`requires`式内では任意の式を記述して、その式が利用可能であることを要求する制約を記述することができます。`requires`式はこれで1つの制約式であり、その全体は内部に記述された各式が全て利用可能であれば`true`となります。なお、`requires`式内は評価されない文脈であり、そこに書かれている式が実行されることはありません。`requires`式内の各式はあくまで、書かれている式が存在するor利用可能である事をチェックするだけです。
 
 `requires`式内の各式に対して、その戻り値型をチェックすることもできます
 
@@ -448,13 +473,13 @@ concept has_value_type = requires {
 };
 ```
 
-`{ expr } -> constraint;`の形式で記述して、式`expr`の戻り値型が制約式`constraint`による制約を満たすことを表します。この場合、`expr`が利用可能であることに加えて、その型が`constraint`を満たしていなければなりません。
+`{ expr } -> constraint;`の形式で記述して、式`expr`の戻り値型が制約式`constraint`による制約を満たすことを表します。この場合、`expr`が利用可能であることに加えて、その型が`constraint`を満たしていなければなりません。`constraint`のところにはコンセプトを指定して、そこでは2引数以上のコンセプトを`class/typename`の部分に指定する時と同様に、左辺の`expr`の戻り値型が1つ目の引数として補われます。
 
 メンバ型の制約は少し特殊な書き方（`requires constraint;`）をする必要があります。これは入れ子要件と呼ばれ、bool値を返す制約式`constraint`が満たされている事を`requires`式の中で表現するための構文です。`typename T::value_type;`によって`T`が`value_type`を持つ事、`requires std::same_as<typename T::value_type, int>;`によってその`value_type`が`int`である事を制約しています。
 
 ### 制約とオーバーロード優先順位
 
-コンセプトをによって制約された関数テンプレート、クラス・変数テンプレートの部分特殊化はコンセプトの有無及びコンセプトの内容によってオーバーロード解決時に優先順位がつけられます。ただしその順序は半順序（順序付けできるとは限らない）であり、詳細はかなり複雑です。ここでは、何とか理解できそうな部分だけを取り上げます。
+コンセプトによって制約された関数テンプレート、クラス・変数テンプレートの部分特殊化はコンセプトの有無及びコンセプトの内容によってオーバーロード解決時に優先順位がつけられます。ただしその順序は半順序（順序付けできるとは限らない）であり、詳細はかなり複雑です。ここでは、何とか理解できそうな部分だけを取り上げます。
 
 まず、コンセプトによって制約されていない関数と制約されている関数の間では、制約されている関数のほうが優先順位が高くなります（以下、関数テンプレートで説明しますがクラス・変数テンプレートでも同様です）。
 
@@ -523,7 +548,7 @@ void f(T); // (4)
 
 `&&`だけで繋がれている場合はこのように比較的理解できるのですが、ここに`||`が入ると一気に複雑になります。非常に難解なのでここでは説明しませんが、避けられるならば避けた方が良いでしょう・・・
 
-そしてもう一つややこしいことに、`&&`で繋がれる各制約がコンセプトではなく制約式が混じってる場合、このような順序付けができなくなることがあります。
+そしてもう一つややこしいことに、原子制約にコンセプトではなく制約式が混じってる場合、このような順序付けができなくなることがあります。
 
 ```cpp
 template<typename T>
@@ -577,6 +602,39 @@ void g(T);
 ```
 
 ### 特殊メンバ関数の条件付きトリビアル定義
+
+- [P0848R3 Conditionally trivial special member functions](https://wg21.link/p0848r3)
+
+このコンセプトを応用して、クラステンプレートにおいてそのテンプレートパラメータの満たす性質に応じて自クラスの特殊メンバ関数の`default`定義をコントロールすることができるようになります。
+
+```cpp
+template<typename T>
+class optional {
+  union {
+    char dummy;
+    T storage;
+  };
+
+public:
+
+  // 特殊メンバ関数の条件付きdefault定義
+  optional(const optional&) requires std::is_trivially_copyable_v<T> = default;
+  ~optional() requires std::is_trivially_destructible_v<T> = default;
+
+  optional(const optional&) {
+    // コピー処理
+  }
+
+  ~optional() {
+    // 破棄処理
+  }
+
+};
+```
+
+クラスの特殊メンバ関数の`default`宣言に対して後置`requires`節による制約を行うことで、その制約が満たされるかどうかでその`default`宣言の有効性をコントロールできます。制約が満たされる場合は`default`宣言は有効であり、コンセプトによる制約の半順序（無制約関数は優先度最低）に応じて残った同じ種類の特殊メンバ関数は暗黙`delete`されます。逆に制約が満たされない場合は制約された`default`宣言が暗黙`delete`されます。
+
+これは通常のクラステンプレートではあまり使用する機会はなさそうですが、`optional`や`variant`といった複雑な実装を伴うクラスではTMPによる複雑な実装をかなり削減することができます。
 
 ## モジュール
 
