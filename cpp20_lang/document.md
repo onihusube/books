@@ -866,6 +866,85 @@ int main() {
 
 ## コルーチン
 
+コルーチンとは、中断と再開が可能な関数のことです。コルーチンの利用法として、ジェネレータ（範囲の生成）や非同期並行処理の簡易な記述などがあります。
+
+C++20コルーチンでは主に次のものが用意されるだけです
+
+- C++コルーチンフレームワーク
+    - スタックレスコルーチンのための種々の概念と動作戦略などの規定
+    - コルーチン制御のための多数のカスタマイゼーションポイント
+- `co_await, co_yield, co_return`演算子
+- 最低限のコルーチンサポートライブラリ
+
+実際にコルーチンを活用するために必要なユーティリティはC++23以降に順次導入していくことになります。
+
+### `std::generator<T>`
+
+- [P2168R3 `std::generator`: Synchronous Coroutine Generator for Ranges](https://wg21.link/p2168r3)
+
+`std::generator<T>`は範囲を生成するコルーチンジェネレータのためのユーティリティ型です。`std::generator<T>`は`T`の範囲として`std::ranges::range`コンセプト（簡単には、`begin()/end()`からイテレータを取得可能な型）を満たします。
+
+```cpp
+#include <generator>
+#include <ranges>
+
+// フィボナッチ数列を生成する関数
+std::generator<int> fib (int max) {
+  co_yield 0;
+
+  auto a = 0, b = 1;
+  for (auto n : std::views::iota(0, max)) {
+    auto next = a + b;
+    a = b, b = next;
+    co_yield next;
+  }
+}
+
+int main() {
+  for (int n : fib(100) | std::views::take(7)) {
+    std::cout << n; // 0112358
+  }
+}
+```
+
+`fib()`はコルーチンです。その実行に際し、`co_yield`に到達する度に呼び出し元に値を返して中断します。ここでは隠蔽されていますが、`std::generator<T>`のイテレータの進行（`++`）のタイミングなどで`co_await`によって再開され、次の`co_yield`まで進みます。`fib()`内ではループによって`max`個の値を生成しており、`co_yield`によって1つづつ生成された上で返されています。生成された値はイテレータを介して取得されるため、範囲`for`によるイテレーションが可能となります。
+
+`std::generator<T>`はこのような値の連続生成のためのコルーチンの制御と、コルーチンの呼び出し・再開処理のイテレータインターフェースへの変換を担うクラスです。現在はC++23導入を目指して作業されています（本書執筆時点では導入されていません）。
+
+### `std::lazy<T>`
+
+- [P1056R1 Add lazy coroutine (coroutine task) type](https://wg21.link/p1056r1)
+
+`std::lazy<T>`は非同期処理をコルーチンによって表現するためのユーティリティ型です。C#などでは`Task`クラスと呼ばれるものに相当しています。
+
+```cpp
+// 何かのデータ型
+struct record {
+  int id;
+  std::string name;
+  std::string description;
+};
+
+// recordをどこかから読み出す非同期処理
+std::lazy<record> load_record(int id);
+// recordをどこかに保存する非同期処理
+std::lazy<> save_record(record r);
+
+// recordの更新処理
+std::lazy<void> modify_record() {
+  // これらの処理はこの順番に実行される
+  record r = co_await load_record(123);
+  r.description = “Look, ma, no blocking!”;
+  co_await save_record(std::move(r));
+}
+```
+
+`load_record(), save_record(), modify_record()`はコルーチンです。`modify_record()`では、`co_await`によってコルーチンを呼び出すことで呼び出したコルーチンの処理を待機するとともに、現在関数の実行を中断します。この振る舞いによって`modify_record()`の各行はコードの記述通りに順番に実行されることが保証されます。`std::lazy<T>`は、このような`co_await`における中断および非同期処理完了待機に関する制御と、非同期処理結果の取得を担うクラスです。
+
+このように、非同期（並行）処理の連続した呼び出しが、通常の同期処理と同様にコードの見た目通りに実行されること（またはその保証）を*Structured Concurrency*と言います。`std::lazy<T>`はコルーチンによって*Structured Concurrency*を実現するために必須のクラスであり、C++23に向けて提案されてはいますが、長期にわたって進展がないので間に合わないかもしれません。
+
+### コルーチン動作概要
+
 # 定数式
 
 ## 仮想関数
@@ -3582,5 +3661,6 @@ P0929はこの問題を解決するものであり、関数や配列などの宣
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
 - cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - yohhoyの日記(https://yohhoy.hatenadiary.jp/)
+- C++20のコルーチン for アプリケーション - Qita(https://qiita.com/Fuyutsubaki/items/a4c9921587ce53d95e55)
 
 表紙は友人のKさんに書いていただきました。可愛いキノコをありがとうございました！
