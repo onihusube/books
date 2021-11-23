@@ -968,31 +968,46 @@ void modify_record_async() {
 コルーチンは言語仕様によって特別扱いされる関数で、その関数本体（*function body*）に`co_await, co_yield, co_return`いずれかの呼び出しを含む場合にコルーチンとして認識されます。
 
 ```cpp
-// あるコルーチン定義とする
-R coro_f(Args...) {
+// コルーチンとする
+R coro_f(Args args...) {
   // function body
+  // ...
 }
 ```
 
 この`coro_f()`をコルーチンとすると、コルーチンは次のように書き換えられた関数として実行されます
 
 ```cpp
-R coro_f(Args...){
+R coro_f(Args args...){
+  bool initial_await_resume_called = false;
+
+  // プロミス型の導出
+  using promise_type = std::coroutine_traits<R, Args...>::promise_type;
+  // プロミスオブジェクトの初期化
   promise_type promise(/*promise-constructor-arguments*/);
 
-  // R=voidの場合省略される
   R result = promise.get_return_object();
 
   try {
+
+    // 初期サスペンドポイント
+    // ここでresultを返して中断する
     co_await promise.initial_suspend();
+    // コルーチン再開の直後にinitial_await_resume_calledにtrueが設定される
+
     // function body
+    // ...
+
   } catch (...) {
     if (!initial_await_resume_called) {
+      // コルーチン初期化完了までの例外は外に投げる
       throw;
     }
+    // 関数本体例外処理の移譲
     promise.unhandled_exception();
   }
 
+// 最終サスペンドポイント
 final_suspend :
   co_await promise.final_suspend();
 }
@@ -1000,6 +1015,98 @@ final_suspend :
 
 この書き換えは一例でありC++コードとして完全なものではなく、コルーチン仕様によって多くの部分が補われ、また隠蔽されています。
 
+コルーチン中の`co_await`式（*function body*にあるものも含めて）の実行に際してコルーチンは中断し、`result`として取得したコルーチンハンドルを呼び出し元へ返します。呼び出し元はそのコルーチンハンドルを介して適宜コルーチンを再開し、再開されたコルーチンは中断箇所（最後に実行した`co_await`式の場所）から再開され実行を継続します。中断している間のコルーチンの状態はコルーチンステートとして保持されているため、コルーチン引数およびコルーチンスコープ内のローカル変数は中断再開を通しても生存しています。コルーチンステートはコルーチン開始時に動的メモリ確保（`::operator new(size_t, nothrow_t)`）によって確保され、コルーチンの終了に伴って解放される領域に配置されます。ただし、そのような動的メモリ確保を避ける最適化（*Coroutine ellision*）が許可されており一部の処理系は実装しているため、動的メモリ確保の省略が期待できるはずです。このように、C++の言語機能がサポートするのはコルーチンステートの管理および`co_await`による中断と再開の管理の部分で、それ以外の部分は上記のような書き換えとカスタマイゼーションポイントを介したユーザー指定の動作によってコルーチンは動作します。
+
+上記例中の`promise_type`はプロミス型と呼ばれるユーザー定義の任意の型で、コルーチンカスタムの中心となるものです。名前の通りFutureパターンにおける*promise*に対応しており、それになぞらえるとコルーチンハンドル（例中`result`）が*future*に、コルーチンステートが共有状態に対応します。`promise_type`およびコルーチンハンドル型`R`（正確にはコルーチンハンドルを内包する型）はユーザー定義する必要があり、そこではあらかじめ決められた名前で関数や型を定義しておくことでコルーチン動作のカスタマイズを行います。
+
+`promise_type`は`std::coroutine_traits`を介して、戻り値型`R`と引数型`Args...`から求められ、`std::coroutine_traits`が特殊化されていない時のデフォルトは`R::promise_type`から取得されます。`promise_type`のオブジェクトは*promise-constructor-arguments*から初期化され、それは次のように決まります
+
+1. `promise_type(args...)`による初期化が可能なら、*promise-constructor-arguments*はコルーチン引数列`args...`
+    - `promise_type(args...);`
+2. それ以外の場合、*promise-constructor-arguments*は空
+    - `promise_type();`
+
+そうして初期化したプロミスオブジェクト`promise`から、戻り値となるコルーチンハンドル（を内包した）オブジェクト`result`を`promise.get_return_object()`から取得します。
+
+その後まず、コルーチンは初期サスペンドポイントと呼ばれる地点に到達します。初期サスペンドポイントは`co_await promise.initial_suspend()`の呼び出しで、その振る舞いおよびここで中断するか否かを`promise.initial_suspend()`メンバ関数（の戻り値型）によって制御します。`co_await`式は`awaitable`オブジェクトを受け取って、その3つのメンバ関数を通してコルーチンの中断と再開を制御します。標準にも非常に簡易な二つの`awaitable`型が用意されています
+
+```cpp
+namespace std {
+  // 常に中断しないawaitable
+  struct suspend_never {
+    constexpr bool await_ready() const noexcept { return true; }
+    constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+    constexpr void await_resume() const noexcept {}
+  };
+
+  // 常に中断するawaitable
+  struct suspend_always {
+    constexpr bool await_ready() const noexcept { return false; }
+    constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+    constexpr void await_resume() const noexcept {}
+  };
+}
+```
+
+`std::suspend_never`は`co_await`式で評価されるとそのコルーチンを中断しない`awaitable`型で、`std::suspend_always`は`co_await`式で評価されるとそのコルーチンを中断する`awaitable`型です。この二つは中断の制御以外に特に何もしない`awaitable`型ですが、さらなるカスタマイズが必要な場合はこの3つのメンバ関数を持つように`awaitable`型をユーザー定義して使用することができます。
+
+`co_await`式では`awaitable`型のメンバ関数`await_ready()`の戻り値によってコルーチンの中断を制御し（`false`で中断）、現在のコルーチンハンドルを`await_suspend()`メンバ関数に渡して呼び出して中断したときの処理を実行します（上記2クラスは中断時の処理を何もしていない）。また、`awaitable`型に対して`co_await`演算子をオーバーロードしておくことで、`co_await`式開始時の動作をカスタマイズすることもできます。
+
+`promise.initial_suspend()`の戻り値の`awaitable`のメンバ関数`await_ready()`が`true`を返す、もしくはコルーチンが再開された時、まず`initial_await_resume_called`変数に`true`を設定し、その後`awaitable`のメンバ関数`await_resume()`が実行されコルーチン再開時の処理が実行されます（上記2クラスは再開時も何もしない）。その後初期サスペンドポイントの次に処理が進み、定義された関数本体（*function body*）の実行に入ります。
+
+コルーチン本体が例外を投げた時、`initial_await_resume_called == false`ならば例外を素通しします。`initial_await_resume_called == false`となるのは、初期サスペンドポイントにおいて`await_resume()`が呼び出される前に例外が発生した時なので、コルーチンの初期化が完了していないときの例外と判断でき、この例外の処理は呼び出し側の責任というわけです。コルーチンの初期化が完了していれば、`promise.unhandled_exception()`にその処理が委ねられます。この関数もユーザー定義可能であるため、コルーチンの本体が例外を投げた時のふるまいを`promise`型を通してカスタムすることができます。
+
+コルーチン本体の実行がつつがなく完了した場合、コルーチンの処理は最終サスペンドポイントに到達します。最終サスペンドポイントでは初期サスペンドポイントとほぼ同様に`promise.final_suspend()`メンバ関数（の戻り値型）によってコルーチン終了時のふるまいを制御します。ここでコルーチンが中断されない場合、コルーチンの実行は終了し、プロミスオブジェクトおよびコルーチンステートが破棄され、コルーチンステートの領域も解放されます。コルーチンハンドルは`R`のオブジェクトを介して呼び出し側に渡っているため、そのハンドルが解放されるまでコルーチンステートを維持したい場合などにここでコルーチンを中断しておくことができるようになっています。その時でも、コルーチンハンドルの解放に伴ってコルーチンは再開され、その後にコルーチンは終了します。
+
+コルーチン本体内（*function body*）にある`co_await`式でもその引数に対して初期（最終）サスペンドポイントと同様のことが行われ、適宜中断と再開が行われるわけです。コルーチン本体内の`co_yield`式はその引数を`e`とすると、`co_await promise.yield_value(e)`のように書き換えられて実行されており、結局`co_await`式として実行されます。そして、その際のふるまいを`promise.yield_value()`メンバ関数によってカスタムすることができます。
+
+ここまでの例には一切登場していませんが、`co_return`はコルーチンの実行を明示的に終了するために使用でき、次のように書き換えられます
+
+```cpp
+// これは
+co_return expr;
+
+// こう実行される
+{
+  S;
+  goto final_suspend;
+}
+```
+
+その引数の式`expr`が`{}`初期化子であるか`void`を返さない式である場合、`S`は`promise.return_value(expr)`となり、それ以外の場合`S`は`{ expr; promise.return_void();}`となります。
+
+```cpp
+// exprが{}初期化か`void`ではない式
+{
+  promise.return_value(expr);
+  goto final_suspend;
+}
+
+// それ以外
+{
+  {
+    expr;
+    promise.return_void();
+  }
+  goto final_suspend;
+}
+```
+
+いずれにせよ、`co_return`の振る舞いは`promise`型の`return_value()/return_void()`メンバ関数によってカスタムでき、最終的には最終サスペンドポイントに到達するわけです。
+
+非常に複雑ではありますが、このようにいくつものカスタマイゼーションポイントが用意されていることによってコルーチンの実行・振る舞いを細かく制御することが可能になっており、最小限の言語機能によって多様なコルーチンアプリケーションを構築することができるようになっています。それらコルーチンカスタマイゼーションポイントは大雑把にまとめると次のようになります
+
+- `promise`型
+    - 各種メンバ関数
+- コルーチンの戻り値型`R`
+    - メンバ型`promise_type`
+    - `std::coroutine_traits`の特殊化
+    - コルーチンハンドル（`std::coroutine_handle<promise_type>`）の管理
+- `awaitable`型
+    - `await_ready()`
+    - `await_suspend()`
+    - `await_resume()`
+    - `co_await`演算子オーバーロード
 
 # 定数式
 
