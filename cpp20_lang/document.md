@@ -1048,11 +1048,11 @@ namespace std {
 }
 ```
 
-`std::suspend_never`は`co_await`式で評価されるとそのコルーチンを中断しない`awaitable`型で、`std::suspend_always`は`co_await`式で評価されるとそのコルーチンを中断する`awaitable`型です。この二つは中断の制御以外に特に何もしない`awaitable`型ですが、さらなるカスタマイズが必要な場合はこの3つのメンバ関数を持つように`awaitable`型をユーザー定義して使用することができます。
+`std::suspend_never`は`co_await`式で評価されるとそこでコルーチンを中断しない`awaitable`型で、`std::suspend_always`はそこでコルーチンを中断する`awaitable`型です。この二つは中断の制御以外に特に何もしない`awaitable`型ですが、さらなるカスタマイズが必要な場合はこの3つのメンバ関数を持つように`awaitable`型をユーザー定義して使用することができます。
 
 `co_await`式では`awaitable`型のメンバ関数`await_ready()`の戻り値によってコルーチンの中断を制御し（`false`で中断）、現在のコルーチンハンドルを`await_suspend()`メンバ関数に渡して呼び出して中断したときの処理を実行します（上記2クラスは中断時の処理を何もしていない）。また、`awaitable`型に対して`co_await`演算子をオーバーロードしておくことで、`co_await`式開始時の動作をカスタマイズすることもできます。
 
-`promise.initial_suspend()`の戻り値の`awaitable`のメンバ関数`await_ready()`が`true`を返す、もしくはコルーチンが再開された時、まず`initial_await_resume_called`変数に`true`を設定し、その後`awaitable`のメンバ関数`await_resume()`が実行されコルーチン再開時の処理が実行されます（上記2クラスは再開時も何もしない）。その後初期サスペンドポイントの次に処理が進み、定義された関数本体（*function body*）の実行に入ります。
+`promise.initial_suspend()`の戻り値の`awaitable`のメンバ関数`await_ready()`が`true`を返す、もしくはコルーチンが再開された時、まず`initial_await_resume_called`変数に`true`を設定し、その後`awaitable`のメンバ関数`await_resume()`が実行されコルーチン再開時の処理が実行されます（上記2クラスは再開時も何もしない）。その後初期サスペンドポイントの次に処理が進み、定義されたコルーチン本体（*function body*）の実行に入ります。
 
 コルーチン本体が例外を投げた時、`initial_await_resume_called == false`ならば例外を素通しします。`initial_await_resume_called`が`false`となるのは、初期サスペンドポイントにおいて`await_resume()`が呼び出される前に例外が発生した時なので、コルーチンの初期化が完了していないときの例外と判断でき、この例外の処理は呼び出し側の責任というわけです。コルーチンの初期化が完了していれば、`promise.unhandled_exception()`にその処理が委ねられます。この関数もユーザー定義可能であるため、コルーチンの本体が例外を投げた時の振る舞いを`promise`型を通してカスタムすることができます。
 
@@ -1096,12 +1096,12 @@ co_return expr;
 
 非常に複雑ではありますが、このようにいくつものカスタマイゼーションポイントが用意されていることによってコルーチンの実行・振る舞いを細かく制御することが可能になっており、最小限の言語機能によって多様なコルーチンアプリケーションを構築することができるようになっています。それらコルーチンカスタマイゼーションポイントは大雑把にまとめると次のようになります
 
-- `promise`型
+- `promise`型 : コルーチン各部の振る舞いの制御
     - 各種メンバ関数
-- コルーチンの戻り値型`R`と引数型`Args`
-    - メンバ型`R::promise_type`あるいは`std::coroutine_traits<R, Args...>`の特殊化
+- コルーチンの戻り値型`R`と引数型`Args` : プロミス型導出とコルーチン再開タイミングの制御
+    - `R`もしくは`std::coroutine_traits<R, Args...>`の特殊化のメンバ型`::promise_type`
     - `R`によるコルーチンハンドル（`std::coroutine_handle<promise_type>`）の管理
-- `awaitable`型
+- `awaitable`型 : コルーチン中断と再開の制御
     - `await_ready()`
     - `await_suspend()`
     - `await_resume()`
