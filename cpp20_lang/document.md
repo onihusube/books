@@ -1003,12 +1003,12 @@ R coro_f(Args args...){
       // コルーチン初期化完了までの例外は外に投げる
       throw;
     }
-    // 関数本体例外処理の移譲
+    // コルーチン本体例外処理の委譲
     promise.unhandled_exception();
   }
 
-// 最終サスペンドポイント
 final_suspend :
+  // 最終サスペンドポイント
   co_await promise.final_suspend();
 }
 ```
@@ -1022,13 +1022,13 @@ final_suspend :
 `promise_type`は`std::coroutine_traits`を介して、戻り値型`R`と引数型`Args...`から求められ、`std::coroutine_traits`が特殊化されていない時のデフォルトは`R::promise_type`から取得されます。`promise_type`のオブジェクトは*promise-constructor-arguments*から初期化され、それは次のように決まります
 
 1. `promise_type(args...)`による初期化が可能なら、*promise-constructor-arguments*はコルーチン引数列`args...`
-    - `promise_type(args...);`
+    - `promise_type promise(args...);`
 2. それ以外の場合、*promise-constructor-arguments*は空
-    - `promise_type();`
+    - `promise_type promise();`
 
 そうして初期化したプロミスオブジェクト`promise`から、戻り値となるコルーチンハンドル（を内包した）オブジェクト`result`を`promise.get_return_object()`から取得します。
 
-その後まず、コルーチンは初期サスペンドポイントと呼ばれる地点に到達します。初期サスペンドポイントは`co_await promise.initial_suspend()`の呼び出しで、その振る舞いおよびここで中断するか否かを`promise.initial_suspend()`メンバ関数（の戻り値型）によって制御します。`co_await`式は`awaitable`オブジェクトを受け取って、その3つのメンバ関数を通してコルーチンの中断と再開を制御します。標準にも非常に簡易な二つの`awaitable`型が用意されています
+その後まず、コルーチンは初期サスペンドポイントと呼ばれる地点に到達します。初期サスペンドポイントは`co_await promise.initial_suspend()`の呼び出しで、その振る舞いおよびここで中断するか否かを`promise.initial_suspend()`メンバ関数（の戻り値）によって制御します。`co_await`式は`awaitable`オブジェクトを受け取って、その3つのメンバ関数を通してコルーチンの中断と再開を制御します。標準にも非常に簡易な二つの`awaitable`型が用意されています
 
 ```cpp
 namespace std {
@@ -1054,11 +1054,11 @@ namespace std {
 
 `promise.initial_suspend()`の戻り値の`awaitable`のメンバ関数`await_ready()`が`true`を返す、もしくはコルーチンが再開された時、まず`initial_await_resume_called`変数に`true`を設定し、その後`awaitable`のメンバ関数`await_resume()`が実行されコルーチン再開時の処理が実行されます（上記2クラスは再開時も何もしない）。その後初期サスペンドポイントの次に処理が進み、定義された関数本体（*function body*）の実行に入ります。
 
-コルーチン本体が例外を投げた時、`initial_await_resume_called == false`ならば例外を素通しします。`initial_await_resume_called == false`となるのは、初期サスペンドポイントにおいて`await_resume()`が呼び出される前に例外が発生した時なので、コルーチンの初期化が完了していないときの例外と判断でき、この例外の処理は呼び出し側の責任というわけです。コルーチンの初期化が完了していれば、`promise.unhandled_exception()`にその処理が委ねられます。この関数もユーザー定義可能であるため、コルーチンの本体が例外を投げた時のふるまいを`promise`型を通してカスタムすることができます。
+コルーチン本体が例外を投げた時、`initial_await_resume_called == false`ならば例外を素通しします。`initial_await_resume_called`が`false`となるのは、初期サスペンドポイントにおいて`await_resume()`が呼び出される前に例外が発生した時なので、コルーチンの初期化が完了していないときの例外と判断でき、この例外の処理は呼び出し側の責任というわけです。コルーチンの初期化が完了していれば、`promise.unhandled_exception()`にその処理が委ねられます。この関数もユーザー定義可能であるため、コルーチンの本体が例外を投げた時の振る舞いを`promise`型を通してカスタムすることができます。
 
-コルーチン本体の実行がつつがなく完了した場合、コルーチンの処理は最終サスペンドポイントに到達します。最終サスペンドポイントでは初期サスペンドポイントとほぼ同様に`promise.final_suspend()`メンバ関数（の戻り値型）によってコルーチン終了時のふるまいを制御します。ここでコルーチンが中断されない場合、コルーチンの実行は終了し、プロミスオブジェクトおよびコルーチンステートが破棄され、コルーチンステートの領域も解放されます。コルーチンハンドルは`R`のオブジェクトを介して呼び出し側に渡っているため、そのハンドルが解放されるまでコルーチンステートを維持したい場合などにここでコルーチンを中断しておくことができるようになっています。その時でも、コルーチンハンドルの解放に伴ってコルーチンは再開され、その後にコルーチンは終了します。
+コルーチン本体の実行がつつがなく完了した場合、コルーチンの処理は最終サスペンドポイント（`co_await promise.final_suspend()`の呼び出し）に到達します。最終サスペンドポイントでは初期サスペンドポイントとほぼ同様に`promise.final_suspend()`メンバ関数（の戻り値）によってコルーチン終了時の振る舞いを制御します。ここでコルーチンが中断されない場合、コルーチンの実行は終了し、プロミスオブジェクトおよびコルーチンステートが破棄され、コルーチンステートの領域も解放されます。コルーチンハンドルは`R`のオブジェクトを介して呼び出し側に渡っているため、そのハンドルが解放されるまでコルーチンステートを維持したい場合などにここでコルーチンを中断しておくことができるようになっています。その時でも、コルーチンハンドルの解放に伴ってコルーチンは再開され、その後にコルーチンは終了します。
 
-コルーチン本体内（*function body*）にある`co_await`式でもその引数に対して初期（最終）サスペンドポイントと同様のことが行われ、適宜中断と再開が行われるわけです。コルーチン本体内の`co_yield`式はその引数を`e`とすると、`co_await promise.yield_value(e)`のように書き換えられて実行されており、結局`co_await`式として実行されます。そして、その際のふるまいを`promise.yield_value()`メンバ関数によってカスタムすることができます。
+コルーチン本体内（*function body*）にある`co_await`式でもその引数に対して初期（最終）サスペンドポイントと同様のことが行われ、適宜中断と再開が行われるわけです。コルーチン本体内の`co_yield`式はその引数を`e`とすると、`co_await promise.yield_value(e)`のように書き換えられて実行されており、結局`co_await`式として実行されます。そして、その際の振る舞いを`promise.yield_value()`メンバ関数によってカスタムすることができます。
 
 ここまでの例には一切登場していませんが、`co_return`はコルーチンの実行を明示的に終了するために使用でき、次のように書き換えられます
 
@@ -1098,10 +1098,9 @@ co_return expr;
 
 - `promise`型
     - 各種メンバ関数
-- コルーチンの戻り値型`R`
-    - メンバ型`promise_type`
-    - `std::coroutine_traits`の特殊化
-    - コルーチンハンドル（`std::coroutine_handle<promise_type>`）の管理
+- コルーチンの戻り値型`R`と引数型`Args`
+    - メンバ型`R::promise_type`あるいは`std::coroutine_traits<R, Args...>`の特殊化
+    - `R`によるコルーチンハンドル（`std::coroutine_handle<promise_type>`）の管理
 - `awaitable`型
     - `await_ready()`
     - `await_suspend()`
