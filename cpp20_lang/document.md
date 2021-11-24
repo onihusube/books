@@ -1,5 +1,5 @@
 ---
-title: C++20 言語機能編
+title: C++20 言語機能
 author: onihusube
 date: 2021/12/30
 geometry:
@@ -176,7 +176,7 @@ struct C {
 
 |比較カテゴリ型名|対応する順序関係|属する基本型|
 |---|---|---|
-|`std::strong_ordering`|全順序|整数型（符号付・無し）、列挙型、ポインタ型|
+|`std::strong_ordering`|全順序|整数型、列挙型、ポインタ型|
 |`std::weak_ordering`|弱順序|なし|
 |`std::partial_ordering`|半順序|浮動小数点数型|
 
@@ -416,7 +416,7 @@ constexpr std::uint8_t v2<T> = 2;
 
 ただし、クラス/変数テンプレートは関数テンプレートとは異なりそのままではオーバーロードできないため、オーバーロードを表現するためには部分特殊化として定義する必要があります。そして、部分特殊化の仕様のために、プライマリテンプレートに制約を行うと謎のエラーに悩まされることになりますので、プライマリテンプレートには制約を行わないことをお勧めします（また、それを説明すると長くなるのでここでは説明しません）。
 
-ここまではコンセプトの利用側を見てきましたが、ここからはコンセプトを作成する方法を見ていきます。コンセプトは`concept`というキーワードを用いたテンプレートによって定義されます。例えば先程までよく見ていた`std::integral`などは例えば次のように定義されています
+ここまではコンセプトの利用側を見てきましたが、ここからはコンセプトを作成する方法を見ていきます。コンセプトは`concept`というキーワードを用いたテンプレートによって定義されます。先程までよく見ていた`std::integral`などは例えば次のように定義されています
 
 ```cpp
 template<typename T>
@@ -426,7 +426,7 @@ template<typename T>
 concept floating_point = std::is_floating_point_v<T>;
 ```
 
-このように、テンプレートパラメータ宣言に続いて`concept name = expr;`のような形式で定義し、`expr`の部分には`requires`節の時と同じ記法によって任意の制約式を指定していくことができます。なお、コンセプトそのものに何らかの制約を行うことはできません。
+このように、テンプレートパラメータ宣言に続いて`concept name = expr;`のような形式で定義し、`expr`の部分には`requires`節の時と同じ記法によって任意の制約式を指定していくことができます。ただし、コンセプトそのものに何らかの制約を行うことはできません。
 
 ```cpp
 // 符号付整数型
@@ -455,7 +455,7 @@ concept has_value_type = requires {
 };
 ```
 
-この`requires`式では、`requires(Args...)`のようにして関数宣言と同じように引数を宣言することができ、この引数は`requires`式内で制約を書くのに使用できます。引数が必要ない場合は単に`requires { ... };`のようにもかけます。`requires`式内では任意の式を記述して、その式が利用可能であることを要求する制約を記述することができます。`requires`式はこれで1つの制約式であり、その全体は内部に記述された各式が全て利用可能であれば`true`となります。なお、`requires`式内は評価されない文脈であり、そこに書かれている式が実行されることはありません。`requires`式内の各式はあくまで、書かれている式が存在するor利用可能である事をチェックするだけです。
+この`requires`式では、`requires(Args...)`のようにして関数宣言と同じように引数を宣言することができ、この引数は`requires`式内で制約を書くのに使用できます。引数が必要ない場合は単に`requires { ... };`のようにもかけます。`requires`式内では任意の式を宣言的に記述していき、それらの式が利用可能であることを要求する制約を記述することができます。`requires`式はこれで1つの制約式であり、その全体は内部に記述された各式が全て利用可能であれば`true`となります。なお、`requires`式内は評価されない文脈であり、そこに書かれている式が実行されることはありません。`requires`式内の各式はあくまで、書かれている式が存在するor利用可能である事をチェックするだけです。
 
 `requires`式内の各式に対して、その戻り値型をチェックすることもできます
 
@@ -477,7 +477,7 @@ concept has_value_type = requires {
 };
 ```
 
-`{ expr } -> constraint;`の形式で記述して、式`expr`の戻り値型が制約式`constraint`による制約を満たすことを表します。この場合、`expr`が利用可能であることに加えて、その型が`constraint`を満たしていなければなりません。`constraint`のところにはコンセプトを指定して、そこでは2引数以上のコンセプトを`class/typename`の部分に指定する時と同様に、左辺の`expr`の戻り値型が1つ目の引数として補われます。
+`{ expr } -> constraint;`の形式で記述して、式`expr`の戻り値型が制約式`constraint`による制約を満たすことを表します。この場合、`expr`が利用可能であることに加えて、その型が`constraint`を満たしていなければなりません。`constraint`のところにはコンセプトを指定して、そこでは左辺の`expr`の戻り値型（`decltype((expr))`）が1つ目の引数として補われており、2引数以上のコンセプトを`class/typename`の部分に指定する時と同じ補間がなされています。
 
 メンバ型の制約は少し特殊な書き方（`requires constraint;`）をする必要があります。これは入れ子要件と呼ばれ、bool値を返す制約式`constraint`が満たされている事を`requires`式の中で表現するための構文です。`typename T::value_type;`によって`T`が`value_type`を持つ事、`requires std::same_as<typename T::value_type, int>;`によってその`value_type`が`int`である事を制約しています。
 
@@ -548,7 +548,7 @@ template<typename T>
 void f(T); // (4)
 ```
 
-この時、各`f()`の制約の包含関係は`(1) ⊂ (2) ⊂ (3)`となり、`(3) > (2) > (1)`の順で優先順位が付きます。一方、`(3)`と`(4)`の制約の間にはお互いに包含関係が成立しない（`C`は`(4)`の制約に現れず、`D`は`(3)`の制約に現れない）ため順序が付きません。したがって、`(3)`と`(4)`の間ではオーバーロード解決が曖昧となります。
+この時、各`f()`の制約の包含関係は(1) ⊂ (2) ⊂ (3)となり、(3) > (2) > (1)の順で優先順位が付きます。一方、(3)と(4)の制約の間にはお互いに包含関係が成立しない（`C`は(4)の制約に現れず、`D`は(3)の制約に現れない）ため順序が付きません。したがって、(3)と(4)の間ではオーバーロード解決が曖昧となります。
 
 `&&`だけで繋がれている場合はこのように比較的理解できるのですが、ここに`||`が入ると一気に複雑になります。非常に難解なのでここでは説明しませんが、避けられるならば避けた方が良いでしょう・・・
 
@@ -816,6 +816,8 @@ int main() {
 
 全てがモジュールとして利用できればいいのですが、流石にまだまだヘッダファイルが主流であり標準ライブラリも例外ではありません。モジュール内ではグローバルモジュールフラグメントと呼ばれる領域でヘッダファイルのインクルードを行います。
 
+\clearpage
+
 ```cpp
 /// modA.cpp
 module; // グローバルモジュールフラグメントの開始
@@ -856,7 +858,7 @@ int main() {
 
 ### 標準ライブラリモジュール
 
-- [P2465R1 Standard Library Modules `std` and `std.compat`](https://wg21.link/p2465r1)
+- P2465R1 Standard Library Modules `std` and `std.compat` (https://wg21.link/p2465r1)
 
 C++20では標準ライブラリのモジュール化は間に合いませんでしたが、それはC++23で予定されています。今の所、`std`名前空間のものを全て含む`std`モジュールと、それに加えてグローバル名前空間にある標準のものを含む`std.compat`という2つのモジュールを導入する方向で議論が進んでいます（本書執筆時点では正式に決定していません）。
 
@@ -1000,7 +1002,7 @@ R coro_f(Args args...){
 
     // 初期サスペンドポイント
     // ここでresultを返す（必要なら中断する）
-    co_await promise.initial_suspend();
+    co_await promise.initial_suspend();
     // コルーチン再開の直後にinitial_await_resume_calledにtrueが設定される
 
     // function body
@@ -1125,7 +1127,8 @@ co_return expr;
 
 ## 仮想関数
 
-- P1064R0 Allowing Virtual Function Calls in Constant Expressions (https://wg21.link/p1064r0)
+- P1064R0 Allowing Virtual Function Calls in Constant Expressions  
+  (https://wg21.link/p1064r0)
 
 従来、定数式で実行できるものは厳しく制限されており仮想関数は実行可能ではありませんでしたが、C++20からはそれが解禁されます。
 
@@ -1264,7 +1267,8 @@ int main() {
 
 ## 共用体のアクティブメンバ切り替え
 
-- P1330R0 Changing the active member of a union inside constexpr (https://wg21.link/p1330r0)
+- P1330R0 Changing the active member of a union inside constexpr  
+  (https://wg21.link/p1330r0)
 
 共用体のアクティブメンバとは、共用体のオブジェクトのある時点において一番最後に（一番最近）初期化されたメンバ変数のことです。C++のオブジェクト生存期間（*lifetime*）のルールとしては、その領域を共有している共用体内の各メンバは常にその中の一つだけが生存期間内にあり、共用体のオブジェクトから合法的にアクセス可能なメンバとは生存期間内にあるメンバ、すなわちアクティブメンバだけです。共用体のオブジェクト初期化後に非アクティブメンバを初期化することによって、その時点のアクティブメンバの生存期間が終了し新しく初期化されたメンバがアクティブメンバとなります。これをアクティブメンバの切り替えと言います。
 
@@ -1637,7 +1641,8 @@ constexpr int f() {
 
 ## `auto`による関数テンプレートの簡易定義
 
-- P1141R2 Yet another approach for constrained declarations (https://wg21.link/p1141r2)
+- P1141R2 Yet another approach for constrained declarations  
+  (https://wg21.link/p1141r2)
 
 C++14ではジェネリックラムダが導入され、ラムダ式の仮引数型を`auto`で宣言する事ができるようになりました。
 
@@ -1759,7 +1764,8 @@ void f() {
 
 ## クラス型の非型テンプレート引数
 
-- P1907R1 Inconsistencies with non-type template parameters (https://wg21.link/p1907r1)
+- P1907R1 Inconsistencies with non-type template parameters  
+  (https://wg21.link/p1907r1)
 
 C++17まで、非型テンプレートパラメータ（以下NTTPと省略）となれる型は整数型やポインタ型をはじめとする組み込み型の一部に限られていました。ユーザー定義のクラス型は当然として、浮動小数点数型もNTTPとして扱う事ができませんでした。
 
@@ -1836,7 +1842,8 @@ NTTPは`T n = arg`のように初期化されるため（例えば、`f2<"test">
 
 ## 集成体テンプレートの実引数からのテンプレート引数推論
 
-- P1021R4 Filling holes in Class Template Argument Deduction (https://wg21.link/p1021r4)
+- P1021R4 Filling holes in Class Template Argument Deduction  
+  (https://wg21.link/p1021r4)
 - P1816R0 Wording for class template argument deduction for aggregates (https://wg21.link/p1816r0)
 
 C++17で導入されたクラステンプレートのテンプレート引数推論（CTAD）は非常に便利な機能ですが、集成体に対してはそのままでは使用できませんでした。
@@ -1921,7 +1928,8 @@ D d2 = {1, 2, 3}; // ok、{}省略可能
 
 ## エイリアステンプレートのCTAD
 
-- P1021R4 Filling holes in Class Template Argument Deduction (https://wg21.link/p1021r4)
+- P1021R4 Filling holes in Class Template Argument Deduction  
+  (https://wg21.link/p1021r4)
 - P1814R0 Wording for Class Template Argument Deduction for Alias Templates (https://wg21.link/p1814r0)
 
 集成体と同様に、しかし異なる理由から、あるクラステンプレートの初期化時にエイリアステンプレートを経由するとCTADは無効になっていました。
@@ -2194,7 +2202,8 @@ struct X {
 
 ## ステートレスラムダのクロージャ型のデフォルトコンストラクタと代入演算子の定義
 
-- P0624R2 Default constructible and assignable stateless lambdas (https://wg21.link/p0624r2)
+- P0624R2 Default constructible and assignable stateless lambdas  
+  (https://wg21.link/p0624r2)
 
 ラムダ式によって生成される関数オブジェクトは型を持ち、その型の事をラムダ式のクロージャ型と呼びます。C++17まで、ラムダ式のクロージャ型はコピー/ムーブコンストラクタとデストラクタを持つことは規定されていましたが、他のメンバは定義されていませんでした。たとえばデフォルト構築可能ではなく、コピー代入が行えません。
 
@@ -2381,7 +2390,8 @@ thread_local auto [t1, t2] = f();
 
 ## 非公開メンバへのアクセス（DR）
 
-- P0969R0 Allow structured bindings to accessible members (https://wg21.link/p0969r0)
+- P0969R0 Allow structured bindings to accessible members  
+  (https://wg21.link/p0969r0)
 
 C++17で導入された構造化束縛では基本的にクラスの`public`メンバにしかアクセスできません。しかしこのことは他の宣言との一貫性がありませんでした。他の宣言ではクラスのメンバにアクセスできるかどうかはそれが`public`であるかどうかではなく、そのコンテキストからそのメンバがアクセス可能であるかに依存します。それは例えば`friend`関数で見る事ができます
 
@@ -2466,7 +2476,8 @@ int main() {
 
 ## `char8_t`
 
-- P0482R6 char8_t: A type for UTF-8 characters and strings (https://wg21.link/p0482r6)
+- P0482R6 char8_t: A type for UTF-8 characters and strings  
+  (https://wg21.link/p0482r6)
 
 C++11にてUTF-16/UTF-32文字を表すための`char16_t/char32_t`型が導入されましたが、UTF-8に対応する文字型は導入されませんでした。それは`char`で表現すれば十分であるとのことで、C++11にてUTF-8文字列リテラル（`u8`）が導入されたときもその結果の型は`const char*`でした。
 
@@ -2523,7 +2534,8 @@ int main(){
 
 ## `char16_t/char32_t`
 
-- P1041R4 Make `char16_t/char32_t` string literals be UTF-16/32 (https://wg21.link/p1041r4)
+- P1041R4 Make `char16_t/char32_t` string literals be UTF-16/32  
+  (https://wg21.link/p1041r4)
 
 C++11でUTF-16/UTF-32文字を表す型として`char16_t/char32_t`とそのリテラルを得るための`u/U`プリフィックスが導入されましたが、実際の所それらの型の値及びリテラルの結果がUTF-16/UTF-32の文字列となるかどうかは規定されていませんでした。
 
@@ -2604,7 +2616,8 @@ class hash_map {
 
 ## `[[likely]]/[[unlikely]]`
 
-- P0479R5 Proposed wording for likely and unlikely attributes (https://wg21.link/p0479r5)
+- P0479R5 Proposed wording for likely and unlikely attributes  
+  (https://wg21.link/p0479r5)
 
 条件分岐（`if, switch`など）を書くとき、コードを書いている人から見るとその分岐の一方がどれくらいの頻度で実行されるのか、あるいはその条件が`true`となる可能性が高いのか低いのか、が良く見えている事はよくあります。しかし、その情報は必ずしもコンパイラには伝わらず、コンパイラはそのようなメタな情報に基づく条件分岐の最適化を行う事が出来ません。
 
@@ -2911,7 +2924,8 @@ T& emplace(Args&&... args) {
 
 ## ユーザー宣言コンストラクタの禁止
 
-- P1008R1 Prohibit aggregates with user-declared constructors (https://wg21.link/p1008r1)
+- P1008R1 Prohibit aggregates with user-declared constructors  
+  (https://wg21.link/p1008r1)
 
 C++11より集成体型では`default/delete`なコンストラクタを宣言することはできていましたが、C++20からは集成体型では一切のコンストラクタ宣言を行えなくなります。
 
@@ -3485,8 +3499,7 @@ struct trait<C2::impl<U>>;
 
 ## `default`コピーコンストラクタの`const`ミスマッチを`delete`するようにする
 
-- P0641R2 Resolving Core Issue #1331 (const mismatch with defaulted copy constructor)  
-  (https://wg21.link/P0641R2)
+- P0641R2 Resolving Core Issue #1331 (const mismatch with defaulted copy constructor) (https://wg21.link/P0641R2)
 
 コピーコンストラクタは通常クラス`C`に対して`const C&`の引数を持ちますが、実のところ意外と柔軟で`const`が無くても良かったりします。すると、他の型のオブジェクトをメンバとして持つクラス型では、それら及び自身のコピーコンストラクタの間で受け取る引数型のミスマッチが発生することになります。
 
@@ -3516,7 +3529,7 @@ C++20では、このような場合にコピーコンストラクタは暗黙`de
 
 この問題が起こりうるラッパー型には`std::tuple`や`std::pair`があり、それらの使用時に非常にまれに恩恵を感じられるかもしれません。とはいえ、コピーコンストラクタは`const T&`を取るようにすべきでしょう。
 
-## const修飾されたメンバポインタの制限を修正
+## `const`修飾されたメンバポインタの制限を修正
 
 - P0704R1 Fixing const-qualified pointers to members (https://wg21.link/P0704R1)
 
@@ -3859,5 +3872,7 @@ P0929はこの問題を解決するものであり、関数や配列などの宣
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
 - cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - yohhoyの日記(https://yohhoy.hatenadiary.jp/)
-- C++20のコルーチン for アプリケーション - Qita(https://qiita.com/Fuyutsubaki/items/a4c9921587ce53d95e55)
-- C++コルーチン拡張メモ - Qita(https://qiita.com/yohhoy/items/aeb3c01d02d0f640c067
+- C++20のコルーチン for アプリケーション - Qita  
+  (https://qiita.com/Fuyutsubaki/items/a4c9921587ce53d95e55)
+- C++コルーチン拡張メモ - Qita  
+  (https://qiita.com/yohhoy/items/aeb3c01d02d0f640c067)
