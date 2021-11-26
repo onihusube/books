@@ -4173,7 +4173,7 @@ bool b2 = inner_it == inner_end;
 int main() {
   const auto str = std::string_view("split_view takes a view and a delimiter");
 
-  for (auto inner_range : views::split(str, ' ')) {
+  for (auto inner_range : views::lazy_split(str, ' ')) {
     for (char c : inner_range) {
       std::cout << c;
     }
@@ -4181,7 +4181,7 @@ int main() {
   }
 
   // パイプラインスタイル
-  for (auto inner_range : str | views::split(' ')) {
+  for (auto inner_range : str | views::lazy_split(' ')) {
     for (char c : inner_range) {
       std::cout << c;
     }
@@ -4204,7 +4204,7 @@ int main() {
   std::vector<int> vec = {1, 2, 4, 4, 1, 1, 1, 10, 23, 67, 9, 1, 1, 1, 1111, 1, 1, 1, 1, 1, 1, 9, 0};
   std::list<int> delimiter = {1, 1, 1};
   
-  for (auto inner_range : vec | std::views::split(delimiter)) {
+  for (auto inner_range : vec | std::views::lazy_split(delimiter)) {
     for (int n : inner_range) {
       std::cout << n;
     }
