@@ -4237,7 +4237,7 @@ int main() {
   // その要素は容易に文字列として扱う事ができる
   // string_viewへの直接変換はC++23から
   for (std::string_view str : sv) {
-    std::cout << str << '\n'
+    std::cout << str << '\n';
   }
   /*
     split_view
