@@ -5,8 +5,8 @@ date: 2021/12/30
 geometry:
   width: 188mm
   height: 263mm
-#coverimage: cover.jpg
-#backcoverimage: backcover.jpg
+coverimage: cover.jpg
+backcoverimage: backcover.jpg
 titlecolor:
   color1:
     r: 0.7882
