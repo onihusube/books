@@ -2026,7 +2026,7 @@ struct wrap2 {
   {}
 
   // Tがexplicitであるときはexplicitにする
-  template<typename U = T, !std::enable_if_t<std::is_convertible_v<U, T>, std::nullptr_t> = nullptr>
+  template<typename U = T, std::enable_if_t<!std::is_convertible_v<U, T>, std::nullptr_t> = nullptr>
   explicit constexpr wrap2(U&& other)
     : value(std::forward<U>(other))
   {}
