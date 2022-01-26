@@ -3883,7 +3883,7 @@ struct S { virtual void f() = 0; };
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
 - cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - yohhoyの日記(https://yohhoy.hatenadiary.jp/)
-- C++20のコルーチン for アプリケーション - Qita  
+- C++20のコルーチン for アプリケーション - Qiita  
   (https://qiita.com/Fuyutsubaki/items/a4c9921587ce53d95e55)
-- C++コルーチン拡張メモ - Qita  
+- C++コルーチン拡張メモ - Qiita  
   (https://qiita.com/yohhoy/items/aeb3c01d02d0f640c067)
