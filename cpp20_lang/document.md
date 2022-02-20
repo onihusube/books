@@ -163,10 +163,10 @@ struct C {
 
   // ==のdefault定義の展開
   bool operator==(const C&) const {
-    if (bool cmp = n == that.n; cmp) return cmp;
-    if (bool cmp = d == that.d; cmp) return cmp;
-    if (bool cmp = str[0] == that.str[0]; cmp) return cmp;
-    if (bool cmp = str[1] == that.str[1]; cmp) return cmp;
+    if (bool cmp = n == that.n; cmp != true) return cmp;
+    if (bool cmp = d == that.d; cmp != true) return cmp;
+    if (bool cmp = str[0] == that.str[0]; cmp != true) return cmp;
+    if (bool cmp = str[1] == that.str[1]; cmp != true) return cmp;
     return str[2] == that.str[2];
   }
 };
