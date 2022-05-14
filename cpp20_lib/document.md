@@ -73,7 +73,7 @@ okuduke:
 1. メインスレッドで、`std::stop_source`オブジェクトを初期化
 2. メインスレッドで、`std::stop_source::get_token()`から`std::stop_token`を取得
 3. 2で作った`std::stop_token`オブジェクトを処理スレッドへ受け渡す
-4. 処理スレッド内では、`std::stop_token::stop_requested()`によってキャンセル要求をチェック
+4. 処理スレッド内では、`std::stop_token::stop_requested()`によってキャンセル要求をチェック（`true`が返って来た場合キャンセルされている）
 5. 処理のキャンセルは、`std::stop_source::request_stop()`によって行う。
 
 ```cpp
@@ -104,6 +104,39 @@ int main() {
 `std::stop_source/std::stop_token`のアイデアは`future`パターンと同じで、スレッド間の共有状態を用いてキャンセル要求を伝達するものです。そして、キャンセルされる側ではキャンセル要求をチェックしながら処理を実行する必要があります。
 
 `<stop_token>`の提供するマルチスレッド処理のキャンセルとは、スレッドをいきなり中断するようなものではありません（これを非同期キャンセルと呼びます）。スレッドの非同期キャンセルのようなことはよくやりたくなりますが、RAIIと相性が悪くリソースリークの危険性があり、そのスレッドに関連する状態が不定となるなど、本質的に危険なのでやるべきではありません。面倒かもしれませんが協調的なキャンセルを常に行うべきで、そのためにこの`std::stop_source/std::stop_token`を利用することができます。
+
+`std::stop_source/std::stop_token`オブジェクトの関連付けは1対1だけではなく多対多の構成をとることもできます。どちらもコピーとムーブが自由に行えるほか、`std::stop_source::get_token()`は呼び出しごとに同じ共有状態に参加する個別の`stop_token`オブジェクトを返します。`std::stop_source/std::stop_token`オブジェクトをコピーしても1つの共有状態に参加する`std::stop_source/std::stop_token`オブジェクトが増えるだけで、共有状態が別にコピーされるわけではありません。
+
+これによって例えば、1つの`stop_source`から複数のスレッドの`stop_token`に対してキャンセルを行えたり、複数のスレッド（あるいは場所）に置いた`stop_source`からある一つのスレッドの`stop_token`に対してキャンセルをかける、等といったことが可能です。
+
+```cpp
+#include <stop_token>
+#include <future>
+#include <thread>
+
+int main() {
+  std::stop_source ss{};
+
+  std::thread th_array[5];
+
+  for (auto& th : th_array) {
+    // 1つのstop_sourceから複数のstop_tokenを取得する
+    th = std::thread{[st = ss.get_token()] {
+      while(st.stop_requested() == false) {
+        // 別スレッドで行う処理
+        ...
+      }
+    }};
+  }
+
+  // 複数のスレッドに対するキャンセル要求
+  ss.request_stop();
+  
+  for (auto& th : th_array) {
+    th.join();
+  }
+}
+```
 
 ### `std::stop_callback`
 
@@ -148,8 +181,104 @@ int main() {
 
 上記のサンプルコードでは、`C -> A -> D`、`C -> B`の順序で処理が進行しますが、`A -> D`と`B`の処理の実行順序は不定です。
 
+そうでなくとも、`stop_source::request_stop()`はどこから呼ばれるかわからないため、`std::stop_callback`に登録するコールバック処理はデータレースやデッドロック等を起こさないように気を付ける必要があります。
+
+なお、既に停止要求が行われた後の`stop_token`に対してコールスタックを登録すると、その場ですぐ実行されます。
+
+```cpp
+// 1つ目のコールバック(A)
+std::stop_callback sc{st, [] {
+  ...
+}};
+
+ss.request_stop();  // Aが実行される
+
+// 2つ目のコールバックの登録、即座に実行される
+std::stop_callback sc{st, [] {
+  ...
+}};
+
+ss.request_stop();  // 何もしない
+```
+
+`std::stop_callback`はコールバックの管理にRAIIを利用しており、登録したコールバックの解除はそのデストラクタで行われ、明示的に解除する手段は提供されていません。
 
 ## `std::jthread`
+
+`std::jthread`はデストラクタで`join()`する`std::thread`です。これは`<thread>`に配置されます。
+
+```cpp
+#include <thread>
+
+int main() {
+  {
+    std::jthread th{[] {
+      // 別スレッドで行う処理
+      ...
+    }};
+
+    // jthreadオブジェクトの破棄時（スコープを抜けるとき）
+    // .join()を呼ぶことでスレッドの終了を待機する
+  }
+  {
+    std::jthread th{[] {
+      // 別スレッドで行う処理
+      ...
+    }};
+
+    // スレッドを手放すこともできる
+    th.detach();
+
+    // この場合デストラクタでは何もしない
+  }
+}
+```
+
+`std::jthread`はこれ（と後述のキャンセル操作サポート）以外の所では意味論も含めて`std::thread`と同一であり、`std::thread`の上位互換として利用することができます。
+
+### `std::thread`の問題点/自動`join()`の理由
+
+`jthread`はなぜデストラクタで自動`join()`するのでしょうか？
+
+
+
+### 協調的キャンセル操作のサポート
+
+`jthread`にはさらに、前述の`std::stop_source/std::stop_token`による協調的キャンセル機構のサポートが含まれています。
+
+利用するにはまず、`jthread`に渡す処理の第一引数で`std::stop_token`を受け取るようにしたうえで、`std::jthread::get_stop_source(),std::jthread::get_stop_token()`メンバ関数によって`stop_source/stop_token`を取得して利用します。
+
+```cpp
+#include <thread>
+
+int main() {
+  // 渡す処理の1つ目の引数でstop_tokenを受ける
+  // 追加の引数は2つ目以降で受け取る
+  std::jthread th{[](std::stop_token st, int arg) {
+
+    while(st.stop_requested() == false) {
+      // 別スレッドで行う処理
+      ...
+    }
+  }, 0);
+
+  // jthreadに関連付けられたstop_tokenの取得
+  auto st = th.get_stop_token();
+
+  // コールバックの登録
+  std::stop_callback sc{st, [] {
+    ...
+  }};
+
+  // jthreadに関連付けられたstop_sourceの取得
+  auto ss = th.get_stop_source();
+
+  // キャンセル要求
+  ss.stop_request();
+}
+```
+
+`jthread`オブジェクトから`.get_stop_source()/.get_stop_token()`で`stop_source/stop_token`を取得した後は、`std::stop_source/std::stop_token`と同じように扱うことができます。
 
 \clearpage
 # `<semaphore>`
