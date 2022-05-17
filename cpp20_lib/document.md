@@ -78,7 +78,6 @@ okuduke:
 
 ```cpp
 #include <stop_token>
-#include <future>
 
 int main() {
   // 1. stop_sourceの初期化
@@ -111,8 +110,6 @@ int main() {
 
 ```cpp
 #include <stop_token>
-#include <future>
-#include <thread>
 
 int main() {
   std::stop_source ss{};
@@ -146,7 +143,6 @@ int main() {
 
 ```cpp
 #include <stop_token>
-#include <future>
 
 int main() {
   
@@ -352,6 +348,116 @@ int sample() {
 
 \clearpage
 # `<semaphore>`
+
+セマフォは並行処理における複数スレッド間の同期を取るための仕組みで、おそらく最も単純かつ基本的なものです。
+
+セマフォの実体はリソースの使用可能数を表示するカウンタであり、利用者（スレッド）が1増えるごとにカウンタを1減算していき、カウンタが0になったらリソースが使用可能でないことを表します。セマフォは、このようなカウンタを並行処理における同期のための意味論でラップし、カウンタを隠蔽すると共にインタフェースを制限することで並行処理における同期のために使いやすく（あるいはそれにしか使えないように）したものです。
+
+`<semaphore>`で提供されるセマフォは`std::counting_semaphore<N>`という名前のクラステンプレートで、テンプレートパラメータ`N`にはリソースの使用可能数（当然正の整数）を指定します。
+
+```cpp
+#include <semaphore>
+
+int main() {
+  // 何か共有リソース
+  auto shared_resource = ...;
+
+  // セマフォの初期化、同時に2スレッドが使用可能とする
+  std::counting_semaphore<2> cs{2};
+
+  std::jthread th_array[5];
+  for (auto& th : th_array) {
+    // 複数スレッドが共有リソースを任意のタイミングで使用する
+    th = std::jthread{[&shared_resource]{
+      ...
+
+      // リソースの使用を開始
+      // カウンタを減算する、カウンタが0なら1以上になるまでブロック
+      cs.acquire();
+
+      // リソースの使用（読み書き）
+      use_resource(shared_resource);
+
+      // リソースの使用を終了
+      // カウンタを加算する
+      cs.release();
+
+      ...
+    }};
+  }
+}
+```
+
+`std::counting_semaphore<N>`の初期化においてはそのコンストラクタでセマフォ内部カウンタの初期値を指定します。これは通常`N`を指定しますが使い方によってはそれよりも小さい数や0を指定することもできます（大きい値や負の値を指定すると未定義動作となります）。
+
+`std::counting_semaphore`のメンバ関数は非常に限定されており、後述の`try~`系インターフェースを除くと`acquire()/release()`の2つしか利用可能ではありません。`.acquire()`はリソースの使用開始前に呼び出してセマフォの値を1減算します。その際、セマフォの値が既に0ならば値が1以上になるまでその場で待機します。`.release()`はリソース使用終了後に呼び出してセマフォの値を1加算します。その際、セマフォの値が0から1になっていたら、`.acquire()`を呼び出して待機している他のスレッドのブロックを解除します。
+
+### `std::binary_semaphore`
+
+複数スレッド間で共有するリソースで同時に2つ以上のスレッドが変更をかけても平気なものというのは稀であり、同期のためにセマフォを採用してリソースの変更を行う場合、その利用可能数（テンプレートパラメータ`N`）は1であることがほとんどでしょう。そのため、`std::counting_semaphore<1>`の別名として`std::binary_semaphore`が用意されています。
+
+```cpp
+// counting_semaphoreとbinary_semaphoreの宣言例
+namespace std {
+
+  template<ptrdiff_t N>
+  class counting_semaphore;
+
+  using binary_semaphore = counting_semaphore<1>;
+}
+```
+
+`std::binary_semaphore`は`N`の値が事前指定されている以外は`std::counting_semaphore`と全く同じように使用できます。
+
+あるリソースにアクセス可能なスレッドを同時に1つに制限する（排他制御する）という観点からは`std::binary_semaphore`とミューテックス（`std::mutex`など）は同一視することができます。しかし、ミューテックスはロックを特定のスレッドが所有する（ロックを取得したスレッド以外からロック解除できない）のに対して、`std::binary_semaphore`（`std::counting_semaphore`）はスレッドに関係なくどこからでもカウンタ値の減算を行うことができます。セマフォとミューテックスの使い分けに迷ったら、そのような使い方をしたいかどうかを考えてみるといいかもしれません。
+
+## `try_acquire`
+
+`.acquire()`はセマフォ値が0なら0以上になるまでそのスレッドをブロックし待機します。場合によってはそのような振る舞いは望ましくなく、すぐにリターンした上で失敗したことを判別できたほうがいい場合もあります。そのために`try_acquire()/try_acquire_for()/try_acquire_until()`メンバ関数が用意されており、これらを用いれば必要以上の時間スレッドをブロックしてしまうのを回避できます。
+
+```cpp
+#include <semaphore>
+
+using namespace std::chrono_literals;
+
+template<typename T>
+void try_acquire_example(std::counting_semaphore<3>& cs, T& shared_resource) {
+  ...
+
+  // セマフォ値が0ならすぐにリターン
+  if (cs.try_acquire() == false) {
+    // セマフォ値の減算に失敗（リソース利用権を得られなかった）
+    ...
+    return;
+  }
+  // trueを返したとき、セマフォ値の減算に成功（リソース使用権を獲得）
+
+  ...
+
+  // セマフォ値が0なら指定された時間待機
+  if (cs.try_acquire_for(2s) == false) {
+    // タイムアウトのため、セマフォ値の減算に失敗
+    ...
+    return;
+  }
+  // trueを返したとき、セマフォ値の減算に成功
+
+  ...
+
+  // セマフォ値が0なら指定された時間まで待機
+  if (cs.try_acquire_until(std::chrono::steady_clock::now() + 10s) == false) {
+    // タイムアウトのため、セマフォ値の減算に失敗
+    ...
+    return;
+  }
+  // trueを返したとき、セマフォ値の減算に成功
+
+  ...
+}
+```
+
+`.try_acquire()`はセマフォ値が0なら全く待機せずすぐにリターンし、`.try_acquire_for()`は指定した時間が過ぎるまで、`.try_acquire_until()`は指定した時間になるまでセマフォ値が0以上になるのを待機します。3つの関数は全て`bool`値を返し、`true`となる時はセマフォ値の減算に成功したことを、`false`となる時はセマフォ値の減算に失敗した（指定した期間内に0以上にならなかった）ことを表します。
+
 \clearpage
 # `<latch>`と`<barrier>`
 
