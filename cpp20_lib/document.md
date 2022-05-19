@@ -484,7 +484,6 @@ int main() {
   std::jthread th_array[5];
   for (auto& th : th_array) {
     th = std::jthread{[&start]{
-
       // カウンタが0になるまで待機
       start.wait();
 
@@ -514,7 +513,7 @@ void kernel(std::latch& sync, int id, std::span<const std::byte> input, std::spa
   }
 
   // 出力前に全カーネル（スレッド）の完了を待機する
-  sync.arrive_and_wait();
+  sync.arrive_and_wait(); // 全カーネルに渡る同期ポイント
 
   // 結果を出力
   output[id] = ...;
@@ -537,7 +536,7 @@ int main() {
 
   // 入力データを行ごとに処理する
   for (auto span : input_data) {
-    std::thread{[&sync, id, span, &result]{
+    std::thread{[&sync, id, span, &result, &end]{
       // カーネルの実行
       kernel(sync, id, span, result);
 
@@ -555,13 +554,190 @@ int main() {
 }
 ```
 
-ただし、`std::latch`はカウンタを加算あるいは再設定する機能がないため、`std::latch`による同期は一度だけ使用可能です。
+`.arrive_and_wait()`は`.count_down()`してから`.wait()`するだけで他のことはせず、この2つを個別に呼び出した時と同じ効果となります。ただ、2つの処理が1つにまとまっていることで、`.arrive_and_wait()`の呼び出し地点はマルチスレッドコードにおける1つの同期ポイントとして見ることができ、同じラッチオブジェクトを使用するスレッドはその同期ポイントで待ち合わせを行うことを明確化できます。
 
-カウンタを使って同期をとるという点はセマフォとラッチで共通しています。しかし、セマフォはカウンタ値が0になったときに待機し1以上になると再開しますが、ラッチはカウンタが0になるまで待機します。そして、セマフォは主に共有リソースの利用権管理に使用され、ラッチは複数スレッドの進行管理に使用されます。
+なお、`std::latch`はカウンタを加算あるいは再設定する機能がない（コピーや`swap`も不可な）ため、`std::latch`による同期は一度だけ使用可能です。
+
+カウンタを使って同期をとるという点はセマフォとラッチで共通しています。しかし、セマフォはカウンタ値が0になったときに待機し1以上になると再開しますが、ラッチはカウンタが0になるまで待機し0になったときに再開します。そして、セマフォは主に共有リソースの利用権管理に使用され、ラッチは複数スレッドの進行管理に使用されます。
 
 ## `std::barrier` - 複数回の同期
 
+ラッチによる同期は1つの`std::latch`オブジェクトにつき一度だけしか行えませんが、複数スレッドで継続的に実行されている処理についてある点での動機を何度も行いたい場合もあるでしょう。そのために`std::barrier`が用意されており、`std::barrier`はラッチと同等の同期を複数回行うことができます。これは例えば、Fork-Joinモデルと呼ばれるタイプの並行処理の実装に使用できます。
+
+```cpp
+#include <barrier>
+
+// 複数のスレッドで呼ばれる処理単位
+void fork_proc(std::barrier<>& sync, std::span<const std::byte> input, std::stop_token st) {
+
+  // キャンセルされるまで行われる連続処理
+  // ループごとに全スレッドで同期しつつ実行される
+  while(st.stop_requested() == false) {
+
+    // メインの処理
+    ...
+
+    // 全スレッドはここで待ち合わせる（1度の処理の完了を同期する）
+    // カウンタが0になった時、カウント値をリセットしてから再開する
+    sync.arrive_and_wait();
+  }
+}
+
+
+int main() {
+  // 処理対象のデータ
+  std::vector<std::span<std::byte>> input_data = ...;
+  
+  // 処理対象のデータ数=立ち上げるスレッド数でバリアを初期化
+  std::barrier<> sync{input_data.size()};
+
+  // キャンセル用stop_source
+  std::stop_source ss;
+
+  // 入力データを行ごとに処理する
+  for (auto span : input_data) {
+    std::thread{[&sync, span, &ss]{
+      fork_proc(sync, span, ss.get_token());
+    }}.detach();
+  }
+
+  ...
+
+  // 処理の中断
+  ss.request_stop();
+
+  // 後処理
+  ...
+}
+```
+
+`std::barrier`の`.arrive_and_wait()`の呼び出しでは、ラッチの時と同様にカウンタ値を1つ減算してからカウンタが0になるのを待機しますが、カウンタが0になった時はカウンタ値をリセット（コンストラクタで指定された値に戻す）してから待機中のスレッドを再開します。これによって、`std::barrier`は複数回同期に使用することができます。
+
+Fork-Joinモデルのような並行処理を行う場合の同期ポイントでは何か同期が必要な処理を行いたいはずです。そしてそれはどこか一つのスレッドで全スレッドがその同期ポイントに到達してから実行する必要があるでしょう。これを行おうとすると、1つのスレッドを特別扱いするなど少し面倒になります。そこで、`std::barrier`はコンストラクタの第2引数でそのような処理（完了関数）を受けとり、カウンタが0になった時に実行させることができます。
+
+```cpp
+#include <barrier>
+
+// 複数のスレッドで呼ばれる処理単位
+template<typename CF>
+void fork_proc(std::barrier<CF>& sync, std::span<const std::byte> input, std::stop_token st) {
+
+  // キャンセルされるまで行われる連続処理
+  // ループごとに全スレッドで同期しつつ実行される
+  while(st.stop_requested() == false) {
+
+    // メインの処理
+    ...
+
+    // 全スレッドはここで待ち合わせる（1度の処理の完了を同期する）
+    // カウンタが0になった時、CFの処理を実行してからカウント値をリセットして再開する
+    sync.arrive_and_wait();
+  }
+}
+
+
+int main() {
+  // 処理対象のデータ
+  std::vector<std::span<std::byte>> input_data = ...;
+  
+  // 処理対象のデータ数=立ち上げるスレッド数でバリアを初期化
+  // 同時に、同期ポイントで再開直前に実行する完了関数を指定
+  std::barrier sync{input_data.size(), [&input_data] {
+    // 同期ポイントで再開前に実行する必要のある処理
+    // 例えば入力データの更新など
+    for (auto span : input_data) {
+      ...
+    }
+  }};
+
+  // キャンセル用stop_source
+  std::stop_source ss;
+
+  // 入力データを行ごとに処理する
+  for (auto span : input_data) {
+    std::thread{[&sync, span, &ss]{
+      fork_proc(sync, span, ss.get_token());
+    }}.detach();
+  }
+
+  ...
+
+  // 処理の中断
+  ss.request_stop();
+
+  // 後処理
+  ...
+}
+```
+
+このように`std::barrier`に渡した完了関数は同期ポイント（`.arrive_and_wait()`）の内部で、カウンタが0になったときに実行されます。同じバリアオブジェクトで待機しているスレッドのいずれかで実行され、この処理の完了後にカウンタをリセットして、待機しているスレッドが再開されます。つまり、完了関数は1つのスレッドだけで実行され、カウンタリセットと再開よりも前に実行されます。
+
+`std::barrier`は完了関数を型消去することなく受け取るためにクラステンプレートとなっており、完了関数の型（ファンクタや関数型）をテンプレートパラメータにとっています。完了関数を渡さない（何もしない）場合は`std::barrier<>`のように指定し、完了関数を渡す場合でもクラステンプレートの実引数推定を利用することでテンプレートパラメータの指定を省略できます。
+
+### `arrive_and_drop()`
+
+場合によっては、同期するスレッドグループの一部を何かしらの条件で早期に終了したい場合があるかもしれません。その場合は`.arrive_and_drop()`を使用することで、同期ポイントに到達したことと処理を停止することだけを通知して待機せずに次の処理に移ることができます。
+
+```cpp
+#include <barrier>
+
+using namespace std::chrono_literals;
+
+// 1ループごとに1つづつスレッドを減らしていく例
+template<typename CF>
+void and_then_there_were_none(std::barrier<CF>& sync, int id, std::span<const bool> killed) {
+  while (true) {
+    std::this_thread::sleep_for(1s);
+
+    if (killed[id] == true) {
+      // カウンタを減算するだけで待機しない
+      // その際、カウンタの最大値（コンストラクタで指定した数）から1引く
+      // ここでカウンタが0になった時も完了関数が実行される
+      sync.arrive_and_drop();
+      return;
+    }
+
+    // カウンタを減算し待機
+    sync.arrive_and_wait();
+  }
+}
+
+
+int main() {
+  // スレッド数
+  constexpr int N = 10;
+
+  // スレッド終了フラグ
+  int count = 0;
+  bool killed[N]{};
+
+  // バリアの初期化
+  std::barrier sync{N, [&] {
+    // 1度呼ばれるごとに順番にスレッドを終了させる
+    killed[count] = true;
+    ++count;
+  }};
+
+  // 全スレッド完了待機のためのラッチ
+  std::latch complete{N};
+
+  // N個のスレッドを起動
+  for (int id : std::views::iota(0, N)) {
+    std::thread{[&sync, id, &complete, &killed]{
+      and_then_there_were_none(sync, id, killed);
+      complete.count_down();
+    }}.detach();
+  }
+
+  // 全スレッド完了待機
+  complete.wait();
+}
+```
+
+`.arrive_and_drop()`はカウンタ値の減算を行うとともに、`std::barrier`内部のカウンタ最大値（コンストラクタで渡された初期値）も1つ減算しておくことで、次のループの処理において同期ポイントに到達すべきスレッド数を1つ減らします。そして、`.arrive_and_drop()`の呼び出しはその場で待機せずすぐに完了します。`.arrive_and_drop()`呼び出し時にカウント値が0になった時でも完了関数は呼び出され、完了関数が終了してからカウント値の減算を行います。
+
 \clearpage
+
 # `<chrono>`
 \clearpage
 ## カレンダー
