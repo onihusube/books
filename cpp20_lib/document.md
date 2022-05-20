@@ -771,7 +771,7 @@ wwwwwwwwww
 
 これを避けるためには`std::cout`に出力するところで同期を取る必要があります。C++20まではそのためにミューテックスによるロックを使用できましたが、出力1つにつき全スレッド間で同期を取る必要があるなどパフォーマンス面で使いづらく、かといって各スレッドに出力バッファを持っておいてそこに出力しておいてから最後にまとめて`std::cout`に出力、というのも実装が面倒でした。
 
-C++20では、複数スレッドからの同期した標準出力のために`std::osyncstream`を利用できるようになります。`std::osyncstream`は`std::basic_osyncstream<charT, traits, Allocator>`の`char`特殊化のエイリアスであり、他にも`std::wosyncstream`が用意されています。以降は、これらを代表して`std::osyncstream`で説明を行います。
+C++20では、複数スレッドからの同期した標準出力のために`std::osyncstream`を利用できるようになります。`std::osyncstream`は`std::basic_osyncstream<charT, traits, Allocator>`の`char`特殊化のエイリアスであり、他にも`wchar_t`の特殊化である`std::wosyncstream`が用意されています。以降は、これらを代表して`std::osyncstream`で説明を行います。
 
 ```cpp
 #include <syncstream>
@@ -807,7 +807,7 @@ wwwwwwwwwwwwwwwwwwww
 
 ## `std::osyncstream`の振る舞いの詳細
 
-`std::osyncstream`はコンストラクタで渡された出力ストリームオブジェクトをラップして、それに対する出力についてグローバルに同期を取ります。しかし、その同期の単位は1度の出力（`<<`）ごとではなく、1つの`std::osyncstream`オブジェクトごとになります。つまり、1つの`std::osyncstream`オブジェクトに対する出力はバッファリングされており、そのデストラクタの実行時にまとめてラップしているストリームに出力しており、グローバルな動機はこの時（デストラクタにおける出力時）に行われています。
+`std::osyncstream`はコンストラクタで渡された出力ストリームオブジェクトをラップして、それに対する出力についてグローバルに同期を取ります。しかし、その同期の単位は1度の出力（`<<`）ごとではなく、1つの`std::osyncstream`オブジェクトごとになります。つまり、1つの`std::osyncstream`オブジェクトに対する出力はバッファリングされており、そのデストラクタの実行時にまとめてラップしているストリームに出力しており、グローバルな同期はこの時（デストラクタにおける出力時）に行われています。
 
 ```cpp
 // osyncstreamによる同期化出力の例
@@ -831,11 +831,11 @@ wwwwwwwwwwwwwwwwwwww
 void example_temporary() { 
   // osyncstreamの一時オブジェクトに対して出力すると
   // この行の終わりでデストラクタが呼び出されすぐ出力される、ただしフラッシュはされない
-  std::osyncstream(cout) << "Hello, " << "World!" << '\n';
+  std::osyncstream{std::cout} << "Hello, " << "World!" << '\n';
 }
 
 void example_emit() {
-  std::osyncstream bout(cout);
+  std::osyncstream bout{std::cout};
 
   bout << "Hello," << '\n';       // フラッシュされない
   bout.emit();                    // coutに文字列が転送される、フラッシュはされない
@@ -867,7 +867,7 @@ void grow_grass(std::string_view grass) {
 }
 ```
 
-`std::cout`などの場合はこのように使用したときでも安全（データ競合を起こしてストリームの状態が壊れたりしない）ですが、`std::osyncstream`の場合はそのような保証はなく、このように使用してしまうと`std::osyncstream`の持つバッファの状態が壊れ、未定義動作の世界に突入するでしょう。
+`std::cout`などの場合はこのように使用したときでも安全（データ競合を起こしてストリームの状態が壊れたりしない）ですが、`std::osyncstream`の場合はそのような保証はなく、このように使用してしまうと`std::osyncstream`の持つバッファの状態が壊れ、未定義動作の世界に突入するでしょう。すなわち、`std::osyncstream`自体はスレッドセーフではありません。
 
 \clearpage
 
