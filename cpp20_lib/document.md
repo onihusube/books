@@ -54,6 +54,121 @@ okuduke:
 # `<numbers>`
 \clearpage
 # `<span>`
+
+`<span>`ヘッダでは、任意のメモリ範囲を所有せずに参照するのに便利な`std::span`クラスを提供します。
+
+C++17まで、任意のメモリ範囲をコピーすることなく参照したいときはポインタと範囲サイズを渡す古式ゆかしいAPIが基本でした。
+
+```cpp
+// メモリ範囲をTのシーケンスとして利用する関数
+void use_mem_seq(int* ptr, std::size_t len) {
+  // メモリ範囲内要素の読み出し
+  for (int i = 0; i < len; ++i) {
+    int e = ptr[i];
+    ...
+  }
+}
+```
+
+あるいはこの2つの引数を1つのクラスにまとめることもできます。しかしどちらにせよ、ポインタを直接扱う必要があり、他のメモリ連続なシーケンス（`std::vector`や配列、`std::string`などなど）からの変換とか各種インターフェース・・・などを考え出すとそこそこ大きな手間となります。ただ、このようなポインタと長さのペアによってメモリ範囲をやり取りするということはかなり頻繁に行われます。
+
+`std::span<T>`はまさにこのための機能であり、ポインタとその長さをラップしたクラスに使いやすいインターフェースを揃えたものです。テンプレートパラメータ`T`には参照先メモリ領域にあるオブジェクトの型を指定します。
+
+```cpp
+#include <span>
+
+// メモリ範囲をTのシーケンスとして利用する関数
+void use_mem_seq(std::span<int> mem) {
+  // メモリ範囲内要素の読み出し
+  for (auto e : mem) {
+    ...
+  }
+}
+```
+
+`std::span`はポインタ1つとそのサイズだけを保持する軽量かつ単純な型であり、*Trivially Copyable*（`memcpy`でコピー可能）であることが規定されています。従って、基本的には関数に対して値渡しして利用します。
+
+`std::span`は`std::string_view`とやっていることはほとんど同じクラスです。
+
+## `const`性
+
+`std::span`は参照先を所有していないので、`std::span`に対する`const`指定は意図通りになりません。
+
+```cpp
+#include <span>
+
+// 読み込み専用spanのつもりでconstを付加
+void use_mem_seq(const std::span<int> mem) {
+  for (auto& e : mem) {
+    e = 10; // ok、書き換えられる
+  }
+}
+```
+
+`std::span`に対する`const`指定の効果はせいぜい代入ができなくなるくらいのもので、その`const`は参照先の各要素にまで波及しません。
+
+これはポインタに対する`const`指定がポインタそのものを書き換え不可能にするだけであることと同じ問題です。別の言い方をすると、`std::span`は参照セマンティクスを持つように設計されています。
+
+読み込み専用の`std::span`を表現するには、`std::span`そのものではなくその要素型に対して`const`を指定します。
+
+```cpp
+#include <span>
+
+// 読み込み専用span
+void use_mem_seq(const std::span<const int> mem) {
+  for (auto& e : mem) {
+    e = 10; // ng、書き換え不可
+  }
+}
+```
+
+標準ライブラリの他のところ、例えば`std::vector`のように範囲を所有しているクラスにおいては、注意深い実装によってそれ自身に対する`const`が所有している要素にまで及ぶようになっており、このような`const`性の事を深い`const`（*deep const*）と呼びます。これに対して、`span`やポインタに対する`const`指定のようにそこで切れてしまう`const`性を浅い`const`（*shallow const*）と呼びます。
+
+
+## 多様な変換
+
+```cpp
+#include <span>
+
+void use_mem_seq(std::span<int> mem);
+
+void use_char_seq(std::span<const char> mem);
+
+void readonly(std::span<const int> mem);
+
+int main() {
+  // std::vector
+  std::vector vec = {0, 1, 2, 3};
+  use_mem_seq(vec);
+
+  // std::array
+  std::array<int, 5> arr = {5, 4, 3, 2, 1};
+  use_mem_seq(arr);
+
+  // 生配列
+  int rawarr[] = {1, 2, 3};
+  use_mem_seq(rawarr);
+
+  // ポインタとサイズのペア
+  std::unique_ptr<int[]> p{new int[4]{}};
+  use_mem_seq({p.get(), 4});
+  
+  // 文字列
+  std::string_view str = "string";
+  use_char_seq(str);
+
+  // 要素型の変換（non const -> const）
+  std::span<int> rospan = vec;
+  readonly(rospan);
+}
+```
+
+## インターフェース
+
+## 静的な要素数
+
+## `std::as_writable_bytes()`
+
 \clearpage
 # `<source_location>`
 \clearpage
@@ -503,17 +618,29 @@ int main() {
 #include <latch>
 
 // データ並列処理において、処理の最小単位を担う関数
-void kernel(std::latch& sync, int id, std::span<const std::byte> input, std::span<int> output) {
+void kernel(std::latch& sync, int id, 
+            std::span<const std::byte> input,
+            std::span<int> output)
+{
 
+  // 並列実行する処理
   for (auto b : input) {
-    // メインの処理（集計など）
     ...
   }
 
-  // 出力前に全カーネル（スレッド）の完了を待機する
+  // 途中結果を出力
+  // idによって出力先が異なるためここで同期は不要
+  output[id] = ...;
+
+  // 全カーネル（スレッド）の出力完了を待機する
   sync.arrive_and_wait(); // 全カーネルに渡る同期ポイント
 
-  // 結果を出力
+  // 他スレッドの途中結果を使用する必要がある処理
+  for (auto n : output) {
+    ...
+  }
+
+  // 最終結果を出力
   output[id] = ...;
 }
 
@@ -566,8 +693,10 @@ int main() {
 #include <barrier>
 
 // 複数のスレッドで呼ばれる処理単位
-void fork_proc(std::barrier<>& sync, std::span<const std::byte> input, std::stop_token st) {
-
+void fork_proc(std::barrier<>& sync, 
+               std::span<const std::byte> input,
+               std::stop_token st)
+{
   // キャンセルされるまで行われる連続処理
   // ループごとに全スレッドで同期しつつ実行される
   while(st.stop_requested() == false) {
@@ -609,7 +738,7 @@ int main() {
 }
 ```
 
-`std::barrier`の`.arrive_and_wait()`の呼び出しでは、ラッチの時と同様にカウンタ値を1つ減算してからカウンタが0になるのを待機しますが、カウンタが0になった時はカウンタ値をリセット（コンストラクタで指定された値に戻す）してから待機中のスレッドを再開します。これによって、`std::barrier`は複数回同期に使用することができます。
+`std::barrier`の`.arrive_and_wait()`の呼び出しでは、ラッチの時と同様にカウンタ値を1つ減算してからカウンタが0になるのを待機しますが、カウンタが0になった時はカウンタ値をリセット（コンストラクタで指定された値に戻す）してから待機中のスレッドを再開します。これによって、1つの`std::barrier`オブジェクトは複数回同期に使用することができます。
 
 Fork-Joinモデルのような並行処理を行う場合の同期ポイントでは何か同期が必要な処理を行いたいはずです。そしてそれはどこか1つのスレッドで全スレッドがその同期ポイントに到達してから実行する必要があるでしょう。これを行おうとすると、1つのスレッドを特別扱いするなど少し面倒になります。そこで、`std::barrier`はコンストラクタの第2引数でそのような処理（完了関数）を受けとり、カウンタが0になった時に実行させることができます。
 
@@ -618,8 +747,10 @@ Fork-Joinモデルのような並行処理を行う場合の同期ポイント�
 
 // 複数のスレッドで呼ばれる処理単位
 template<typename CF>
-void fork_proc(std::barrier<CF>& sync, std::span<const std::byte> input, std::stop_token st) {
-
+void fork_proc(std::barrier<CF>& sync, 
+               std::span<const std::byte> input,
+               std::stop_token st)
+{
   // キャンセルされるまで行われる連続処理
   // ループごとに全スレッドで同期しつつ実行される
   while(st.stop_requested() == false) {
@@ -683,7 +814,10 @@ using namespace std::chrono_literals;
 
 // 1ループごとに1つづつスレッドを減らしていく例
 template<typename CF>
-void and_then_there_were_none(std::barrier<CF>& sync, int id, std::span<const bool> killed) {
+void and_then_there_were_none(std::barrier<CF>& sync, 
+                              int id,
+                              std::span<const bool> killed)
+{
   while (true) {
     std::this_thread::sleep_for(1s);
 
@@ -717,18 +851,18 @@ int main() {
   }};
 
   // 全スレッド完了待機のためのラッチ
-  std::latch complete{N};
+  std::latch end{N};
 
   // N個のスレッドを起動
   for (int id : std::views::iota(0, N)) {
-    std::thread{[&sync, id, &complete, &killed]{
+    std::thread{[&sync, id, &end, &killed]{
       and_then_there_were_none(sync, id, killed);
-      complete.count_down();
+      end.count_down();
     }}.detach();
   }
 
   // 全スレッド完了待機
-  complete.wait();
+  end.wait();
 }
 ```
 
@@ -767,7 +901,7 @@ WwWwwwwwWwWWWWWWWWwWWWWWWwwWWW
 wwwwwwwwww
 ```
 
-どのように混ざるかはほぼランダムであり、たまに意図通りに出力されることもあります。
+どのように混ざるかはほぼランダムであり、たまに意図通りに出力されることもあります。一応標準としては、このように複数のスレッドから同時に`std::cout`に出力を行った時でも、データが消えたり`std::cout`のストリームの状態が壊れたりしないことは保証しています。しかし、その出力順序については何も保証してくれません。
 
 これを避けるためには`std::cout`に出力するところで同期を取る必要があります。C++20まではそのためにミューテックスによるロックを使用できましたが、出力1つにつき全スレッド間で同期を取る必要があるなどパフォーマンス面で使いづらく、かといって各スレッドに出力バッファを持っておいてそこに出力しておいてから最後にまとめて`std::cout`に出力、というのも実装が面倒でした。
 
