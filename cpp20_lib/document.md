@@ -77,7 +77,7 @@ void use_mem_seq(int* ptr, std::size_t len) {
 ```cpp
 #include <span>
 
-// メモリ範囲をTのシーケンスとして利用する関数
+// メモリ範囲をintのシーケンスとして利用する関数
 void use_mem_seq(std::span<int> mem) {
   // メモリ範囲内要素の読み出し
   for (auto e : mem) {
@@ -86,9 +86,29 @@ void use_mem_seq(std::span<int> mem) {
 }
 ```
 
-`std::span`はポインタ1つとそのサイズだけを保持する軽量かつ単純な型であり、*Trivially Copyable*（`memcpy`でコピー可能）であることが規定されています。従って、基本的には関数に対して値渡しして利用します。
+`std::span`はポインタ1つとそのサイズだけを保持する軽量かつ単純な型であり、*Trivially Copyable*（`memcpy`でコピー可能）であることが規定されています。これらの性質から、基本的には関数に対して値渡しして利用します。
 
-`std::span`は`std::string_view`とやっていることはほとんど同じクラスです。
+`std::span`は`std::string_view`とやっていることはほとんど同じクラスです。ただ、文字列はメモリ上で連続して配置されている値以上の意味論を持っているため、`std::string_view`は文字列に特化した`std::span`として別のクラスとして定義されています。
+
+```cpp
+#include <span>
+
+int main() {
+  // 7要素の配列（\0含めて7文字）
+  const char str[7] = "string";
+
+  // 文字列として参照
+  std::string_view sv{str};
+
+  // バイト列として参照
+  std::span<const char> sp{str};
+
+  std::cout << sv.size() << "\n"; // 6
+  std::cout << sp.size() << "\n"; // 7
+}
+```
+
+このnull文字の扱いの他にも、インターフェースが文字列に特化（`std::string`互換）されている、文字列は基本的にリードオンリーなどの違いがあります。
 
 ## `const`性
 
@@ -114,26 +134,30 @@ void use_mem_seq(const std::span<int> mem) {
 ```cpp
 #include <span>
 
-// 読み込み専用span
-void use_mem_seq(const std::span<const int> mem) {
+// 読み込み専用spanを受け取る
+void use_mem_seq(std::span<const int> mem) {
   for (auto& e : mem) {
     e = 10; // ng、書き換え不可
   }
 }
 ```
 
-標準ライブラリの他のところ、例えば`std::vector`のように範囲を所有しているクラスにおいては、注意深い実装によってそれ自身に対する`const`が所有している要素にまで及ぶようになっており、このような`const`性の事を深い`const`（*deep const*）と呼びます。これに対して、`span`やポインタに対する`const`指定のようにそこで切れてしまう`const`性を浅い`const`（*shallow const*）と呼びます。
-
+標準ライブラリの他のところ、例えば`std::vector`のように範囲を所有しているクラスにおいては、注意深い実装によってそれ自身に対する`const`が所有している要素にまで及ぶようになっており、このような`const`性の事を深い`const`（*deep const*）と呼びます。これに対して、`std::span`やポインタに対する`const`指定のようにそこで切れてしまう`const`性を浅い`const`（*shallow const*）と呼びます。
 
 ## 多様な変換
+
+`std::span`は任意のメモリ範囲の参照を手軽にするために、かなり柔軟な変換によって構築することができます。
 
 ```cpp
 #include <span>
 
+// intのメモリ範囲を参照
 void use_mem_seq(std::span<int> mem);
 
+// charのメモリ範囲（単なるバイト列）を参照
 void use_char_seq(std::span<const char> mem);
 
+// intのメモリ範囲を読み込み専用で参照
 void readonly(std::span<const int> mem);
 
 int main() {
@@ -162,6 +186,8 @@ int main() {
   readonly(rospan);
 }
 ```
+
+このように柔軟な変換を用意していいる一方で、これを行う変換コンストラクタはかなり厳密な制約によってメモリ連続でないコンテナからの変換や危険な変換（`const`外しやサイズの異なる型への変換など）を許可しないようになっています。
 
 ## インターフェース
 
