@@ -80,15 +80,15 @@ void use_mem_seq(int* ptr, std::size_t len) {
 // メモリ範囲をintのシーケンスとして利用する関数
 void use_mem_seq(std::span<int> mem) {
   // メモリ範囲内要素の読み出し
-  for (auto e : mem) {
+  for (int e : mem) {
     ...
   }
 }
 ```
 
-`std::span`はポインタ1つとそのサイズだけを保持する軽量かつ単純な型であり、*Trivially Copyable*（`memcpy`でコピー可能）であることが規定されています。これらの性質から、基本的には関数に対して値渡しして利用します。
+`std::span`はポインタ1つとそのサイズだけを保持する軽量かつ単純な型であり、*Trivially Copyable*（`memcpy`でコピー可能）であることが規定されています。これらの性質から、基本的には関数に対して値渡しして利用します。`std::span<T>`はメモリ上で連続する`T`のシーケンスを所有せずに参照しており、`std::span`オブジェクトをコピーしても元の`T`のシーケンスはコピーされません。
 
-`std::span`は`std::string_view`とやっていることはほとんど同じクラスです。ただ、文字列はメモリ上で連続して配置されている値以上の意味論を持っているため、`std::string_view`は文字列に特化した`std::span`として別のクラスとして定義されています。
+`std::span`と`std::string_view`はやっていることはほとんど同じですが、文字列はメモリ上で連続して配置されている値以上の意味論を持っているため、`std::string_view`は文字列に特化するために別の型として定義されています。
 
 ```cpp
 #include <span>
@@ -125,9 +125,7 @@ void use_mem_seq(const std::span<int> mem) {
 }
 ```
 
-`std::span`に対する`const`指定の効果はせいぜい代入ができなくなるくらいのもので、その`const`は参照先の各要素にまで波及しません。
-
-これはポインタに対する`const`指定がポインタそのものを書き換え不可能にするだけであることと同じ問題です。別の言い方をすると、`std::span`は参照セマンティクスを持つように設計されています。
+`std::span`に対する`const`指定の効果はせいぜい代入ができなくなるくらいのもので、その`const`は参照先の各要素にまで波及しません。別の言い方をすると、`std::span`は参照セマンティクスを持つように設計されています。
 
 読み込み専用の`std::span`を表現するには、`std::span`そのものではなくその要素型に対して`const`を指定します。
 
@@ -142,7 +140,9 @@ void use_mem_seq(std::span<const int> mem) {
 }
 ```
 
-標準ライブラリの他のところ、例えば`std::vector`のように範囲を所有しているクラスにおいては、注意深い実装によってそれ自身に対する`const`が所有している要素にまで及ぶようになっており、このような`const`性の事を深い`const`（*deep const*）と呼びます。これに対して、`std::span`やポインタに対する`const`指定のようにそこで切れてしまう`const`性を浅い`const`（*shallow const*）と呼びます。
+標準ライブラリの他のところ、例えば`std::vector`のように範囲を所有しているクラスにおいては、注意深い実装によってそれ自身に対する`const`が所有している要素にまで及ぶようになっており、このような`const`性の事を深い`const`（*deep const*）と呼びます。これに対して、`std::span`に対する`const`指定のようにそこで切れてしまう`const`性を浅い`const`（*shallow const*）と呼びます。
+
+またこのことは、`std::string_view`(深い`const`を持つ)との違いの一つでもあります。
 
 ## 多様な変換
 
@@ -187,13 +187,205 @@ int main() {
 }
 ```
 
-このように柔軟な変換を用意していいる一方で、これを行う変換コンストラクタはかなり厳密な制約によってメモリ連続でないコンテナからの変換や危険な変換（`const`外しやサイズの異なる型への変換など）を許可しないようになっています。
-
-## インターフェース
+このように柔軟な変換を用意している一方で、これを行う変換コンストラクタはかなり複雑な制約によってメモリ連続でないコンテナからの変換や危険な変換（`const`外しやサイズの異なる型への変換など）を許可しないようになっています。
 
 ## 静的な要素数
 
-## `std::as_writable_bytes()`
+生配列や`std::array`などのようにコンパイル時に要素数が決まっているシーケンスや、あらかじめ入力シーケンスに一定の要素があることが確実に分かっているケースなどでは、`std::span`の要素数をコンパイル時に固定しておきたくなるでしょう。そのために、`std::span<T, N>`のように2つ目のテンプレート引数にサイズを指定して固定長にすることができます。以下、実行時に要素数が決まる`std::span<T>`を動的な`std::span`、固定長の`std::span<T, N>`を静的な`std::span`と呼んで区別します。
+
+```cpp
+#include <span>
+
+// int型5個分のメモリを参照するspan
+void use_mem_seq(std::span<int, 5> mem);
+
+int main() {
+  // std::array
+  std::array<int, 5> arr = {5, 4, 3, 2, 1};
+  use_mem_seq(arr);     // ok
+
+  // 生配列
+  int rawarr[] = {1, 2, 3, 4, 5};
+  use_mem_seq(rawarr);  // ok
+
+  // std::vector
+  std::vector vec = {0, 1, 2, 3, 4};
+  use_mem_seq(vec);     // ng
+
+  std::span<int, 5> sp{vec.data(), vec.size()};
+  use_mem_seq(sp);      // ok
+}
+```
+
+生配列や`std::array`などのコンパイル時に要素数が決まる範囲からの変換はスムーズに行えますが、`std::vector`のように実行時にサイズが決まる可変長範囲からの変換は直接行うことができす、一度固定長`std::span<T, N>`を明示的に構築する必要があります。ただし、可変長範囲からの固定長`std::span<T, N>`構築時にはその領域に`N`要素が確実に存在していなければなりません。なお、`std::span<T> -> std::span<T, N>`への変換（動的から静的への変換）は制限されてる一方で、`std::span<T, N> -> std::span<T>`への変換（静的から動的への変換）はスムーズに行うことができます。
+
+静的`std::span`には、長さにまつわる実行時計算が削減できる、`std::span`のサイズがポインタ1つ分になる（ことが期待できる）などのメリットがあります。
+
+実装としては、`std::span<T>`と`std::span<T, N>`でクラスの定義は分かれておらず、動的な要素数を指定する場合は`N`に`std::dynamic_extent`という値がデフォルト値として指定されていて、これによってサイズが動的なのか静的なのかを区別しています。
+
+```cpp
+// std::spanの宣言例
+namespace std {
+  inline constexpr size_t dynamic_extent = numeric_limits<size_t>::max();
+
+  template<class T, size_t N = dynamic_extent>
+  class span;
+}
+```
+
+## インターフェース
+
+`std::span`は冒頭の例のようにイテレータインターフェースを備えている（`contiguous_range`コンセプトを満たす）ほか、シーケンスコンテナの備えるインターフェースも利用することができます。なお、`std::span`の備えるインターフェースの時間計算量は全て定数と指定されており、参照する長さによらず一定となります。
+
+```cpp
+#include <span>
+
+void span_interface(std::span<int> sp) {
+  // 先頭の要素を取得
+  int& f = sp.front();
+
+  // 末尾の要素を取得
+  int& b = sp.back();
+
+  // 添字アクセス
+  // 範囲外参照は未定義動作
+  int& s = sp[5];
+
+  // 領域ポインタとサイズの取得
+  int* p = sp.data();
+  std::size_t len = sp.size();
+
+  // 空かどうか取得（trueで空
+  bool e = sp.empty();
+}
+```
+
+`span`特有のインターフェースの1つに、参照領域のバイト単位の長さを求める`.size_bytes()`があります。
+
+```cpp
+#include <span>
+
+void span_interface(std::span<std::int32_t, 4> sp) {
+  // 要素数の取得
+  std::size_t len = sp.size();
+  // 参照先領域サイズの取得
+  std::size_t byte_len = sp.size_bytes();
+
+  std::cout << len << "\n";       // 4
+  std::cout << byte_len << "\n";  // 16
+}
+```
+
+これは例えば、`std::span`の参照する領域への、もしくはそこからの`memcpy`時に長さ計算を省略しつつ間違わないようにすることができます。
+
+```cpp
+#include <span>
+
+// src -> dstへ全要素分コピーしたい
+void span_memcpy(std::span<std::int32_t, 4> dst, std::span<const float, 4> src) {
+  // やりがちな間違い（4バイトコピーされる）
+  std::memcpy(dst.data(), src.data(), src.size());
+
+  // 正しくバイト単位の長さを指定（16バイトコピーされる）
+  std::memcpy(dst.data(), src.data(), src.size_bytes());
+}
+```
+
+`span`からその部分範囲を取得するために、`.first()`、`.last()`、`.subspan()`の3つの関数が用意されています。
+
+```cpp
+#include <span>
+
+int main() {
+  std::array<int, 10> arr = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  std::span<int, 10> sp{arr};
+  
+  // 先頭からの部分spanを取得する
+  // 例 : 先頭から4つの要素を参照するspanを取得
+  std::span<int, 4> s1 = sp.first<4>();
+  std::span<int> s2 = sp.first(4);
+  // {0, 1, 2, 3}
+
+  // 後ろからの部分spanを取得する
+  // 例 : 後ろからから4つの要素を参照するspanを取得
+  std::span<int, 4> s3 = sp.last<4>();
+  std::span<int> s4 = sp.last(4);
+  // {6, 7, 8, 9}
+
+  // 任意の位置からの部分spanを取得する
+  // 例 : 5番目の位置から4つの要素を参照するspanを取得
+  std::span<int, 4> s5 = sp.subspan<5, 4>();
+  std::span<int> s6 = sp.subspan(5, 4);
+  // {5, 6, 7, 8}
+}
+```
+
+`.first()`は元の`span`の先頭から指定された長さの範囲を、`.last()`は元の`span`の末尾から指定された分戻った長さの範囲を取得します。`.subspan()`には先頭からのオフセットと長さの2つの引数を渡して、先頭からオフセット値分進んだところから指定された長さの範囲を取得します。
+
+3つの関数にはどれも、引数を非型テンプレートパラメータで受け取るものと関数引数で受け取るものの2種類が用意されています。これらの結果は全て`std::span`となり、非型テンプレートパラメータで要素数とオフセットを指定すると静的`span`が、関数引数で要素数とオフセットを指定すると動的`span`が得られます。上記の例では、静的と動的インターフェース2つの使用例それぞれで同じ部分範囲を取得しています。
+
+なお当然ながら、これら部分範囲を取得するときには元々の範囲からはみ出た範囲を取得しないように注意する必要があります。
+
+### バイト列へのキャスト
+
+前述のように、`std::span`は従来のポインタとサイズを取るインターフェースを置き換えるためのものです。そういうインターフェースが使われていたところでよく見られるのは、バイト配列を受け取ってその配列からデータを読み出す、あるいはその配列へデータを書き込む処理です。そのような処理には例えば、通信やI/O、シリアライズなどがあり、`std::span`はバイト配列の参照として使用される頻度が高くなると予想されます。そのため、`std::span<T>`を`std::span<std::byte>`に変換するための関数、`std::as_bytes()`と`std::as_writable_bytes()`が用意されています。
+
+```cpp
+#include <span>
+
+// 何かI/Oへの書き込みを行う関数
+void write_io(std::span<const std::byte> data);
+
+// 何かI/Oからの読み込みを行う関数
+void read_io(std::span<std::byte> buffer);
+
+
+int main() {
+  // 送信
+  std::array<int, 5> data = {1, 2, 3, 4, 5};
+  write_io(std::as_bytes(std::span{data}));
+
+  // 受信
+  std::array<float, 4> response{};
+  read_io(std::as_writable_bytes(std::span{response}));
+}
+```
+
+どちらの関数も入力には任意の`std::span<T, N>`を取りますが、`std::as_bytes()`は読み込み専用バイト列としての`std::span<const std::byte>`を返し、`std::as_writable_bytes()`は書き込み可能なバイト列としての`std::span<std::byte>`を返します。
+
+これらの関数に動的な`std::span<T>`が入力された場合は返される`span`も動的なものになり、静的な`std::span<T, N>`が入力された場合は返される`span`も静的なものになります。どちらの場合でも、得られた`span`の長さは入力の要素数を`N`として`sizeof(T) * N`となります。
+
+```cpp
+#include <span>
+
+void write_io(std::span<const std::byte> data);
+void read_io(std::span<std::byte> buffer);
+
+struct send_data {
+  std::int32_t n;
+  std::int32_t m;
+  std::int64_t l;
+  const char s[4];
+};
+
+struct recieve_data {
+  std::uint32_t n;
+  float f;
+  std::uint16_t m;
+};
+
+// 構造体をバイト列へシリアライズする例
+// このようなことを行う場合、構造体のTrivially Copyable性に注意！
+int main() {
+  send_data data{ .n = 10, .m = 11, .l = 12, .s = "tes"};
+
+  write_io(std::as_bytes(std::span<send_data, 1>(&data, 1)));
+
+  recieve_data res{};
+
+  read_io(std::as_writable_bytes(std::span<recieve_data, 1>(&res, 1)));
+}
+```
 
 \clearpage
 # `<source_location>`
