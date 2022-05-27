@@ -217,7 +217,7 @@ int main() {
 }
 ```
 
-生配列や`std::array`などのコンパイル時に要素数が決まる範囲からの変換はスムーズに行えますが、`std::vector`のように実行時にサイズが決まる可変長範囲からの変換は直接行うことができす、一度固定長`std::span<T, N>`を明示的に構築する必要があります。ただし、可変長範囲からの固定長`std::span<T, N>`構築時にはその領域に`N`要素が確実に存在していなければなりません。なお、`std::span<T> -> std::span<T, N>`への変換（動的から静的への変換）は制限されてる一方で、`std::span<T, N> -> std::span<T>`への変換（静的から動的への変換）はスムーズに行うことができます。
+静的な`std::span`では、生配列や`std::array`などのコンパイル時に要素数が決まる範囲からの変換はスムーズに行えますが、`std::vector`のように実行時にサイズが決まる可変長範囲からの変換は直接行うことができす、一度固定長`std::span<T, N>`を明示的に構築する必要があります。ただし、可変長範囲からの固定長`std::span<T, N>`構築時にはその領域に`N`要素が確実に存在していなければなりません。なお、`std::span<T> -> std::span<T, N>`への変換（動的から静的への変換）は制限されてる一方で、`std::span<T, N> -> std::span<T>`への変換（静的から動的への変換）はスムーズに行うことができます。
 
 静的`std::span`には、長さにまつわる実行時計算が削減できる、`std::span`のサイズがポインタ1つ分になる（ことが期待できる）などのメリットがあります。
 
@@ -391,6 +391,173 @@ int main() {
 # `<source_location>`
 \clearpage
 # `<coroutine>`
+
+`<coroutine>`ヘッダは、C++20で言語機能として追加されたコルーチンを利用してコルーチンアプリケーションを実装するために必要な最小の機能を提供するものです。`generator`や`task`（`lazy`）のようなコルーチンアプリケーションはまだここにはなく、C++23以降に順次追加される予定です。
+
+ここでは、型`T`の値のシーケンスを生成するコルーチンアプリケーション、`generator<T>`を作成しながら、これらの基本機能をどのように使用していくのかを見ていきます。
+
+```cpp
+// これを作る
+template<std::movable T>
+class generator {
+  ...
+
+  auto move_next() -> std::optional<T>;
+};
+
+// こうして
+generator<int> range(int first, int last) {
+  for (int i = first; i < last; ++i) {
+    co_yield i;
+  }
+}
+
+int main() {
+  // こう使える
+  auto coro = range(0, 10);
+
+  auto opt = coro.move_next();
+  std::cout << *opt << "\n";  // 0
+
+  opt = coro.move_next();
+  std::cout << *opt << "\n";  // 1
+
+  opt = coro.move_next();
+  std::cout << *opt << "\n";  // 2
+
+  ...
+
+  opt = coro.move_next();
+  std::cout << *opt << "\n";  // 9
+
+  opt = coro.move_next();
+  
+  std::cout << std::boolalpha << bool(opt); // false
+}
+```
+
+## コルーチントレイトとコルーチンハンドル
+
+コルーチン制御において、コルーチン側での制御を担当するプロミス型は`std::coroutine_traits`によって取得されます。コルーチンの戻り値型を`R`、コルーチン引数型を`Args...`とすると、`std::coroutine_traits<R, Args...>::promise_type`から取得されます。デフォルトの`std::coroutine_traits`（プライマリテンプレート）は`R::promise_type`からそれを取得し、`R`と`Args`についてさらなるカスタマイズが必要となる場合は、`std::coroutine_traits<R, Args...>`を部分特殊化して`::promise_type`を提供することもできます。
+
+```cpp
+#include <coroutine>
+
+template<std::movable T>
+class generator {
+
+  // promise型
+  struct generator_promise {
+    ,,,
+  };
+
+  ...
+
+public:
+  // ::promise_typeとして公開しておく
+  // 今回のgenerator型ではこちらを採用
+  using promise_type = generator_promise;
+};
+
+// もしくは、部分特殊化によって提供してもいい
+template<typename T>
+struct std::coroutine_traits<generator<T>, T, T> {
+  using promise_type = ...;
+};
+```
+
+コルーチン制御において、コルーチン呼び出し側で制御を担当するのがコルーチンハンドルで、それは`std::coroutine_handle`というクラスとして用意されています。とはいえ、コルーチンアプリケーションにおいてはこのコルーチンハンドルを直接扱うことはなく、コルーチンハンドルはコルーチンの戻り値型`R`内部に隠蔽され、コルーチンハンドルは`R`の操作経由で利用されます。
+
+```cpp
+namespace std {
+  template<class Promise = void>
+  struct coroutine_handle;
+
+  template<>
+  struct coroutine_handle<void> {
+    ...
+  };
+
+  template<class Promise>
+  struct coroutine_handle {
+    ...
+  };
+}
+```
+
+`std::coroutine_handle`は通常テンプレートパラメータにプロミス型を取りますが、場合によってはこの型依存が問題となることもあるので、`std::coroutine_handle<>`として型消去して使用することができます。`std::coroutine_handle<Promise>`から`std::coroutine_handle<>`の変換には暗黙変換が提供されます。
+
+```cpp
+#include <coroutine>
+
+template<std::movable T>
+class generator {
+
+  struct generator_promise {
+    ...
+  };
+
+  // コルーチンハンドルをメンバとして保持しておく
+  // テンプレートパラメータにはpromise型を指定する
+  coroutine_handle<generator_promise> m_hcoro;
+
+  ...
+};
+```
+
+### コルーチンハンドルの操作
+
+コルーチンハンドルのメンバ関数にはコルーチンの再開と終了やその判定のためのものが用意されています。これを利用して呼び出し側からのコルーチン制御を行います。
+
+また、コルーチンが生成した（`co_yield`した）値はプロミス型のオブジェクトに保存されており、コールチンハンドルはプロミスオブジェクトへの参照を保持していて、それを`.promise()`によって取得することができます。
+
+```cpp
+#include <coroutine>
+
+template<std::movable T>
+class generator {
+
+  struct generator_promise {
+    // 生成された値を保存
+    T value;
+
+    // co_yield時に呼ばれる関数
+    void return_value(T v) {
+      value = std::move(v);
+    }
+
+    ...
+  };
+
+  // コルーチンハンドルをメンバとして保持しておく
+  // テンプレートパラメータにはpromise型を指定する
+  coroutine_handle<generator_promise> m_hcoro;
+
+  ...
+
+public:
+
+  auto move_next() -> std::optional<T> {
+    if (m_hcoro.done()) {
+      return {};
+    }
+
+    // コルーチンを再開
+    m_hcoro.resume();
+
+    // promiseオブジェクトを取得
+    auto& promise = m_hcoro.promise();
+    // yieldされた値を取得
+    return {std::move(promise.value)};
+  }
+};
+
+```
+
+## `awaitable`型
+
+
+
 \clearpage
 # `<stop_token>`と`std::jthread`
 
