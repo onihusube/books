@@ -741,9 +741,73 @@ public:
 
 ## `awaitable`型
 
-### `co_await`
+コルーチン内部で`co_await`や`co_yield`を呼び出すことでコルーチンを中断して呼び出し側に値を返しつつ制御を戻すことができますが、この際の振る舞いをカスタマイズすることもできます。
+
+コルーチン内部で中断を行う所では、必ずプロミス型のメンバ関数を介したカスタマイズポイントが用意されており、そのメンバ関数が返す型によって中断するかどうか及び中断時/再開時の振る舞いを制御することができます。例えば、先ほど`co_yield`で値を受け取るときに使った`.yield_value()`メンバ関数がその一例です。それらの関数から返され、中断時動作のカスタマイズを担う型のことを総称して`awaitable`型と呼びます。
+
+`<coroutine>`ヘッダでは、中断/再開時に何もせず中断するかしないかのみを制御するとても基本的な2つの`awaitable`型が提供されます。
+
+```cpp
+namespace std {
+  // 常に中断しないawaitable
+  struct suspend_never {
+    // コルーチンを中断するかしないかを指定する（trueを返すと中断する）
+    constexpr bool await_ready() const noexcept { return true; }
+    // 中断時（中断直前）に行う処理を指定
+    constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+    // 再開時（再開直後）に行う処理を指定
+    constexpr void await_resume() const noexcept {}
+  };
+
+  // 常に中断するawaitable
+  struct suspend_always {
+    constexpr bool await_ready() const noexcept { return false; }
+    constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+    constexpr void await_resume() const noexcept {}
+  };
+}
+```
+
+`suspend_never`は中断可能な地点で常に中断することを指示し、`suspend_always`は中断可能な地点で常に中断しないことを指示します。どちらのクラスも、中断/再開時には何もしません。
+
+`awaitable`型はこの3つのメンバ関数を備えた型として定義することで自作することができます。それぞれの関数は次の役割を持ちます
+
+- `bool await_ready()` : コルーチンを中断するかどうかを`bool`値で指示する
+    - `true`を返すと中断させ、`false`を返すと中断させない
+- `auto await_suspend()` : コルーチンが中断する直前に、任意の処理を実行させる
+    - 引数にコルーチンハンドルを取る
+- `auto await_resume()` : コルーチンが再開した直後に、任意の処理を実行させる
+
+`awaitable`を自作する場合、この3つのメンバ関数がこのシグネチャで呼び出し可能であるようなクラスとして定義しておく必要があります。その際、構築のされ方や関数の内部は自由にカスタマイズすることができます。
+
+### Await式
+
+`awaitable`型のオブジェクトはAwait式と呼ばれる式によって評価され、コルーチンの中断制御を行います。Await式は最終的には`co_await o`の形の式として実行され、この一行の式内部でコルーチンを中断し、`awaitable`の3つのメンバ関数によってそのカスタマイズを行います。
+
+`co_await`演算子の直接使用をはじめとして、コルーチン内部ではこのAwait式を呼び出す方法（経路）がいくつか存在しています。それによって、Await式の引数である`o`の取得方法が少し異なります。ここでは、`o`が取得された後、Await式のメインの部分がどのように実行されるかを見ていきます。ここでの`o`は、とりあえず先ほどの2つの`awaitable`型のどちらかのオブジェクトと思っておくと良いかもしれません。
+
+まず、`o.await_ready()`の戻り値を`bool`値`ready`として取得します。`ready`が`false`の時にコルーチンは中断状態となります。ここでの中断状態とは論理的な状態の変化であり、制御（実行地点）はまだコルーチン内です。
+
+コルーチンが中断状態になった後、そのコルーチンのコルーチンハンドル`h`を用いて`o.await_suspend(h)`を実行し、その戻り値があれば`suspend`として取得します。`suspend`が取得可能である場合、その型は`bool`もしくはコルーチンハンドル`std::coroutine_handle<Z>`のどちらかである必要があります。そして、`suspend`の型によって次のどちらかの処理を実行します
+
+- `suspend`が`bool`の時
+    - `suspend == true`ならばコルーチンを中断する
+    - `suspend == false`ならばコルーチンを再開する
+- `suspend`が`std::coroutine_handle<Z>`の時
+    - `suspend.resume()`を実行する
+      - 別のコルーチンの再開（対称コルーチン）
+- `suspend`がない（`o.await_suspend(h)`の戻り値型が`void`の）時
+    - 何もしない
+
+`o.await_suspend(h)`の実行と上記処理が完了した後でもコルーチンが中断状態であるならば、コルーチンは呼び出し元に制御を返し、ここで名実ともにコルーチンは中断されます。なおこの時、コルーチンの実行中のスコープはコルーチンステート内に維持されています。
+
+`ready`が`true`の時は`o.await_suspend(h)`は実行されず、コルーチンは中断しません。その場合、あるいはコルーチンが再開された時、`o.await_resume()`を実行し、戻り値があればそれを返してAwait式の実行は完了します。すなわち、`o.await_resume()`の戻り値型が`void`ではない時、その戻り値がAwait式の実行結果となります。
 
 ### 初期/最終サスペンドポイント
+
+### `co_await`
+
+#### `co_await`演算子のオーバーロード
 
 ### `co_yield`
 
