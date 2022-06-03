@@ -851,12 +851,41 @@ class generator {
 
 ### `co_yield`
 
+コルーチン内での`co_yield v`の呼び出しは、プロミス型オブジェクトを`p`として`co_await p.yield_value(v)`のように書き換えられて実行されます。すなわち、`co_yield`によるAwait式の引数`o`はプロミス型のメンバ関数`.yield_value()`に`co_yield`の引数を渡して呼び出した結果として取得されます。
+
+今回の`generator`型では、`co_yield`による値の生成時にはその都度中断しますが中断前後で他に何もしないので、`.yield_value()`は`std::suspend_always`を返すようにします。
+
+```cpp
+#include <coroutine>
+
+template<std::movable T>
+class generator {
+
+  struct generator_promise {
+    // 生成された値を保存
+    T value;
+
+    // co_yield時に呼ばれる関数
+    auto yield_value(T v) {
+      // 値を保存して中断
+      value = std::move(v);
+      return std::suspend_always{};
+    }
+
+    ...
+  };
+
+  // コルーチンハンドル
+  handle m_hcoro;
+
+  ...
+};
+```
+
+前述のように、こうして保存された値はコルーチンハンドルの`.promise()`によって取得できるプロミスオブジェクトの参照経由で、コルーチン戻り値型（コルーチン呼び出し側）から取得することができます。
+
 ### `co_return`
 
-
-### `co_await`演算子のオーバーロード
-
-Await式呼び出しの全ての場合において、引数`o`に対して使用可能な`co_await`演算子を用意しておくことで、引数`o`
 
 ## `gengerator`型全景
 
