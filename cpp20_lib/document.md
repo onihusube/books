@@ -885,6 +885,8 @@ generator<int> f() {
 }
 ```
 
+なお、Await式における`co_await o`はこの`co_await`呼び出しとは異なるもので、再帰的に`co_await`呼び出しとして処理されることはありません。つまりは、`co_await`を直接書いたとき以外は`.await_transform()`は考慮されません。
+
 ### `co_yield`
 
 コルーチン内での`co_yield v`の呼び出しは、プロミス型オブジェクトを`p`として`co_await p.yield_value(v)`のように書き換えられて実行されます。すなわち、`co_yield`によるAwait式の引数`o`はプロミス型のメンバ関数`.yield_value()`に`co_yield`の引数を渡して呼び出した結果として取得されます。
