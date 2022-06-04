@@ -713,7 +713,7 @@ class generator {
 
 public:
 
-  // 値の取得をする関数
+  // 値を取得する関数
   auto move_next() -> std::optional<T> {
     // コルーチン有効性をチェック
     if (!m_hcoro) return {};
@@ -848,6 +848,42 @@ class generator {
 
 ### `co_await`
 
+コルーチン内での`co_await`の呼び出しは、一番明示的なAwait式の実行地点です。
+
+`co_await v`のように呼び出された時のAwait式の引数`o`は、プロミス型オブジェクトを`p`として`p.await_transform(v)`が使用可能ならばその戻り値として取得され、`p.await_transform`が見つからない場合は`v`がそのまま`o`として取得されます。
+
+すなわち、ここでは`v`が`awaitable`ではない場合に`p.await_transform()`によってそれを`awaitable`に変換してからAwait式に渡せるようになっています。
+
+今回の`generator`型では、`co_await`を明示的に使用する予定はないので何もする必要はありません。もし、`co_await`でも値を生成したい場合はプロミス型で`.await_transform()`を実装し、そこで受けとった値を保存するようにしておきます。
+
+むしろコルーチンで`co_await`を使ってほしくない場合、プロミス型の`.await_transform()`を`delete`しておくことで、`co_await`利用を禁止することができます。
+
+```cpp
+#include <coroutine>
+
+template<std::movable T>
+class generator {
+
+  struct generator_promise {
+
+    // co_await禁止
+    void await_transform() = delete;
+
+    ...
+  };
+
+  // コルーチンハンドル
+  handle m_hcoro;
+
+  ...
+};
+
+
+generator<int> f() {
+  co_yield 0; // ok
+  co_await 1; // ng
+}
+```
 
 ### `co_yield`
 
@@ -886,10 +922,176 @@ class generator {
 
 ### `co_return`
 
+`co_return`文そのものでは直接Await式が実行されるわけではありませんが、`co_return`は結果として最終サスペンドポイントに到達するため、そこでAwait式が実行されます。
+
+ただし、`co_return`は最終サスペンドポイントの前にプロミス型で定義された`.return_void()/.return_value()`のどちらかを呼び出します。`co_return expr;`のように呼ばれて`expr`の結果が`void`ではないならば`.return_value()`が呼ばれ、`expr`の結果が`void`もしくは`co_return;`のように呼ばれたときは`.return_void()`が呼ばれます。どちらの場合もその実行後に最終サスペンドポイントに到達して、そこでAwait式が実行されます。
+
+今回の`generator`型では、`co_return`を明示的に使用する予定はないので何もする必要はありません。
 
 ## `gengerator`型全景
 
+プロミス型を含めて、これでコルーチンアプリケーション作成のために必要なことはおおよそ揃いました。ここまで小出しにしてきたため全体像が分かりづらかったので、完成した`generator`型の全体をここにまとめておきます。
+
+```cpp
+template<std::movable T>
+class generator {
+  // 前方宣言
+  struct generator_promise;
+
+  // 短縮のためのエイリアス
+  using handle = std::coroutine_handle<generator_promise>;
+
+  // プロミス型定義
+  struct generator_promise {
+    // 生成された値を保存
+    T value;
+
+    // コルーチン戻り値取得をカスタマイズする
+    auto get_return_object() {
+      // コルーチンハンドルからgeneratorオブジェクトを生成
+      return generator{handle::from_promise(*this)};
+    }
+
+    // 初期サスペンドポイントのカスタマイズ
+    auto initial_suspend() {
+      return std::suspend_always{}; // 常に中断する
+    }
+
+    // 最終サスペンドポイントのカスタマイズ
+    auto final_suspend() noexcept {
+      return std::suspend_always{}; // 常に中断する
+    }
+
+    // co_yield時に呼ばれる関数
+    auto yield_value(T v) {
+      // 値を保存して中断
+      value = std::move(v);
+      return std::suspend_always{};
+    }
+
+    // コルーチン内での例外をハンドルする
+    void unhandled_exception() { std::terminate(); }
+
+    // co_await禁止
+    void await_transform() = delete;
+
+    // co_return;のカスタマイズ
+    //void return_void();
+
+    // co_return expr;のカスタマイズ
+    //void return_value();
+  };
+
+  // コルーチンハンドル
+  handle m_hcoro;
+
+  // コルーチンハンドルを受け取るコンストラクタ
+  explicit generator(handle hcoro)
+    : m_hcoro(hcoro) {}
+
+public:
+
+  // プロミス型の公開
+  using promise_type = generator_promise;
+
+  // 値を取得する関数
+  auto move_next() -> std::optional<T> {
+    // コルーチン有効性をチェック
+    if (!m_hcoro) return {};
+
+    // コルーチンを再開
+    // 次のco_yieldまで進む
+    m_hcoro.resume();
+
+    // 最終サスペンドポイントに到達していないことをチェック
+    if (m_hcoro.done()) return {};
+
+    // promiseオブジェクトの参照を取得
+    auto& promise = m_hcoro.promise();
+    // yieldされた値を取得
+    return {std::move(promise.value)};
+  }
+
+  ~generator() {
+    // コルーチンが有効ならば（終了していなければ）
+    if (m_hcoro) {
+      // コルーチンを終了させる
+      m_hcoro.destroy();
+    }
+  }
+};
+```
+
+この`generator`型は次のように使用します。
+
+```cpp
+generator<int> make_range(int first, int last) {
+  for (int i = first; i < last; ++i) {
+    co_yield i;
+  }
+}
+
+int main() {
+  auto gen = make_range(0, 10);
+
+  std::optional<int> opt = gen.move_next();
+  
+  while (opt) {
+    std::cout << *opt << ", ";
+    opt = gen.move_next();
+  }
+  // 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 
+}
+```
+
+### コルーチン内例外のハンドリング
+
+完成した`generator`型の中で、一つだけ説明していなかったのがプロミス型の`.unhandled_exception()`です。これはコルーチン本体（ユーザーが書いたコード部分）で投げられる例外をハンドリングするための関数です。
+
+初期サスペンドポイントや最終サスペンドポイント等の暗黙に生成されるコード部分での例外処理はコルーチン呼び出し元の責任ですが、コルーチン本体で発生した例外処理はコルーチン戻り値型作成者がまずハンドリングします。
+
+```cpp
+template<std::movable T>
+class generator {
+
+  struct generator_promise {
+    
+    ...
+
+    // コルーチン内での例外をハンドルする
+    void unhandled_exception() { std::terminate(); }
+    
+  };
+
+  ...
+};
+```
+
+多くの場合はこのように`std::terminate()`を呼び出してプログラムを終了させるので良いと思いますが、ハンドルして処理を継続したかったり、呼び出し側に再スローしたかったりする場合は`.unhandled_exception()`をカスタマイズすることができます。
+
+```cpp
+// 別のプロミス型実装
+struct sample_promise {
+  
+  // コルーチン内での例外をハンドルする
+  void unhandled_exception() { 
+    try {
+      // このようにして投げられている例外を取得できる
+      std::rethrow_exception(std::current_exception());
+    } catch (const std::exception& ex) {
+      std::cout << ex.what() << "\n";
+    } catch (...) {
+      throw;
+    }
+  }
+  
+};
+```
+
+`unhandled_exception()`が正常に完了した場合、コルーチンは最終サスペンドポイントに到達します。
+
 \clearpage
+
 # `<stop_token>`と`std::jthread`
 
 ## `<stop_token>`
