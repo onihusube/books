@@ -389,6 +389,134 @@ int main() {
 
 \clearpage
 # `<source_location>`
+
+`<source_location>`ヘッダでは、従来`__LINE__`や`__FILE__`などによって取得していたソースコード上位置情報を一括で取得する手段を提供するとともに、それをまとめて格納し持ち運ぶことができるようにする構造体`std::source_location`が提供されます。
+
+まず、ソースコード位置情報を取得するには`std::source_location::current()`静的メンバ関数を使用します。
+
+```cpp
+#include <source_location>
+
+void f() {
+  // この場所のソースコード情報を取得
+  auto sl = std::source_location::current();
+
+  std::cout << "\n--- in f() ---\n\n";
+
+  std::cout << sl.line() << "\n"            // 行番号
+            << sl.column() << "\n"          // 列番号
+            << sl.file_name() << "\n"       // ファイル名
+            << sl.function_name() << "\n";  // 関数名
+}
+
+int main() {
+  auto sl = std::source_location::current();
+
+  std::cout << sl.line() << "\n"
+            << sl.column() << "\n"
+            << sl.file_name() << "\n"
+            << sl.function_name() << "\n";
+  
+  f();
+}
+```
+
+`std::source_location::current()`は`consteval`指定されているため、この関数の実行は必ずコンパイル時に完了します。そして、その戻り値として`current()`が呼ばれた場所のソースコード情報を保持した`std::source_location`オブジェクトが得られます。
+
+このプログラムの出力は、例えば次のようになります（Wandbox GCCでの実行結果）。
+
+```
+17
+42
+prog.cc
+int main()
+
+--- in f() ---
+
+6
+42
+prog.cc
+void f()
+```
+
+`std::source_location`は4つのメンバ関数を持っており、`.line()`は行番号、`.column()`は列番号、`.file_name()`はそのソースファイル名、`.function_name()`は囲む最も内側の関数名、をそれぞれ取得します。`current()`がヘッダファイル内コードで呼び出されている場合、ヘッダファイル内におけるソースコード位置が取得され、`.file_name()`はヘッダファイル名を返します。つまり、`std::source_location`で得られるソースコード位置は`#include`の影響を受けません。
+
+なお、この例の`.column()`は`std::source_location::current()`の`()`の位置が取得されていますが、この値は処理系定義とされているのでコンパイラや環境によって異なる可能性があります。
+
+`std::source_location`オブジェクトはコピーやムーブを自由に行うことができるため、ある場所で取得した情報を別の場所に運ぶことが容易にできます。これは特に、クラスのメンバとして保持するときに便利です。
+
+```cpp
+#include <source_location>
+
+class S {
+  std::source_location m_loc;
+
+public:
+
+  S(std::source_location loc) : m_loc(loc) {}
+
+  auto get_location() {
+    return m_loc;
+  }
+};
+
+void f(const S& s) const {
+
+  auto sl = s.get_location();
+
+  std::cout << sl.line() << "\n"
+            << sl.column() << "\n"
+            << sl.file_name() << "\n"
+            << sl.function_name() << "\n";
+}
+
+int main() {
+  S s{std::source_location::current()}; // ok
+
+  f(s); // ok
+}
+```
+
+この出力は例えば次のようになります
+
+```
+27
+36
+prog.cc
+int main()
+```
+
+`std::source_location`オブジェクトは軽量でコピーが効率的なオブジェクトであると規定されているため、基本的にはコピーして持ち運ぶことができます。
+
+## デフォルト引数での利用
+
+実際に`std::source_location`を使ってみると、一々`std::source_location::current()`とするのは構文的にかなり重いことに気づくでしょう。また、この取得構文はどこでも同一であるため、`std::source_location`が必要となるところでは自動で取得してほしくもなります。このニーズを満たしてくれるのが関数のデフォルト引数で取得しておくという書き方です。
+
+```cpp
+#include <source_location>
+
+// ログ出力関数
+void log(std::string_view message, 
+         std::source_location sl = std::source_location::current())
+{
+  std::cout << std::format("{:s}:{:d}:{:d} in {:s} : {:s}", sl.file_name(), sl.line(), sl.column(), sl.function_name(), message);
+}
+
+int main() {
+  log("test");
+}
+```
+
+出力例（godbolt MSVC 2019、一部改変）
+
+```
+example.cpp:13:3 in main : test
+```
+
+このように、デフォルト引数で使用した時でも書かれた場所ではなく呼ばれた場所の位置情報を取得してくれるため、`std::source_location::current()`をほぼ省略しながら利用することができます。そのため、`std::source_location`はもっぱらデフォルト引数で使用されるでしょう。
+
+なお、関数のデフォルト引数は呼び出し時に省略可能という性質から必ず引数列の後ろに来なくてはなりません。この制約のため、可変長テンプレートではこの方法を取れないという問題があります。一応将来のC++に向けて可変長テンプレートの推論を調整してこの問題に対処しようとする動きはありますが、C++26以降になりそうです。
+
 \clearpage
 # `<coroutine>`
 
@@ -1951,3 +2079,4 @@ void grow_grass(std::string_view grass) {
 - std::threadデストラクタ動作検討の歴史(https://zenn.dev/yohhoy/scraps/393bce83b4f3f0)
 - threadの利用と例外安全（その1）(https://yohhoy.hatenadiary.jp/entry/20120209/p1)
 - std::jthread and cooperative cancellation with stop token(https://www.nextptr.com/tutorial/ta1588653702/stdjthread-and-cooperative-cancellation-with-stop-token)
+- 可変長テンプレートでもstd::source_locationを使いたい！ (https://in-neuro.hatenablog.com/entry/2021/12/15/000033)
