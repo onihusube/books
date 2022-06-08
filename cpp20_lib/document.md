@@ -2054,7 +2054,112 @@ void grow_grass(std::string_view grass) {
 \clearpage
 
 # `<chrono>`
-\clearpage
+
+C++20では、`<chrono>`はカレンダーとタイムゾーンを扱えるように大きく拡張されています。
+
+以下、本文及びサンプルコードでは`std::chrono`を省略します。
+
+## 新しい時計型
+
+時計型とは時間を表現するための型のことで、これまでは`system_clock`、`steady_clock`、`high_resolution_clock`の3つの時計型がありました。ここに次の4つの新しい時計型が追加されます。
+
+- `utc_clock` : UTC（協定世界時）時間を表す
+- `tai_clock` : TAI（国際原子時）時間を表す
+- `gps_clock` : GPS時間を表す
+- `file_clock` : ファイル時間を表す
+    - `std::filesystem::file_time_type`のための時計型
+
+C++20からは、`system_clock`の時間はUTC（UNIX時間）である事が規定されました（これは全ての実装がそうだったために標準でも規定することになったものです）。`system_clock`と`utc_clock`の違いはうるう秒のカウントの有無で、`system_clock`ではうるう秒がカウントされていません。
+
+TAIは厳密に定義された秒に従って時間をカウントする最も正確な時計であり、UTCはそれに対して日常生活に適合するようにうるう秒などによって調整された時計です。`tai_clock`と`system_clock`はどちらもうるう秒をカウントしませんが、エポック等が異なるためその時刻も異なります。
+
+`file_clock`は`<filesystem>`においてファイルの作成・更新日時を扱うための時計型で、UTC時間に従う時計ではありますがその詳細は未規定であり、タイムゾーンが異なるなど環境の影響を強く受けると思われます。
+
+任意の時計型を`Clock`とすると、全ての時計型で`Clock::now()`静的メンバ関数からその時計型の表現する現在の時刻が取得できます。
+
+```cpp
+#include <chrono>
+
+template<typename C>
+void print_time() {
+  std::cout << C::now() << "\n";
+}
+
+int main() {
+  print_time<system_clock>();
+  print_time<utc_clock>();
+  print_time<tai_clock>();
+  print_time<gps_clock>();
+  print_time<file_clock>();
+}
+```
+
+`Clock::now()`の返す値は時間軸上の一点を指す`time_point`型の値です。ただし、`time_point`型は時計型と時間間隔を表す型（`duration`型）によって特殊化されており、時計型毎に`Clock::now()`の戻り値は異なっています（時間間隔型は未規定）。それらの型にアクセスするために、`time_point`型のエイリアスが用意されています。
+
+- `system_clock`
+    - `sys_time` : システム時刻を表す`time_point`
+    - `sys_seconds` : 秒単位のシステム時刻を表す
+    - `sys_day` : 日単位のシステム時刻を表す
+- `utc_clock`
+    - `utc_time` : UTC時刻を表す`time_point`
+    - `utc_seconds` : 秒単位のUTC時刻を表す
+- `tai_clock`
+    - `tai_time` : TAI時刻を表す`time_point`
+    - `tai_seconds` : 秒単位のTAI時刻を表す
+- `gps_clock`
+    - `gps_time` : GPS時刻を表す`time_point`
+    - `gps_seconds` : 秒単位のGPS時刻を表す
+- `file_clock`
+    - `file_time` : ファイル時刻を表す`time_point`
+
+各時計型の示す時刻というのは時計型の参照する時計によって異なっているため、基本的にはこれらの`time_point`型（エイリアス）の間には直接の互換性がありません。また、同じ時計型についての`time_point`の間でも、時間間隔型が異なっていて変換によって端数が出うる場合（分解能が低くなる方向の変換）は暗黙変換が提供されません。例えば、分->秒の変換は端数が出ませんが、秒->分の変換は端数が出ます。そのような変換には、`time_point_cast<D>()`を使用します。
+
+```cpp
+#include <chrono>
+
+// UTC時刻を秒単位で受けたい
+void f(utc_seconds time);
+
+int main() {
+  // 秒単位よりも精度が高い時（例えばミリ秒単位）
+  utc_time t = utc_clock::now();
+
+  f(t); // ng、ミリ秒から秒への変換は端数が出うる
+  f(time_point_cast<utc_seconds::duration>(t)); // ok
+  f(time_point_cast<seconds>(t));               // ok
+}
+```
+
+`time_point_cast<D>()`の`D`には変換先の時間間隔型を指定する必要があり、`time_point`型及びそのエイリアスからは`::duration`メンバ型としてそれを取得する事ができます。あるいは、`seconds`や`milliseconds`などの`duration`型エイリアスを指定することもできます。
+
+### 時計型間の時刻の変換
+
+時計型の間でその時刻値を変換するには、時計型の静的メンバ関数`to_xxx()/from_xxx()`を利用します。`xxx`には変換先の時計の略称が入り、全ての時計型間で相互の直接変換が提供されているわけではありません。ただし、`steady_clock`と`high_resolution_clock`はこのようなメンバ関数を提供していません。
+
+- `system_clock`
+    - `to_time_t()/from_time_t()` : `time_t`型（Cライブラリの時刻表現型）と相互変換可能
+- `utc_clock`
+    - `to_sys()/from_sys()` : `system_clock`と相互変換可能
+- `tai_clock`
+    - `to_utc()/from_utc()` : `utc_clock`と相互変換可能
+- `gps_clock`
+    - `to_utc()/from_utc()` : `utc_clock`と相互変換可能
+- `file_clock`
+    - 次のどちらか
+      - `to_utc()/from_utc()` : `utc_clock`と相互変換可能
+      - `to_sys()/from_sys()` : `system_clock`と相互変換可能
+
+
+よく見ると、`utc_clock`を介せば全ての時計型間で相互変換が可能そうな事がわかります。また、`file_clock`がどういう経路で変換可能であるかは実装によって異なるため、そのハンドリングは面倒そうです。そこで、これら時計型間の変換を統一的に行うための`clock_cast<C>()`が用意されています。
+
+```cpp
+```
+
+`clock_cast<C>()`の`C`には、変換先の時計型を指定します。
+
+
+### 時間表現型の出力サポート
+
 ## カレンダー
 ## タイムゾーン
 ## `std::format`
