@@ -2099,7 +2099,7 @@ int main() {
 - `system_clock`
     - `sys_time` : システム時刻を表す`time_point`
     - `sys_seconds` : 秒単位のシステム時刻を表す
-    - `sys_day` : 日単位のシステム時刻を表す
+    - `sys_days` : 日単位のシステム時刻を表す
 - `utc_clock`
     - `utc_time` : UTC時刻を表す`time_point`
     - `utc_seconds` : 秒単位のUTC時刻を表す
@@ -2241,6 +2241,36 @@ int main() {
 ```
 
 このように、`duration`型の出力ではその精度に応じたサフィックスが付加されます。精度があらかじめ定められた単位（基本的には10^3ごと）で表せない場合、一番上の例のように有理数値で示されます。
+
+### うるう秒の取得
+
+`utc_clock`で取得できる時刻にはうるう秒が含まれています。遠い過去や未来の時刻を計算する場合など、うるう秒が何秒（何回）挿入されているのかを取得したくなる事があるでしょう。`get_leap_second_info()`によって、`utc_time`の値からうるう秒の秒数を取得できます。
+
+```cpp
+#include <chrono>
+
+void now() {
+  utc_time ut = utc_clock::now();
+
+  // 戻り値はutがちょうどうるう秒であるか否かとうるう秒の秒数
+  auto [is_leap_sec, count] = get_leap_second_info(ut);
+  std::cout << is_leap_sec << ", " << count << "\n";
+  // is_leap_sec : false
+  // count : 27 [s]
+}
+
+void leap() {
+  // UTC時刻で2017年1月1日を取得（本書執筆時点で最後にうるう秒が追加された時）
+  sys_days ymd = 2017y/1/1;
+  auto ut = clock_cast<utc_clock>(ymd) + 0h + 0m + 0s;
+
+  auto [is_leap_sec, count] = get_leap_second_info(ut);
+  // is_leap_sec : true
+  // count : 27 [s]
+}
+```
+
+`get_leap_second_info()`の戻り値が2つのメンバを持つ集成体型で、1つ目のメンバ（`is_leap_sec`）はその時刻がうるう秒であるかどうかを`bool`値で返し、2つ目のメンバはその時刻までに加算されているうるう秒の秒数を（`second`型で）返します。1つ目のメンバ（`is_leap_sec`）を用いると閏秒の検出ができるわけですが、これが`true`となるケースは非常に稀です。
 
 ## カレンダー
 ## タイムゾーン
