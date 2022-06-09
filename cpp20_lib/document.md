@@ -2149,16 +2149,98 @@ int main() {
       - `to_utc()/from_utc()` : `utc_clock`と相互変換可能
       - `to_sys()/from_sys()` : `system_clock`と相互変換可能
 
+`file_clock`がどういう経路で変換可能であるかは実装によって異なる可能性があり、少なくともどちらかの変換は提供されていることしか保証がありません。
 
-よく見ると、`utc_clock`を介せば全ての時計型間で相互変換が可能そうな事がわかります。また、`file_clock`がどういう経路で変換可能であるかは実装によって異なるため、そのハンドリングは面倒そうです。そこで、これら時計型間の変換を統一的に行うための`clock_cast<C>()`が用意されています。
+![](./img/clock_type_conv.png)
+
+よく見ると`utc_clock`を介せば全ての時計型間で相互変換が可能そうですが、時計型間の変換を統一的かつシンプルに行うには何かしらのラッパが必要そうです。そのため、これら時計型間の変換を統一的に行うための`clock_cast<C>()`が用意されています。これを使っていれば時計型間の変換可能性とその方法などを意識せずに変換する事ができます。
 
 ```cpp
+#include <chrono>
+
+int main() {
+  sys_time st = system_clock::now();
+  utc_time ut = utc_clock::now();
+  tai_time tt = tai_clock::now();
+  gps_time gt = gps_clock::now();
+  file_time ft = file_clock::now();
+
+  // UTC -> System Time
+  sys_time t1 = clock_cast<system_clock>(ut);
+
+  // GPS Time -> TAI
+  tai_time t2 = clock_cast<tai_clock>(gt);
+
+  // File Tiem -> GPS Time
+  gps_time t3 = clock_cast<gps_clock>(ft);
+
+  // UTC -> File Tiem
+  file_time t4 = clock_cast<file_clock>(ut);
+
+  // TAI -> UTC
+  utc_time t5 = clock_cast<utc_clock>(tt);
+}
 ```
 
-`clock_cast<C>()`の`C`には、変換先の時計型を指定します。
+`clock_cast<C>()`の`C`には変換先の時計型を指定します。これは時計型を基準とした`time_point`値の変換なので、`clock_cast()`の入力と出力はどちらも`time_point`型の値です。なお、`time_t`は時計型でも`time_point`型でもないため`clock_cast()`で変換することはできず、`system_clock::from_time_t()`によって一度`sys_time`にしておく必要があります。
 
+`clock_cast()`で行う変換は異なる時計型間の時刻型（`time_point`型）の変換であり、それに対して`time_point_cast()`の行う変換は、同じ時計型についての時刻型の間での、精度の変換（特に分解能が落ちる方向の変換）です。どちらも同じ`time_point`型間の変換ではありますが、役割が異なるので使い分けを覚えておく必要があります。
 
-### 時間表現型の出力サポート
+### `time_point/duration`の出力サポート
+
+C++17までは、`<chrono>`に用意されている時間関連の型は標準ストリームに直接出力できず、`duration`の値は`.count()`によって整数値を取得してから出力するしかなく、`time_point`の値は一度`time_t`に変換してから出力するか、`.time_since_epoch()`で`duration`にしてから`.count()`を出力する必要がありました。また、`time_t`を経由しない方法では単なる整数値としてしか出力されず、自分でフォーマットを整える必要がありました。
+
+最初の例でさらっと使っていましたが、C++20からは`time_point/duration`の値を標準ストリームに直接出力する事ができるようになります。しかも、最低限ながらフォーマットされて出力されます。
+
+```cpp
+#include <chrono>
+
+// time_point型の出力
+template<typename C>
+void print_time() {
+  std::cout << C::now() << "\n";
+}
+
+int main() {
+  print_time<system_clock>();
+  print_time<utc_clock>();
+  print_time<tai_clock>();
+  print_time<gps_clock>();
+  print_time<file_clock>();
+}
+```
+
+```
+2022-06-09 06:02:46.6862399
+```
+
+正確には、`time_point`型に直接`<<`が提供されるのではなく、`sys_time`や`utc_time`などの時計型に関連づけられたエイリアス毎に`<<`が用意されます。とはいえ、`Clock::now()`で取得した結果を出力する分には困ることはないでしょう。
+
+`duration`型については直接`<<`が提供されるため、基本的にはあらゆる`duration`値が出力可能になります。
+
+```cpp
+#include <chrono>
+
+int main() {
+  std::cout << system_clock::now().time_since_epoch() << "\n";
+  std::cout << 1s << "\n";
+  std::cout << 1s + 500ms << "\n";
+  std::cout << 1000us << "\n";
+  std::cout << 10ns << "\n";
+}
+```
+
+この出力は例えば次のようになります（godbolt上VS2019）
+
+```
+16547482878527625[1/10000000]s
+1s
+1500ms
+1000us
+10ns
+```
+
+このように、`duration`型の出力ではその精度に応じたサフィックスが付加されます。精度があらかじめ定められた単位（基本的には10^3ごと）で表せない場合、一番上の例のように有理数値で示されます。
 
 ## カレンダー
 ## タイムゾーン
