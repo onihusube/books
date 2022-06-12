@@ -1540,6 +1540,7 @@ int main() {
 // データ並列処理において、処理の最小単位を担う関数
 void kernel(std::latch& sync, int id, 
             std::span<const std::byte> input,
+            std::span<int> temp,
             std::span<int> output)
 {
 
@@ -1548,11 +1549,11 @@ void kernel(std::latch& sync, int id,
     ...
   }
 
-  // 途中結果を出力
+  // 途中結果を保存
   // idによって出力先が異なるためここで同期は不要
-  output[id] = ...;
+  temp[id] = ...;
 
-  // 全カーネル（スレッド）の出力完了を待機する
+  // 全カーネル（スレッド）の途中結果保存完了を待機する
   sync.arrive_and_wait(); // 全カーネルに渡る同期ポイント
 
   // 他スレッドの途中結果を使用する必要がある処理
@@ -1571,6 +1572,8 @@ int main() {
   std::vector<std::span<std::byte>> input_data = ...;
   // 結果出力先
   std::vector<int> result = ...;
+  // 途中結果保存用バッファ
+  std::vector<int> temp(input_data.size(), 0);
   // スレッドID
   int id = 0;
 
@@ -1581,9 +1584,9 @@ int main() {
 
   // 入力データを行ごとに処理する
   for (auto span : input_data) {
-    std::thread{[&sync, id, span, &result, &end]{
+    std::thread{[&sync, id, span, &temp, &result, &end]{
       // カーネルの実行
-      kernel(sync, id, span, result);
+      kernel(sync, id, span, temp, result);
 
       // カーネルの完了通知
       end.count_down();
