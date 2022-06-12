@@ -389,6 +389,134 @@ int main() {
 
 \clearpage
 # `<source_location>`
+
+`<source_location>`ヘッダでは、従来`__LINE__`や`__FILE__`などによって取得していたソースコード上位置情報を一括で取得する手段を提供するとともに、それをまとめて格納し持ち運ぶことができるようにする構造体`std::source_location`が提供されます。
+
+まず、ソースコード位置情報を取得するには`std::source_location::current()`静的メンバ関数を使用します。
+
+```cpp
+#include <source_location>
+
+void f() {
+  // この場所のソースコード情報を取得
+  auto sl = std::source_location::current();
+
+  std::cout << "\n--- in f() ---\n\n";
+
+  std::cout << sl.line() << "\n"            // 行番号
+            << sl.column() << "\n"          // 列番号
+            << sl.file_name() << "\n"       // ファイル名
+            << sl.function_name() << "\n";  // 関数名
+}
+
+int main() {
+  auto sl = std::source_location::current();
+
+  std::cout << sl.line() << "\n"
+            << sl.column() << "\n"
+            << sl.file_name() << "\n"
+            << sl.function_name() << "\n";
+  
+  f();
+}
+```
+
+`std::source_location::current()`は`consteval`指定されているため、この関数の実行は必ずコンパイル時に完了します。そして、その戻り値として`current()`が呼ばれた場所のソースコード情報を保持した`std::source_location`オブジェクトが得られます。
+
+このプログラムの出力は、例えば次のようになります（Wandbox GCCでの実行結果）。
+
+```
+17
+42
+prog.cc
+int main()
+
+--- in f() ---
+
+6
+42
+prog.cc
+void f()
+```
+
+`std::source_location`は4つのメンバ関数を持っており、`.line()`は行番号、`.column()`は列番号、`.file_name()`はそのソースファイル名、`.function_name()`は囲む最も内側の関数名、をそれぞれ取得します。`current()`がヘッダファイル内コードで呼び出されている場合、ヘッダファイル内におけるソースコード位置が取得され、`.file_name()`はヘッダファイル名を返します。つまり、`std::source_location`で得られるソースコード位置は`#include`の影響を受けません。
+
+なお、この例の`.column()`は`std::source_location::current()`の`()`の位置が取得されていますが、この値は処理系定義とされているのでコンパイラや環境によって異なる可能性があります。
+
+`std::source_location`オブジェクトはコピーやムーブを自由に行うことができるため、ある場所で取得した情報を別の場所に運ぶことが容易にできます。これは特に、クラスのメンバとして保持するときに便利です。
+
+```cpp
+#include <source_location>
+
+class S {
+  std::source_location m_loc;
+
+public:
+
+  S(std::source_location loc) : m_loc(loc) {}
+
+  auto get_location() {
+    return m_loc;
+  }
+};
+
+void f(const S& s) const {
+
+  auto sl = s.get_location();
+
+  std::cout << sl.line() << "\n"
+            << sl.column() << "\n"
+            << sl.file_name() << "\n"
+            << sl.function_name() << "\n";
+}
+
+int main() {
+  S s{std::source_location::current()}; // ok
+
+  f(s); // ok
+}
+```
+
+この出力は例えば次のようになります
+
+```
+27
+36
+prog.cc
+int main()
+```
+
+`std::source_location`オブジェクトは軽量でコピーが効率的なオブジェクトであると規定されているため、基本的にはコピーして持ち運ぶことができます。
+
+## デフォルト引数での利用
+
+実際に`std::source_location`を使ってみると、一々`std::source_location::current()`とするのは構文的にかなり重いことに気づくでしょう。また、この取得構文はどこでも同一であるため、`std::source_location`が必要となるところでは自動で取得してほしくもなります。このニーズを満たしてくれるのが関数のデフォルト引数で取得しておくという書き方です。
+
+```cpp
+#include <source_location>
+
+// ログ出力関数
+void log(std::string_view message, 
+         std::source_location sl = std::source_location::current())
+{
+  std::cout << std::format("{:s}:{:d}:{:d} in {:s} : {:s}", sl.file_name(), sl.line(), sl.column(), sl.function_name(), message);
+}
+
+int main() {
+  log("test");
+}
+```
+
+出力例（godbolt MSVC 2019、一部改変）
+
+```
+example.cpp:13:3 in main : test
+```
+
+このように、デフォルト引数で使用した時でも書かれた場所ではなく呼ばれた場所の位置情報を取得してくれるため、`std::source_location::current()`をほぼ省略しながら利用することができます。そのため、`std::source_location`はもっぱらデフォルト引数で使用されるでしょう。
+
+なお、関数のデフォルト引数は呼び出し時に省略可能という性質から必ず引数列の後ろに来なくてはなりません。この制約のため、可変長テンプレートではこの方法を取れないという問題があります。一応将来のC++に向けて可変長テンプレートの推論を調整してこの問題に対処しようとする動きはありますが、C++26以降になりそうです。
+
 \clearpage
 # `<coroutine>`
 
@@ -1929,7 +2057,236 @@ void grow_grass(std::string_view grass) {
 \clearpage
 
 # `<chrono>`
-\clearpage
+
+C++20では、`<chrono>`はカレンダーとタイムゾーンを扱えるように大きく拡張されています。
+
+以下、本文及びサンプルコードでは`std::chrono`を省略します。
+
+## 新しい時計型
+
+時計型とは時間を表現するための型のことで、これまでは`system_clock`、`steady_clock`、`high_resolution_clock`の3つの時計型がありました。ここに次の4つの新しい時計型が追加されます。
+
+- `utc_clock` : UTC（協定世界時）時間を表す
+- `tai_clock` : TAI（国際原子時）時間を表す
+- `gps_clock` : GPS時間を表す
+- `file_clock` : ファイル時間を表す
+    - `std::filesystem::file_time_type`のための時計型
+
+C++20からは、`system_clock`の時間はUTC（UNIX時間）である事が規定されました（これは全ての実装がそうだったために標準でも規定することになったものです）。`system_clock`と`utc_clock`の違いはうるう秒のカウントの有無で、`system_clock`ではうるう秒がカウントされていません。
+
+TAIは厳密に定義された秒に従って時間をカウントする最も正確な時計であり、UTCはそれに対して日常生活に適合するようにうるう秒などによって調整された時計です。`tai_clock`と`system_clock`はどちらもうるう秒をカウントしませんが、エポック等が異なるためその時刻も異なります。
+
+`file_clock`は`<filesystem>`においてファイルの作成・更新日時を扱うための時計型で、UTC時間に従う時計ではありますがその詳細は未規定であり、タイムゾーンが異なるなど環境の影響を強く受けると思われます。
+
+任意の時計型を`Clock`とすると、全ての時計型で`Clock::now()`静的メンバ関数からその時計の指す現在の時刻が取得できます。
+
+```cpp
+#include <chrono>
+
+template<typename C>
+void print_time() {
+  // 現在時刻を出力する
+  std::cout << C::now() << "\n";
+}
+
+int main() {
+  print_time<system_clock>();
+  print_time<utc_clock>();
+  print_time<tai_clock>();
+  print_time<gps_clock>();
+  print_time<file_clock>();
+}
+```
+
+`Clock::now()`の返す値は時間軸上の一点を指す`time_point`型の値です。ただし、`time_point`型はクラステンプレートであり、時計型と時間間隔（精度）を表す型（`duration`型）によって特殊化されており、時計型毎に`Clock::now()`の戻り値は異なっています。それらの型にアクセスするために、各時計型の使用する`time_point`型のエイリアスが用意されています。
+
+- `system_clock`
+    - `sys_time` : システム時刻を表す`time_point`
+    - `sys_seconds` : 秒単位のシステム時刻を表す
+    - `sys_days` : 日単位のシステム時刻を表す
+- `utc_clock`
+    - `utc_time` : UTC時刻を表す`time_point`
+    - `utc_seconds` : 秒単位のUTC時刻を表す
+- `tai_clock`
+    - `tai_time` : TAI時刻を表す`time_point`
+    - `tai_seconds` : 秒単位のTAI時刻を表す
+- `gps_clock`
+    - `gps_time` : GPS時刻を表す`time_point`
+    - `gps_seconds` : 秒単位のGPS時刻を表す
+- `file_clock`
+    - `file_time` : ファイル時刻を表す`time_point`
+
+`Clock::now()`の返す型は、時計型`xxx_clock`に対して`xxx_time`と命名される型エイリアスです（`system_clock`だけは`sys_time`と省略されます）。ただし、これらの`time_point`の精度（`duration`型）は未規定であり、おそらく秒単位よりも高い精度の型が使用されます。`xxx_seconds`となっているエイリアスは命名からわかるように、秒単位の精度を持つ特殊化のエイリアスです。
+
+各時計型の示す時刻というのは時計型の参照する時計によって異なっているため、基本的にはこれらの`time_point`型（エイリアス）の間には直接の互換性がありません。また、同じ時計型についての`time_point`の間でも、`duration`型が異なっていて変換によって端数が出うる場合（分解能が低くなる方向の変換）は暗黙変換が提供されません。例えば、分->秒の変換は端数が出ませんが、秒->分の変換は端数が出ます。そのような変換には、`time_point_cast<D>()`を使用します。
+
+```cpp
+#include <chrono>
+
+// UTC時刻を秒単位で受けたい
+void f(utc_seconds time);
+
+int main() {
+  // 秒単位よりも精度が高い時（例えばミリ秒単位）
+  utc_time t = utc_clock::now();
+
+  f(t); // ng、ミリ秒から秒への変換は端数が出うる
+  f(time_point_cast<utc_seconds::duration>(t)); // ok
+  f(time_point_cast<seconds>(t));               // ok
+}
+```
+
+`time_point_cast<D>()`の`D`には変換先の`duration`型を指定する必要があり、`time_point`型及びそのエイリアスからは`::duration`メンバ型としてそれを取得する事ができます。あるいは、`seconds`や`milliseconds`などの`duration`型エイリアスを指定することもできます。
+
+### 時計型間の時刻の変換
+
+時計型の間でその時刻値を変換するには、時計型の静的メンバ関数`to_xxx()/from_xxx()`を利用します。`xxx`には変換先の時計の略称が入り、全ての時計型間で相互の直接変換が提供されているわけではありません。ただし、`steady_clock`と`high_resolution_clock`はこのようなメンバ関数を提供していません。
+
+- `system_clock`
+    - `to_time_t()/from_time_t()` : `time_t`型（Cライブラリの時刻表現型）と相互変換可能
+- `utc_clock`
+    - `to_sys()/from_sys()` : `system_clock`と相互変換可能
+- `tai_clock`
+    - `to_utc()/from_utc()` : `utc_clock`と相互変換可能
+- `gps_clock`
+    - `to_utc()/from_utc()` : `utc_clock`と相互変換可能
+- `file_clock`
+    - 次のどちらか
+      - `to_utc()/from_utc()` : `utc_clock`と相互変換可能
+      - `to_sys()/from_sys()` : `system_clock`と相互変換可能
+
+`file_clock`がどういう経路で変換可能であるかは実装によって異なる可能性があり、少なくともどちらかの変換は提供されていることしか保証がありません。
+
+![](./img/clock_type_conv.png)
+
+よく見ると`utc_clock`を介せば全ての時計型間で相互変換が可能そうですが、時計型間の変換を統一的かつシンプルに行うには何かしらのラッパが必要そうです。そのため、これら時計型間の変換を統一的に行うための`clock_cast<C>()`が用意されています。これを使っていれば時計型間の変換可能性とその方法などを意識せずに変換する事ができます。
+
+```cpp
+#include <chrono>
+
+int main() {
+  sys_time st = system_clock::now();
+  utc_time ut = utc_clock::now();
+  tai_time tt = tai_clock::now();
+  gps_time gt = gps_clock::now();
+  file_time ft = file_clock::now();
+
+  // UTC -> System Time
+  sys_time t1 = clock_cast<system_clock>(ut);
+
+  // GPS Time -> TAI
+  tai_time t2 = clock_cast<tai_clock>(gt);
+
+  // File Tiem -> GPS Time
+  gps_time t3 = clock_cast<gps_clock>(ft);
+
+  // UTC -> File Tiem
+  file_time t4 = clock_cast<file_clock>(ut);
+
+  // TAI -> UTC
+  utc_time t5 = clock_cast<utc_clock>(tt);
+}
+```
+
+`clock_cast<C>()`の`C`には変換先の時計型を指定します。これは時計型を基準とした`time_point`値の変換なので、`clock_cast()`の入力と出力はどちらも`time_point`型の値です。なお、`time_t`は時計型でも`time_point`型でもないため`clock_cast()`で変換することはできず、`system_clock::from_time_t()`によって一度`sys_time`にしておく必要があります。
+
+`clock_cast()`で行う変換は異なる時計型間の時刻型（`time_point`型）の変換であり、それに対して`time_point_cast()`の行う変換は、同じ時計型についての時刻型の間での、精度の変換（特に分解能が落ちる方向の変換）です。どちらも同じ`time_point`型間の変換ではありますが、役割が異なるので使い分けを覚えておく必要があります。
+
+### `time_point/duration`の出力サポート
+
+C++17までは、`<chrono>`に用意されている時間関連の型は標準ストリームに直接出力できず、`duration`の値は`.count()`によって整数値を取得してから出力するしかなく、`time_point`の値は一度`time_t`に変換してから出力するか、`.time_since_epoch()`で`duration`にしてから`.count()`を出力する必要がありました。また、`time_t`を経由しない方法では単なる整数値としてしか出力されず、自分でフォーマットを整える必要がありました。
+
+最初の例でさらっと使っていましたが、C++20からは`time_point/duration`の値を標準ストリームに直接出力する事ができるようになります。しかも、最低限ながらフォーマットされて出力されます。
+
+```cpp
+#include <chrono>
+
+// time_point型の出力
+template<typename C>
+void print_time() {
+  std::cout << C::now() << "\n";
+}
+
+int main() {
+  print_time<system_clock>();
+  print_time<utc_clock>();
+  print_time<tai_clock>();
+  print_time<gps_clock>();
+  print_time<file_clock>();
+}
+```
+
+この出力は例えば次のようになります
+
+```
+2022-06-09 15:50:24.1013040
+2022-06-09 15:50:24.1055415
+2022-06-09 15:51:01.1419987
+2022-06-09 15:50:42.1423285
+2022-06-09 15:50:24.1426693
+```
+
+正確には、`time_point`型に直接`<<`が提供されるのではなく、`sys_time`や`utc_time`などの時計型に関連づけられたエイリアス毎に`<<`が用意されます。とはいえ、`Clock::now()`で取得した結果を出力する分には困ることはないでしょう。
+
+`duration`型については直接`<<`が提供されるため、基本的にはあらゆる`duration`値が出力可能になります。
+
+```cpp
+#include <chrono>
+
+int main() {
+  std::cout << system_clock::now().time_since_epoch() << "\n";
+  std::cout << 1s << "\n";
+  std::cout << 1s + 500ms << "\n";
+  std::cout << 1000us << "\n";
+  std::cout << 10ns << "\n";
+}
+```
+
+この出力は例えば次のようになります
+
+```
+16547482878527625[1/10000000]s
+1s
+1500ms
+1000us
+10ns
+```
+
+このように、`duration`型の出力ではその精度に応じたサフィックスが付加されます。精度があらかじめ定められた単位（基本的には10^3ごと）で表せない場合、一番上の例のように有理数値で示されます。
+
+### うるう秒の処理
+
+`utc_clock`で取得できる時刻にはうるう秒が含まれています。遠い過去や未来の時刻を計算する場合など、うるう秒が何秒（何回）挿入されているのかを取得したくなる事もあるでしょう。`get_leap_second_info()`によって、`utc_time`の値からうるう秒の秒数を取得できます。
+
+```cpp
+#include <chrono>
+
+void now() {
+  utc_time ut = utc_clock::now();
+
+  // 戻り値はutがちょうどうるう秒であるか否かとうるう秒の秒数
+  auto [is_leap_sec, count] = get_leap_second_info(ut);
+  // is_leap_sec : false
+  // count : 27 [s]
+}
+
+void leap() {
+  // UTC時刻で2017年1月1日を取得（本書執筆時点で最後にうるう秒が追加された時）
+  sys_days ymd = 2017y/1/1; // ???
+  auto ut = clock_cast<utc_clock>(ymd) + 0h + 0min - 1s;
+
+  auto [is_leap_sec, count] = get_leap_second_info(ut);
+  // is_leap_sec : true
+  // count : 27 [s]
+}
+```
+
+`get_leap_second_info()`の戻り値が2つのメンバを持つ集成体型で、1つ目のメンバ（`is_leap_sec`）はその時刻がうるう秒であるかどうかを`bool`値で返し、2つ目のメンバはその時刻までに加算されているうるう秒の秒数を（`seconds`型で）返します。1つ目のメンバ（`is_leap_sec`）を用いると閏秒の検出ができるわけですが、これが`true`となるケースは非常に稀です。
+
+`leap()`では本書執筆時点（2022年6月くらい）で最後にうるう秒が追加されたときの時刻を求めて、それを`get_leap_second_info()`に渡しています。2017年1月1日0時0分0秒を2回カウントすることでうるう秒は挿入されており、上記のように時刻を作ると非うるう秒の方（2回目）の2017年1月1日0時0分0秒が得られます。そのため、その1秒前（これも2017年1月1日0時0分0秒）がうるう秒になります。
+
+なお、ここでやっている`2017y/1/1`のような日付の作り方は、次の節の主題であるカレンダー機能を使用しています。
+
 ## カレンダー
 ## タイムゾーン
 ## `std::format`
@@ -1954,3 +2311,4 @@ void grow_grass(std::string_view grass) {
 - std::threadデストラクタ動作検討の歴史(https://zenn.dev/yohhoy/scraps/393bce83b4f3f0)
 - threadの利用と例外安全（その1）(https://yohhoy.hatenadiary.jp/entry/20120209/p1)
 - std::jthread and cooperative cancellation with stop token(https://www.nextptr.com/tutorial/ta1588653702/stdjthread-and-cooperative-cancellation-with-stop-token)
+- 可変長テンプレートでもstd::source_locationを使いたい！ (https://in-neuro.hatenablog.com/entry/2021/12/15/000033)
