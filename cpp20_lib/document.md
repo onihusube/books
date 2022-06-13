@@ -2444,6 +2444,163 @@ auto seizin = 2023/1/Monday[2]; // 2023/1 -> int が先に計算される
 
 \clearpage
 # `<compare>`
+
+`<compare>`では、三方比較演算子（`<=>`）の戻り値型となる比較カテゴリ型と三方比較にまつわるコンセプト、およびその周辺のユーティリティが提供されます。
+
+このヘッダは、`<=>`を用いるときには明示的にインクルード（もしくは`import`）しなければなりません。
+
+```cpp
+//#include <compare>
+
+int main () {
+  int a = 1;
+  int b = 2;
+
+  auto cmp = a <=> b; // ng、戻り値型が定義されていない
+}
+```
+
+変なオーバーロードを除いて、`<=>`による比較の戻り値型は比較カテゴリ型と呼ばれるライブラリ定義の型であり、それがこのヘッダに定義されています。`<=>`を使用した時に自動でインクルードされたりはしないので、明示的にインクルードする必要があります。
+
+標準で定義されている比較カテゴリ型は3種類あり、それぞれ数学的な順序関係を表現しています。
+
+|比較カテゴリ型名|対応する順序関係|
+|---|---|
+|`std::strong_ordering`|全順序|
+|`std::weak_ordering`|弱順序|
+|`std::partial_ordering`|半順序|
+
+`<=>`による比較の実装においては、返す比較カテゴリ型に対応した順序関係を満たしているようにしておかなければなりません。
+
+比較カテゴリ型では、その静的メンバ定数からその型の値（そのカテゴリにおける比較結果を表す値）を取得することができます。
+
+|静的メンバ定数|意味|使用可能な型|
+|---|---|---|
+|`less`|`a < b`|3つとも|
+|`greater`|`a > b`|3つとも|
+|`equivalent`|`a == b`（同値）|3つとも|
+|`equal`|`a == b`（等値）|`strong_ordering`のみ|
+|`unorderd`|比較不能|`partial_ordering`のみ|
+
+これらの定数からは、`a <=> b`という比較の結果を表す、その名前に応じた値が取得できます。
+
+```cpp
+#include <compare>
+
+void ord(std::strong_ordering);   // 1
+void ord(std::weak_ordering);     // 2
+void ord(std::partial_ordering);  // 3
+
+int main() {
+  ord(std::strong_ordering::less);  // 1が呼ばれる
+  ord(std::weak_ordering::less);    // 2が呼ばれる
+  ord(std::partial_ordering::less); // 3が呼ばれる
+
+  auto er1 = std::weak_ordering::equal;      //ng
+  auto er2 = std::strong_ordering::unorderd; //ng
+}
+```
+
+比較カテゴリ型の値から比較結果を取得するには`0`との比較を行いますが、この操作は必ずしも見て何をしているか分かりやすいものではありません。そこで、`<=>`による比較結果を取得するための名前付き比較関数が用意されています。
+
+```cpp
+#include <compare>
+
+template<typename T>
+void comp_test(T a, T b) {
+  auto cmp = a <=> b;
+
+  std::cout << "== : " << std::is_eq(cmp)   << "\n";
+  std::cout << "!= : " << std::is_neq(cmp)  << "\n";
+  std::cout << "<  : " << std::is_lt(cmp)   << "\n";
+  std::cout << "<= : " << std::is_lteq(cmp) << "\n";
+  std::cout << ">  : " << std::is_gt(cmp)   << "\n";
+  std::cout << ">= : " << std::is_gteq(cmp) << "\n";
+}
+
+int main() {
+  std::cout << std::boolalpha;
+
+  comp_test(17, 20);
+}
+```
+
+この出力はつぎのようになります
+
+```
+== : false
+!= : true
+<  : true
+<= : true
+>  : false
+>= : false
+```
+
+これらの名前付き比較関数を用いると、`<=>`による比較の結果から何を（どの比較としての結果を）取得したいかを明確にすることができ、コードの可読性を向上させることができます。
+
+ところで、この例での`comp_test`のように、（関数）テンプレート内でテンプレートパラメータ型の値について三方比較を行う場合、C++20以降はコンセプトによって制約したくなるでしょう。
+
+通常の比較のためには、`<concepts>`ヘッダに同値比較（`std::equality_compareble`）と順序付け比較（`std::totally_ordered`）とその`_with`付きのコンセプトが用意されていました。`<compare>`ヘッダにはこれらと同様に、三方比較のためのコンセプトが用意されます。
+
+```cpp
+// <=>による比較が可能な型Tを受けいれる、1
+template<std::three_way_comparable T>
+void comp_test(T a, T b) {
+  auto cmp = a <=> b;
+
+  ...
+}
+
+// 異なる型同士で<=>による比較が可能な型T, Uを受けいれる、2
+template<typename T, std::three_way_comparable_with<T> U>
+void comp_test(T a, U b) {
+  auto cmp = a <=> b;
+
+  ...
+}
+
+int main() {
+  comp_test(17, 20);      // ok、1が呼ばれる
+  comp_test(17u, 20ull);  // ok、2が呼ばれる
+  comp_test(17, 20.0);    // ok、2が呼ばれる
+  comp_test(17.0f, 20.0); // ok、2が呼ばれる
+  
+  comp_test(17u, 20);          // ng、符号の異なる整数型の比較  
+  comp_test(nullptr, nullptr); // ng、比較が定義されていない
+}
+```
+
+`std::three_way_comparable`は1つの型`T`が`<=>`による比較が可能であることを表し、`std::three_way_comparable_with`は異なる型`T`と`U`の間で`<=>`による比較が可能であることを表します。命名規則は`std::equality_compareble`などと同様になっています。
+
+また、この2つのコンセプトは追加の引数として比較カテゴリ型を取ることができ、`<=>`の比較が特定の比較カテゴリ型を返すことも含めて制約できます。
+
+```cpp
+// <=>の比較が全順序の上で行われる型Tを受けいれる
+template<std::three_way_comparable<std::strong_ordering> T>
+void comp_test(T a, T b) {
+  auto cmp = a <=> b;
+
+  ...
+}
+
+// <=>の比較が全順序の上で行われる型T, Uを受けいれる
+template<typename T, 
+         std::three_way_comparable_with<T, std::strong_ordering> U>
+void comp_test2(T a, U b) {
+  auto cmp = a <=> b;
+
+  ...
+}
+
+int main() {
+  comp_test(17, 20);     // ok
+  comp_test(17.0, 20.0); // ng、結果はpartial_ordering
+  
+  comp_test2(17u, 20ull);  // ok
+  comp_test2(17, 20.0);    // ng、結果はpartial_ordering
+}
+```
+
 ## 比較関数オブジェクト
 
 \clearpage
