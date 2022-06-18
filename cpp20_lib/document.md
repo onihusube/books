@@ -2922,7 +2922,62 @@ int main() {
 
 ### `zoned_time`
 
-`time_zone::to_local()`はタイムゾーンを適用した結果を簡易に受け取るためのもので、タイムゾーン情報を保持しておくことができません。また、`time_point`型もタイムゾーンを受け取れるようにはなっていません。
+`time_zone::to_local()`はタイムゾーンを適用した結果を簡易に受け取るためのもので、タイムゾーン情報を保持しておくことができません。また、`time_point`型もタイムゾーンを受け取れるようにはなっていません。タイムゾーンを考慮した時刻の表現のためには`time_point`値とタイムゾーン情報のペアが必要で、`<chrono>`ではそのための型として`zoned_time`を用意しています。
+
+`zoned_time`はそのコンストラクタでタイムゾーンの指定あるいは`time_zone`オブジェクトのポインタとシステム時刻（`sys_time`、UTC時刻）を受け取って保持することで、そのタイムゾーンにおける時間軸上の一点（つまり`time_point`）を表現します。タイムゾーンを特に指定しない場合はUTCがデフォルトのタイムゾーンとして使用されます。
+
+```cpp
+#include <chrono>
+
+int main() {
+  // UTC時刻
+  auto now = system_clock::now();
+
+  zoned_time zt1{now};                      // UTCタイムゾーンの時刻
+  zoned_time zt2{current_zone(), now};      // その環境のタイムゾーンの時刻
+  zoned_time zt3{"Asia/Tokyo", now};        // JSTの時刻
+  zoned_time zt3{"America/New_York", now};  // 東海岸時間の時刻
+  zoned_time zt3{"GMT", now};               // グリニッジ標準時の時刻
+}
+```
+
+`zoned_time`は`time_point`とは異なり、時刻計算を行うことはできません。`zoned_time`オブジェクトは暗黙変換あるいは変換関数（`.get_local_time()`/`.get_sys_time()`）によってローカル時間（`local_time`）とシステム時間（`sys_time`）に変換することができます。
+
+```cpp
+#include <chrono>
+
+int main() {
+  auto now = system_clock::now();
+  zoned_time zt{current_zone(), now};
+
+  // 暗黙変換
+  std::cout << sys_time{zt} << "\n";
+  std::cout << local_time{zt} << "\n";
+
+  // 変換関数
+  std::cout << zt.get_sys_time() << "\n";
+  std::cout << zt.get_local_time() << "\n";
+}
+```
+
+また、C++20からの他の`chrono`関連型と同様に、直接`<<`によってストリームに出力することができます。この場合は、コンストラクタで指定されたタイムゾーンを用いてローカル時間に変換して出力します。
+
+```cpp
+#include <chrono>
+
+int main() {
+  // UTC時刻
+  auto now = system_clock::now();
+
+  std::cout << zoned_time{now} << "\n";
+  std::cout << zoned_time{current_zone(), now} << "\n";
+  std::cout << zoned_time{"Asia/Tokyo", now} << "\n";
+  std::cout << zoned_time{"America/New_York", now} << "\n";
+  std::cout << zoned_time{"GMT", now} << "\n";
+}
+```
+```
+```
 
 ### 夏時間
 
