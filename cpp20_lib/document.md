@@ -2932,23 +2932,23 @@ int main() {
 #include <chrono>
 
 // 存在しない日付時刻からの変換
-void nonexist() {
+void nonexist() noexcept(false) {
   const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
 
   // アメリカでは、3月第2週目の日曜2時から夏時間開始
   local_time t = local_days{2022y/March/Sunday[2]} + 2h + 30min;
   // 夏時間開始日の2時〜3時の間の時刻は存在しない
-  sys_time = edt->to_sys(t);  // 例外
+  sys_time = edt->to_sys(t);  // nonexistent_local_time例外
 }
 
 // 曖昧な日付時刻への変換
-void ambiguous() {
+void ambiguous() noexcept(false) {
   const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
 
   // アメリカでは、11月第2週目の日曜2時で夏時間終了
   local_time t = local_days{2022y/November/Sunday[2]} + 1 h + 30min;
   // 夏時間終了日の1時〜2時の間の時刻は、一意のUTC時刻に定まらない
-  sys_time = edt->to_sys(t);  // 例外
+  sys_time = edt->to_sys(t);  // ambiguous_local_time例外
 }
 ```
 
@@ -2956,9 +2956,28 @@ void ambiguous() {
 
 夏時間開始時には、その地域の標準時が1時間進められます。アメリカの場合、毎年3月の第2日曜の1時59分59秒の1秒後は、3時0分0秒になります。従って、夏時間開始日のアメリカのタイムゾーンでは、2時から2時59分59秒の間の時刻が存在しません。しかし、カレンダーと時刻の計算によってそのような時刻をローカル時間上で作り出すことはでき、そのような時刻からUTCへ夏時間のタイムゾーンによって変換しようとすると、存在しない時刻からの変換を行うことになり、この場合は`nonexistent_local_time`例外が投げられます。
 
-夏時間終了時には、その地域の標準時が1時間戻されます。アメリカの場合、毎年11月の第2日曜の1時59分59秒の1秒後は、1時0分0秒になります。従って、夏時間終了日のアメリカのタイムゾーンでは、1時から1時59分59秒が2回繰り返され、その間の時刻は2つ存在します。そのような時刻を指すローカル時間値からUTCへ夏時間のタイムゾーンによって変換しようとすると変換先が2つあり曖昧となるため、この場合は`ambiguous_local_time`例外が投げられます。
+夏時間終了時には、その地域の標準時が1時間戻されます。アメリカの場合、毎年11月の第2日曜の1時59分59秒の1秒後は、1時0分0秒になります。従って、夏時間終了日のアメリカのタイムゾーンでは、1時から1時59分59秒が2回繰り返され、その間の時刻は2つ存在します。そのような時刻を指すローカル時間値からUTCへ夏時間のタイムゾーンによって変換しようとすると変換先が2つあり曖昧となるため、この場合は`ambiguous_local_time`例外が投げられます。曖昧な場合とは例えば、EDT（東部夏時間）はUTC-4、EST（東部標準時）はUTC-5なので、11月の第2日曜（夏時間終了日）の1時30分の変換先はUTC 5時30分（夏時間中のEDT 1時30分）とUTC 6時30分（夏時間後のEST 1時30分）の2つとなります。
 
 厄介なことに、夏時間は導入している国によって開始日や開始時間が異なっており、さらにある特定の地域ではUTCとのズレが30分だったりします。タイムゾーンを考慮することによって、UTCの時刻から地域のローカル時刻への変換は（夏時間に関わらず）常に一意的に行えますが、逆の変換はこのような問題が起こります。
+
+存在しない時刻からの変換（`nonexistent_local_time`例外）は例外をハンドリングするしかありませんが、曖昧となる変換（`ambiguous_local_time`例外）は曖昧さを解消できれば例外を投げる必要はないはずで、その解消ために`choose`という列挙型とそれを受け取るインターフェースが用意されています。この列挙型は`choose::earliest`（早い方の時刻を選択）と`choose::latest`（遅い方の時刻を選択）の2つの値が定義されていて、この値を変換時に指定することで変換先を1つに指定することができます。
+
+```cpp
+// 曖昧な日付時刻への変換
+void ambiguous() noexcept {
+  const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
+
+  // アメリカでは、11月第2週目の日曜2時で夏時間終了
+  local_time t = local_days{2022y/November/Sunday[2]} + 1h + 30min;
+
+  // 変換先を指定して変換、例外は投げられない
+  sys_time t1 = edt->to_sys(t, choose::earliest);
+  sys_time t2 = edt->to_sys(t, choose::latest);
+
+  std::cout << t1 << "\n";
+  std::cout << t2 << "\n";
+}
+```
 
 ## `std::format`
 ## ストリームからのパース
