@@ -2941,6 +2941,23 @@ int main() {
 }
 ```
 
+あるいはローカル時間（`local_time`）から構築することもでき、この場合は指定したタイムゾーンによって（指定したタイムゾーンにおける時刻を示すとみなして）システム時間に変換されて保持されます。
+
+```cpp
+#include <chrono>
+
+int main() {
+  // 2022年8月13日16時0分0秒、ローカル時刻（時計やタイムゾーンが指定されていない）
+  local_time lt = local_days{2022y/August/13d} + 16h + 0min + 0s;
+
+  zoned_time zt1{lt};                      // UTC時刻として変換
+  zoned_time zt2{current_zone(), lt};      // その環境のタイムゾーンを用いて変換
+  zoned_time zt3{"Asia/Tokyo", lt};        // JST時刻として変換
+  zoned_time zt3{"America/New_York", lt};  // 東海岸時間の時刻として変換
+  zoned_time zt3{"GMT", lt};               // グリニッジ標準時の時刻として変換
+}
+```
+
 `zoned_time`オブジェクトは暗黙変換あるいは変換関数（`.get_local_time()`/`.get_sys_time()`）によってローカル時間（`local_time`）とシステム時間（`sys_time`）に変換することができます。
 
 ```cpp
@@ -3025,9 +3042,12 @@ void nonexist() noexcept(false) {
   const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
 
   // アメリカでは、3月第2週目の日曜2時から夏時間開始
-  local_time t = local_days{2022y/March/Sunday[2]} + 2h + 30min;
+  local_time lt = local_days{2022y/March/Sunday[2]} + 2h + 30min;
+
   // 夏時間開始日の2時〜3時の間の時刻は存在しない
-  sys_time = edt->to_sys(t);  // nonexistent_local_time例外
+  sys_time = edt->to_sys(lt);  // nonexistent_local_time例外
+  // zoned_timeも同様
+  zoned_time zt{edt, lt};      // nonexistent_local_time例外
 }
 
 // 曖昧な日付時刻への変換
@@ -3035,9 +3055,12 @@ void ambiguous() noexcept(false) {
   const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
 
   // アメリカでは、11月第1週目の日曜2時で夏時間終了
-  local_time t = local_days{2022y/November/Sunday[1]} + 1 h + 30min;
+  local_time lt = local_days{2022y/November/Sunday[1]} + 1 h + 30min;
+
   // 夏時間終了日の1時〜2時の間の時刻は、一意のUTC時刻に定まらない
-  sys_time st = edt->to_sys(t);  // ambiguous_local_time例外
+  sys_time st = edt->to_sys(lt);  // ambiguous_local_time例外
+  // zoned_timeも同様
+  zoned_time zt{edt, lt};         // ambiguous_local_time例外
 }
 ```
 
@@ -3045,32 +3068,11 @@ void ambiguous() noexcept(false) {
 
 夏時間開始時には、その地域の標準時が1時間進められます。アメリカの場合、毎年3月の第2日曜の1時59分59秒の1秒後は、3時0分0秒になります。従って、夏時間開始日のアメリカのタイムゾーンでは、2時から2時59分59秒の間の時刻が存在しません。しかし、カレンダーと時刻の計算によってそのような時刻をローカル時間上で作り出すことはでき、そのような時刻からUTCへ夏時間のタイムゾーンによって変換しようとすると、存在しない時刻からの変換を行うことになり、この場合は`nonexistent_local_time`例外が投げられます。
 
-夏時間終了時には、その地域の標準時が1時間戻されます。アメリカの場合、毎年11月の第1日曜の1時59分59秒の1秒後は、1時0分0秒になります。従って、夏時間終了日のアメリカのタイムゾーンでは、1時から1時59分59秒が2回繰り返され、その間の時刻は2つ存在します。そのような時刻を指すローカル時間値からUTCへ夏時間のタイムゾーンによって変換しようとすると変換先が2つあり曖昧となるため、この場合は`ambiguous_local_time`例外が投げられます。曖昧な場合とは例えば、EDT（東部夏時間）はUTC-4、EST（東部標準時）はUTC-5なので、11月の第2日曜（夏時間終了日）の1時30分の変換先はUTC 5時30分（夏時間中のEDT 1時30分）とUTC 6時30分（夏時間後のEST 1時30分）の2つとなります。
+夏時間終了時には、その地域の標準時が1時間戻されます。アメリカの場合、毎年11月の第1日曜の1時59分59秒の1秒後は、1時0分0秒になります。従って、夏時間終了日のアメリカのタイムゾーンでは、1時から1時59分59秒が2回繰り返され、その間の時刻は2つ存在します。そのような時刻を指すローカル時間値からUTCへ夏時間のタイムゾーンによって変換しようとすると変換先が2つあり曖昧となるため、この場合は`ambiguous_local_time`例外が投げられます。曖昧な場合とは例えばアメリカニューヨークの場合、EDT（東部夏時間）はUTC-4、EST（東部標準時）はUTC-5なので、11月の第2日曜（夏時間終了日）の1時30分の変換先はUTC 5時30分（夏時間中のEDT 1時30分）とUTC 6時30分（夏時間後のEST 1時30分）の2つとなります。
 
 厄介なことに、夏時間は導入している国によって開始日や開始時間が異なっており、さらにある特定の地域ではUTCとのズレが30分だったりします。タイムゾーンを考慮することによって、UTCの時刻から地域のローカル時刻への変換は（夏時間に関わらず）常に一意的に行えますが、逆の変換はこのような問題が起こります。
 
-存在しない時刻からの変換（`nonexistent_local_time`例外）は例外をハンドリングするしかありませんが、曖昧となる変換（`ambiguous_local_time`例外）は曖昧さを解消できれば例外を投げる必要はないはずで、その解消ために`choose`という列挙型とそれを受け取るインターフェースが用意されています。この列挙型は`choose::earliest`（早い方の時刻を選択）と`choose::latest`（遅い方の時刻を選択）の2つの値が定義されていて、この値を変換時に指定することで変換先を1つに指定することができます。
-
-```cpp
-// 存在しない日付時刻からの変換
-void nonexist() noexcept(false) {
-  const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
-
-  // アメリカでは、3月第2週目の日曜2時から夏時間開始
-  local_time t = local_days{2022y/March/Sunday[2]} + 2h + 30min;
-
-  // 例外は投げられない（変換先は1つ）
-  sys_time t1 = edt->to_sys(t, choose::earliest);
-  sys_time t2 = edt->to_sys(t, choose::latest);
-
-  std::cout << t1 << "\n";
-  std::cout << t2 << "\n";
-}
-```
-```
-2022-03-13 07:00:00
-2022-03-13 07:00:00
-```
+ところで、曖昧となる変換（`ambiguous_local_time`例外）は曖昧さを解消できれば例外を投げる必要はないはずで、その解消ために`choose`という列挙型とそれを受け取るインターフェースが用意されています。この列挙型は`choose::earliest`（早い方の時刻を選択）と`choose::latest`（遅い方の時刻を選択）の2つの値が定義されていて、この値を変換時に指定することで変換先を1つに指定することができます。
 
 ```cpp
 // 曖昧な日付時刻への変換
@@ -3078,19 +3080,60 @@ void ambiguous() noexcept {
   const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
 
   // アメリカでは、11月第1週目の日曜2時で夏時間終了
-  local_time t = local_days{2022y/November/Sunday[1]} + 1h + 30min;
+  local_time lt = local_days{2022y/November/Sunday[1]} + 1h + 30min;
 
   // 変換先を指定して変換、例外は投げられない
-  sys_time t1 = edt->to_sys(t, choose::earliest);
-  sys_time t2 = edt->to_sys(t, choose::latest);
+  sys_time t1 = edt->to_sys(lt, choose::earliest);
+  sys_time t2 = edt->to_sys(lt, choose::latest);
 
   std::cout << t1 << "\n";
   std::cout << t2 << "\n";
+
+  // zoned_timeも同様
+  zoned_time zt1{edt, lt, choose::earliest};
+  zoned_time zt2{edt, lt, choose::latest};
+
+  std::cout << zt1.get_sys_time() << "\n";
+  std::cout << zt2.get_sys_time() << "\n";
 }
 ```
 ```
 2022-11-06 05:30:00
 2022-11-06 06:30:00
+2022-11-06 05:30:00
+2022-11-06 06:30:00
+```
+
+そして、このインターフェースは存在しない時刻からの変換（`nonexistent_local_time`例外）時にも例外を投げずに変換させることができ、この場合は常に夏時刻の開始時（アメリカの場合は3時ちょうど）に変換されるようです。
+
+```cpp
+// 存在しない日付時刻からの変換
+void nonexist() noexcept {
+  const time_zone* edt = locate_zone("America/New_York"); // 東海岸時間
+
+  // アメリカでは、3月第2週目の日曜2時から夏時間開始
+  local_time lt = local_days{2022y/March/Sunday[2]} + 2h + 30min;
+
+  // 例外は投げられない（変換先は1つ）
+  sys_time t1 = edt->to_sys(lt, choose::earliest);
+  sys_time t2 = edt->to_sys(lt, choose::latest);
+
+  std::cout << t1 << "\n";
+  std::cout << t2 << "\n";
+
+  // zoned_timeも同様
+  zoned_time zt1{edt, lt, choose::earliest};
+  zoned_time zt2{edt, lt, choose::latest};
+
+  std::cout << zt1.get_sys_time() << "\n";
+  std::cout << zt2.get_sys_time() << "\n";
+}
+```
+```
+2022-03-13 07:00:00
+2022-03-13 07:00:00
+2022-03-13 07:00:00
+2022-03-13 07:00:00
 ```
 
 ## `std::format`
