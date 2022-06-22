@@ -3646,7 +3646,7 @@ int main() {
 
 C++20`<chrono>`ライブラリの拡張はここまでで一通り見終わりました。ご覧の通りかなり大規模な拡張となっています。そして、ここまでの解説ではその全てを補い切れておらず、タイムゾーンデータベース関連や`hh_mm_ss`クラス周りなど省略しているところがいくつかあります。
 
-気になる方は、cpprefjpの`<chrono>`のページ（https://cpprefjp.github.io/reference/chrono.html）を眺めて、本書で抜け落ちているところを探してみると良いかもしれません。
+気になる方は、cpprefjpの`<chrono>`のページ(https://cpprefjp.github.io/reference/chrono.html)を眺めて、本書で抜け落ちているところを探してみると良いかもしれません。
 
 \clearpage
 
@@ -3806,6 +3806,117 @@ int main() {
   comp_test2(17u, 20ull);  // ok
   comp_test2(17, 20.0);    // ng、結果はpartial_ordering
 }
+```
+
+## 三方比較の結果型取得
+
+クラスのデフォルト`<=>`比較の戻り値型など、多数の型が参加する三方比較の結果型（比較カテゴリ型）を推論するのはなかなか難しいものがあります。コンパイラはすべてわかっていますが、それを取得するコードを書くのも少し手間です。
+
+そのため、それを求めるためのメタ関数、`std::common_comparison_category<Ts...>`が用意されています。これは、`Ts...`に任意個数の型を渡すと、それらすべての型が参加する`<=>`の結果の比較カテゴリ型を返してくれるものです。
+
+あるいは、単に1つの型について結果のカテゴリ型を求めたい場合のために、`std::compare_three_way_result<T>`も用意されています。これは`T`のオブジェクト`t, u`の間での`t <=> u`の結果型を返してくれます。
+
+```cpp
+#include <comapre>
+
+// partial_ordering
+using t1 = std::common_comparison_category_t<int, char, float>;
+
+// strong_ordering
+using t2 = std::compare_three_way_result<int>;
+```
+
+これらは例えば、別の型`T`の薄いラッパのようなクラステンプレートにおいて、`<=>`をフォールバック実装させる場合に、次のように活用できます。
+
+```cpp
+#include <comapre>
+
+// Tが<=>を使用できない場合、Catにフォールバックする
+template<typename T, typename Cat>
+using fallback_comp3way_t = std::conditional_t<
+        std::three_way_comparable<T>,
+          std::compare_three_way_result<T>,
+          std::type_identity<Cat>
+      >::type;
+
+using category = std::weak_ordering;
+
+template<typename T>
+struct wrap {
+  T t;
+
+  //<=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
+  auto operator<=>(const wrap&) const
+    -> fallback_comp3way_t<T, category>
+      = default;
+};
+
+template<typename T1, typename T2, typename T3>
+struct triple {
+  T1 t1;
+  T2 t2;
+  T3 t3;
+
+  //<=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
+  auto operator<=>(const triple&) const
+    -> std::common_comparison_category_t<
+          fallback_comp3way_t<T1, category>,
+          fallback_comp3way_t<T2, category>,
+          fallback_comp3way_t<T3, category>
+        >
+      = default;
+};
+```
+
+これらに対して、次のような`<=>`演算子を持たない型を与えた時でも、三方比較の`default`実装のフォールバック仕様（戻り値型が指定してあれば`< ==`を用いて実装を試みる）によって`<=>`の自動実装が働きます。
+
+```cpp
+// <=>は定義していないが、< ==は定義してあるクラス
+struct no_spaceship {
+  int n;
+
+  bool operator<(const no_spaceship& that) const noexcept {
+    return n < that.n;
+  }
+
+  bool operator==(const no_spaceship& that) const noexcept {
+    return n == that.n;
+  }
+};
+
+int main() {
+  std::cout << std::boolalpha;
+
+  {
+    wrap<no_spaceship> t1 = { {20} }, t2 = { {30} };
+
+    std::cout << (t1 < t2) << "\n";
+    std::cout << (t1 <= t2) << "\n";
+    std::cout << (t1 > t2) << "\n";
+    std::cout << (t1 >= t2) << "\n";
+  }
+  std::cout << "\n";
+  {
+    triple<int, double, no_spaceship> t1 = {10, 3.14, {20}}, 
+                                      t2 = {10, 3.14, {30}};
+                                      
+    std::cout << (t1 < t2) << "\n";
+    std::cout << (t1 <= t2) << "\n";
+    std::cout << (t1 > t2) << "\n";
+    std::cout << (t1 >= t2) << "\n";
+  }
+}
+```
+```
+true
+true
+false
+false
+
+true
+true
+false
+false
 ```
 
 ## 比較関数オブジェクト
