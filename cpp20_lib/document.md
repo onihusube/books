@@ -3826,7 +3826,7 @@ using t1 = std::common_comparison_category_t<int, char, float>;
 using t2 = std::compare_three_way_result<int>;
 ```
 
-これらは例えば、別の型`T`の薄いラッパのようなクラステンプレートにおいて、`<=>`をフォールバック実装させる場合に、次のように活用できます。
+これらは例えば、別の型`T`の薄いラッパのようなクラステンプレートにおいて、`<=>`のデフォルト実装をフォールバックさせるために次のように活用できます。
 
 ```cpp
 #include <comapre>
@@ -3839,13 +3839,14 @@ using fallback_comp3way_t = std::conditional_t<
           std::type_identity<Cat>
       >::type;
 
+// フォールバック先のカテゴリ
 using category = std::weak_ordering;
 
 template<typename T>
 struct wrap {
   T t;
 
-  //<=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
+  // <=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
   auto operator<=>(const wrap&) const
     -> fallback_comp3way_t<T, category>
       = default;
@@ -3857,7 +3858,7 @@ struct triple {
   T2 t2;
   T3 t3;
 
-  //<=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
+  // <=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
   auto operator<=>(const triple&) const
     -> std::common_comparison_category_t<
           fallback_comp3way_t<T1, category>,
@@ -3885,39 +3886,35 @@ struct no_spaceship {
 };
 
 int main() {
-  std::cout << std::boolalpha;
-
   {
     wrap<no_spaceship> t1 = { {20} }, t2 = { {30} };
 
-    std::cout << (t1 < t2) << "\n";
-    std::cout << (t1 <= t2) << "\n";
-    std::cout << (t1 > t2) << "\n";
-    std::cout << (t1 >= t2) << "\n";
+    bool b1 = t1 < t2;  // true
+    bool b2 = t1 <= t2; // true
+    bool b3 = t1 > t2;  // false
+    bool b4 = t1 >= t2; // false
   }
-  std::cout << "\n";
   {
     triple<int, double, no_spaceship> t1 = {10, 3.14, {20}}, 
                                       t2 = {10, 3.14, {30}};
                                       
-    std::cout << (t1 < t2) << "\n";
-    std::cout << (t1 <= t2) << "\n";
-    std::cout << (t1 > t2) << "\n";
-    std::cout << (t1 >= t2) << "\n";
+    bool b1 = t1 < t2;  // true
+    bool b2 = t1 <= t2; // true
+    bool b3 = t1 > t2;  // false
+    bool b4 = t1 >= t2; // false
   }
 }
 ```
-```
-true
-true
-false
-false
 
-true
-true
-false
-false
-```
+`<=>`の`default`実装においては、通常はそのクラスのメンバ（及び規定クラス）全てを`<=>`で比較していくような実装が取られますが、もしその際に`<=>`を使用できないメンバがあるとその`default`実装は暗黙`delete`されます。C++17以前に作成された型は全て`<=>`を持っていないので、これは既存のコードをC++20に移行する際に問題となります。
+
+そこで、あるメンバが`<=>`を持っていない場合でもその型が`< ==`による比較を実装していれば、それを用いて`default`実装を行うことができるようになっています。ただしこの時、`default`実装したい`<=>`の戻り値型は`auto`ではなく比較カテゴリ型を明示的に指定しておかなければなりません。
+
+すると、上記の`wrap`や`triple`のようなクラスにおいてはその`<=>`が戻り値型`auto`で`default`実装できるかはテンプレートパラメータの型に依存して変化し、`<=>`の`default`宣言は複数共存できないため、`<=>`を自動実装するには戻り値型を明示指定した`default`宣言を使用したほうが良くなります。しかし、なるべく元の比較カテゴリを維持しながら`<=>`が戻り値型`auto`で定義できない場合にのみフォールバック実装を利用したくなりますが、それを叶えようとすると比較を手書きしなければならなくなります。
+
+上記サンプルコードの`fallback_comp3way_t`のようなものを用意しておくと、1つの`<=>`の`default`宣言だけでその両方の`default`宣言を兼ねることができるようになります。これは、`<=>`が使える場合はその戻り値型を、使えない場合は指定した型`Cat`を`<=>`の`default`宣言の戻り値型として自動的に指定されるようにすることで、なるべく元の比較カテゴリを維持するようにしつつフォールバック実装時は指定したカテゴリを利用するようにしています。また、`<=>`の`default`宣言を維持していることで、`==`も自動定義されています。
+
+`std::common_comparison_category`及び`std::compare_three_way_result`は、このような`<=>`周辺のためのTMPを行う場合に有効活用できます。
 
 ## 比較関数オブジェクト
 
