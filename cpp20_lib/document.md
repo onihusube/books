@@ -3936,6 +3936,156 @@ int main() {
 
 また、`std:compare_three_way`による比較では、ポインタ値の比較において実装定義の狭義全順序の上での比較が可能です（これは`std::less`等でも同様）。素の`<=>`演算子との違いは、無関係なオブジェクト同士など、結果が未定義となる比較においても実装定義とはいえ比較可能である点です。狭義全順序であるとは、多くのプログラマーが思い描くようなメモリ空間のメンタルモデルと（おそらく）一致するような順序付けが行われるという事です。
 
+```cpp
+#include <compare>
+
+int main() {
+  std:compare_three_way cmp{};
+
+  int a = 1, b = 2;
+
+  auto c1 = &a <=> &b;    // UB
+  auto c2 = cmp(&a, &b);  // ok
+}
+```
+
+また、特定の比較カテゴリの上での三方比較を行うための関数オブジェクト（`std::strong_order, std::weak_order, std::partial_order`）も用意されています。これらの関数オブジェクトは、その名前に対応する比較カテゴリ上で、基本的には`<=>`演算子を用いた比較を行います。
+
+```cpp
+#include <compare>
+
+int main() {
+  int n1 = 10, n2 = 20;
+
+  auto c1 = std::strong_order(n1, n2);   // strong_ordering::less
+  auto c2 = std::weak_order(n1, n2);     // weak_ordering::less
+  auto c3 = std::partial_order(n1, n2);  // partial_ordering::less
+}
+```
+
+これらの関数オブジェクトによる比較においては、対応する比較カテゴリの値が必ず得られ、そのカテゴリの比較が行えない場合はコンパイルエラーとなります。
+
+これらはカスタマイゼーションポイントオブジェクト（CPO）という事前定義関数オブジェクトであり、その比較の実装をカスタマイズすることができます。このカスタマイズに使用する関数は、非修飾ルックアップ（すなわちADL）によって呼び出し可能な同名の関数である必要があり、フリー関数か*Hidden frineds*関数として実装します。
+
+```cpp
+#include <compare>
+
+struct S {
+  int n1 = 0;
+  int n2 = 0;
+  int n3 = 0;
+
+  // strong_orderによる比較をカスタムする
+  friend auto strong_order(const S& lhs, const S& rhs) -> std::strong_ordering {
+    // 宣言順と異なる順序で比較
+    if (auto cmp = lhs.n1 <=> rhs.n1; cmp != 0) return cmp;
+    if (auto cmp = lhs.n3 <=> rhs.n3; cmp != 0) return cmp;
+    return lhs.n2 <=> rhs.n2;
+  }
+};
+
+int main() {
+  S s1{0, 1, 2}, s2{0, 2, 2};
+
+  auto c1 = std::strong_order(s1, s2);   // strong_ordering::less
+  auto c2 = std::weak_order(s1, s2);     // weak_ordering::less
+  auto c3 = std::partial_order(s1, s2);  // partial_ordering::less
+}
+```
+
+ある比較カテゴリ型の値はより弱い比較カテゴリ型の値へと暗黙変換することができます。これらのCPOにおいても同様に、より弱い比較においてはより強い比較を通して結果を得ることができます。上記例では、`std::weak_order`と`std::partial_order`による比較は、`std::strong_order`で比較した結果を変換することで行われています。
+
+さらに、`std::strong_order`と`std::weak_order`では、浮動小数点数の比較時にIEEE 754で定義される浮動小数点数の全順序に従った順序づけによって比較を行い、その結果を対応する比較カテゴリで返します。
+
+`std::strong_order`の場合は次のような順序付けが行われます
+
+```
+{負のquiet NaN} < {負のsignaling NaN} < {負の数} < -0.0 < +0.0 < {正の数} < {正のsignaling NaN} < {正のquiet NaN}
+```
+
+それぞれの集合（`{}`）内でも全ての値の間で順序付けを行うことができ、例えば`NaN`の値はそのペイロード（先頭ビットを除いた仮数部）を整数として扱った時の大小関係によって順序付けけされます。
+
+`std::weak_order`の場合は次のようになります
+
+```
+{全ての-NaN} < {-Inf} < {負の正規化数} < {負の非正規化数} < {±0.0} < {正の非正規化数} < {正の正規化数} < {+Inf} < {全ての+NaN}
+```
+
+こちらの場合、それぞれの集合内では組み込みの`<=>`による比較によって順序付けされます。もし比較不可能（`unorderd`）となる場合、弱順序上ではそれらは同値として扱われます。例えば、`±NaN`の集合内では全ての要素が同値となります。その一方で、`NaN`とそれ以外のものの間では順序付けが行われます。
+
+```cpp
+#include <compare>
+
+int main() {
+  std::cout << std::boolalpha;
+
+  // +/-0.0の順序付け
+  double z1 = +0.0, z2 = -0.0;
+
+  auto c1 = std::strong_order(z1, z2);   // strong_ordering::less
+  auto c2 = std::weak_order(z1, z2);     // weak_ordering::equivalent
+
+  std::cout << std::is_lt(c1) << "\n";
+  std::cout << std::is_lt(c2) << "\n";
+
+  // NaNの順序付け
+  double n1 = std::numeric_limits<double>::quiet_NaN();
+  double n2 = std::numeric_limits<double>::signaling_NaN();
+
+  auto c3 = std::strong_order(n1, n2);   // strong_ordering::less
+  auto c4 = std::weak_order(n1, n2);     // weak_ordering::equivalent
+
+  std::cout << std::is_lt(c3) << "\n";
+  std::cout << std::is_lt(c4) << "\n";
+
+  // NaNと1.0の順序付け
+  auto c5 = std::weak_order(1.0, n2);     // weak_ordering::less
+  auto c6 = std::partial_order(1.0, n2);  // partial_ordering::unorderd
+  
+  std::cout << std::is_lt(c5) << "\n";
+  std::cout << std::is_lt(c6) << "\n";
+}
+```
+```
+true
+false
+true
+false
+true
+false
+```
+
+浮動小数点数型がIEEE 754のものではない場合は話が変わってくるのですが、おそらくIEEE 754派生なものしか現存していないと思われるのでほぼ同様の比較が可能なはずです（さもなければコンパイルエラーとなるはず）。
+
+最後に、これら3つのCPOにはその名前を`xxx`として`compare_xxx_fallback`のような名前で、`< ==`による比較にフォールバックするCPOが用意されています。これは`<=>`のデフォルト実装時のフォールバック仕様と同様に、`<=>`が使用できない場合に`< ==`による比較によって三方比較を行おうとするものです。
+
+```cpp
+#include <compare>
+
+struct no_spaceship {
+  int n;
+
+  bool operator<(const no_spaceship& that) const noexcept {
+    return n < that.n;
+  }
+
+  bool operator==(const no_spaceship& that) const noexcept {
+    return n == that.n;
+  }
+};
+
+
+int main() {
+  no_spaceship ns1{10}, ns2{20};
+
+  auto c1 = std::compare_strong_order_fallback(ns1, ns2);   // strong_ordering::less
+  auto c2 = std::compare_weak_order_fallback(ns1, ns2);     // weak_ordering::less
+  auto c3 = std::compare_partial_order_fallback(ns1, ns2);  // partial_ordering::less
+}
+```
+
+これらのものでは、`xxx`のCPOを用いた比較が可能な場合はそれを用いて比較が行われ、不可能な場合にのみフォールバックします。
+
 \clearpage
 # `<version>`
 
