@@ -59,8 +59,93 @@ okuduke:
 \clearpage
 # `<bit>`
 \clearpage
+
 # `<numbers>`
+
+`<numbers>`ヘッダでは、いくつかの数学定数が事前定義された変数テンプレートで提供されます。
+
+提供されるのは次のものです
+
+|変数名|意味|
+|---|---|
+|`e`|ネイピア数$e$|
+|`log2e`|$e$の二進対数$\log_2{e}$|
+|`log10e`|$e$の常用対数$\log_{10}{e}$|
+|`pi`|円周率$\pi$|
+|`inv_pi`|円周率の逆数$\frac{1}{\pi}$|
+|`inv_sqrtp`|円周率の平方根の逆数$\frac{1}{\sqrt \pi}$|
+|`ln2`|2の自然対数$\log 2$|
+|`ln10`|10の自然対数$\log 10$|
+|`sqrt2`|2の平方根$\sqrt 2$|
+|`sqrt3`|3の平方根$\sqrt 3$|
+|`inv_sqrt3`|3の平方根の逆数$\frac{1}{\sqrt 3}$|
+|`egamma`|オイラー定数 $\gamma$|
+|`phi`|黄金比$\phi = \frac{1 + \sqrt 5}{2}$|
+
+これらの定数は全て`std::numbers`名前空間にあり、例えば`std::numbers::pi`は次のように定義されています
+
+```cpp
+namespace std::numbers {
+  // プライマリテンプレート、使用不可
+  template <class T>
+  inline constexpr T pi_v = ...;
+
+  // 組み込み浮動小数点数型用の特殊化
+  template <floating_point T>
+  inline constexpr T pi_v<T> = 3.14...;
+
+  // doubleのための変数定義
+  inline constexpr double pi = pi_v<double>;
+}
+```
+
+どの数学定数もこのように定義されているため、使用方法は一貫しています。
+
+```cpp
+#include <numbers>
+
+using namespace std::numbers;
+
+int main() {
+  // floatの定数の使用
+  std::cout << std::format("{:.7f}\n", pi_v<float>);
+
+  // doubleの定数の使用
+  std::cout << std::format("{:.15f}\n", pi);
+  std::cout << std::format("{:.15f}\n", std::sin(2.0*pi/3.0));
+}
+```
+```
+3.1415927
+3.141592653589793
+0.866025403784439
+```
+
+なお、プライマリテンプレートがインスタンス化された場合はコンパイルエラーとなります。その場合、自作や在野の数値型に対しては、これらの変数テンプレートをその型に対して部分特殊化することが許可されています。
+
+## ２の平方根の逆数
+
+$\frac{1}{\sqrt 3}$が`std::numbers::inv_sqrt3`として定義されているのに、$\frac{1}{\sqrt 2}$が定義されていないのは不思議に思われるかもしれません。これは、$\frac{1}{\sqrt 2} = \frac{\sqrt 2}{2}$でありこの計算は丸め誤差を導入せずに（指数部に1足すだけで）行えますが、$\frac{\sqrt 3}{3}$はそうではないためです。
+
+```cpp
+#include <numbers>
+
+using namespace std::numbers;
+
+int main() {
+  constexpr double inv_sqrt2 = sqrt2 / 2.0;
+  
+  std::cout << std::format("{:.15f}\n", inv_sqrt2);
+  std::cout << std::format("{:.15f}\n", 1.0 / sqrt2);
+}
+```
+```
+0.707106781186548
+0.707106781186547
+```
+
 \clearpage
+
 # `<span>`
 
 `<span>`ヘッダでは、任意のメモリ範囲を所有せずに参照するのに便利な`std::span`クラスを提供します。
