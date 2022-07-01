@@ -57,7 +57,41 @@ okuduke:
 \clearpage
 # `<format>`
 \clearpage
+
 # `<bit>`
+
+`<bit>`では主に、良くあるビット演算のための関数が用意されています。
+
+このヘッダの関数は全て`constexpr`指定されているため定数式で使用可能です。また、`std::bit_cast()`を除いて整数型のみを引数に取ります。
+
+## ビットレベルの再解釈
+
+ビットレベルの再解釈とは、ある型のバイト表現（ビット列）をそのまま別の型のオブジェクトとして扱うことを言います。*type punning*とも呼ばれ、C++では未定義動作を回避してこれを行うことが困難でした（いわゆる*Strict Aliasing rule*に用意に抵触する）。しかし、バイナリI/Oなどその需要は高く、安全にそれを行う機能が求められていたため、C++20からは`std::bit_cast()`という関数によってそれが行えるようになります。
+
+```cpp
+namespace std {
+  // bit_castの宣言例
+  template<typename To, typename From>
+  constexpr To bit_cast(const From& from) noexcept;
+}
+```
+
+`std::bit_cast<To>(from)`のように呼んで、`from`オブジェクトのバイト表現（ビット列）を保ったままたコピーした`To`のオブジェクトを返します。この時、型`From/To`は共に*trivially copyable*である必要があり、両方の型のサイズは一致していなければなりません（違反する場合はコンパイルエラー）。
+
+```cpp
+
+```
+
+定数式で使用する場合はさらに、型`From/To`とそのメンバの型が、共用体でもポインタ型でも参照型でもなく、`volatile`修飾されてもいない必要がありますが、`std::bit_cast()`はビットレベルの再解釈を合法的に定数式で行う唯一の方法です。
+
+## 循環ビットシフト
+
+## ビットカウント
+
+## バイトオーダー変換
+
+## バイトオーダーの検出
+
 \clearpage
 
 # `<numbers>`
@@ -256,27 +290,32 @@ void readonly(std::span<const int> mem);
 int main() {
   // std::vector
   std::vector vec = {0, 1, 2, 3};
-  use_mem_seq(vec);
+  use_mem_seq(vec); // ok
 
   // std::array
   std::array<int, 5> arr = {5, 4, 3, 2, 1};
-  use_mem_seq(arr);
+  use_mem_seq(arr); // ok
 
   // 生配列
   int rawarr[] = {1, 2, 3};
-  use_mem_seq(rawarr);
+  use_mem_seq(rawarr);  // ok
 
   // ポインタとサイズのペア
   std::unique_ptr<int[]> p{new int[4]{}};
-  use_mem_seq({p.get(), 4});
+  use_mem_seq({p.get(), 4});  // ok
   
   // 文字列
   std::string_view str = "string";
-  use_char_seq(str);
+  use_char_seq(str);  // ok
 
   // 要素型の変換（non const -> const）
   std::span<int> rospan = vec;
-  readonly(rospan);
+  readonly(rospan);   // ok
+
+  // const外しできない
+  const std::vector cvec = {0, 1, 2, 3};
+  use_mem_seq(cvec);  // ng
+  readonly(cvec);     // ok
 }
 ```
 
