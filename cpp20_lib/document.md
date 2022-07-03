@@ -125,11 +125,15 @@ int main() {
 ```cpp
 #include <bit>
 
+void out(std::unsigned_integral auto n) {
+  std::cout << std::format("{:0>4b}\n", n);
+}
+
 int main() {
-  std::cout << std::format("{:0>4b}\n", std::bit_ceil(0b0011u));
-  std::cout << std::format("{:0>4b}\n", std::bit_floor(0b0011u));
-  std::cout << std::format("{:0>4b}\n", std::bit_ceil(0b1000u));
-  std::cout << std::format("{:0>4b}\n", std::bit_floor(0b1000u));
+  out(std::bit_ceil( 0b0011u));
+  out(std::bit_floor(0b0011u));
+  out(std::bit_ceil( 0b1000u));
+  out(std::bit_floor(0b1000u));
 }
 ```
 ```
@@ -144,6 +148,41 @@ int main() {
 床関数（`std::bit_floor()`）は、最上位ビットだけが立った状態にしている（最上位ビット以下のビットのゼロクリアをしている）と見ることもできます。
 
 ### 値を表現するために必要なビット幅を求める
+
+ある整数値について、その値を表現するために必要な最小のビット幅を求めるのが`std::bit_width()`です。
+
+```cpp
+#include <bit>
+
+int main() {
+  std::cout << std::bit_width(0b0001u) << "\n";
+  std::cout << std::bit_width(0b0010u) << "\n";
+  std::cout << std::bit_width(0b0100u) << "\n";
+  std::cout << std::bit_width(0b1000u) << "\n";
+}
+```
+```
+1
+2
+3
+4
+```
+
+細かい所に目をつむれば、この関数は入力値`n`に対して`bit_floor(log2(n)) + 1`のような計算の結果を返すものです。これはすなわち、`n`の最上位ビット（最も左端で1が立っているビット）の最下位ビットからの位置（1始まりのインデックス）を求めています。
+
+|整数値|ビット表現|`bit_width()`|
+|:-:|:-:|:-:|
+|0|0000|0|
+|1|0001|1|
+|2|0010|2|
+|3|0011|2|
+|4|0100|3|
+|5|0101|3|
+|6|0110|3|
+|7|0111|3|
+|8|1000|4|
+
+この関数の提案当初の名前は、このことを反映した`log2p1`という名前でした。
 
 ## 循環ビットシフト
 
