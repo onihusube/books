@@ -368,10 +368,13 @@ namespace std {
 ```cpp
 // 常にビッグエンディアンに変換する関数
 auto to_bigendian(std::integral auto n) {
-  if constexpr (std::endian::native == std::endian::big) {
+  // std::endian:: を省略
+  using enum std::endian;
+
+  if constexpr (native == big) {
     // 環境がビッグエンディアンならそのまま
     return n;
-  } else {
+  } else if constexpr (native == little) {
     // 環境がリトルエンディアンなら変換
     return std::byteswap(n);
   } else {
