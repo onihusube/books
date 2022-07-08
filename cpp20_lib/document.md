@@ -556,6 +556,30 @@ int main() {
 
 この例はすべて幅6に収まってフォーマットされています。
 
+*fill*には`{`と`}`を除く任意の1文字が指定可能ですが、これは明らかに後続のオプションの指定文字とバッティングしています。その曖昧性を回避するために、*fill*を指定する場合は*aling*の指定が必須となっており、*align*が指定されない場合は*fill*も指定されていないものとして扱われます。ただし、*align*は単体で指定できます。
+
+```cpp
+#include <format>
+
+int main() {
+  // これはfillとalignの指定
+  std::format("{:^6}\n", 20);   // alignのみ
+  std::format("{:+^6}\n", 20);  // +でfill
+  std::format("{:0^6}\n", 20);  // 0でfill
+  std::format("{:#^6}\n", 20);  // #でfill
+
+  // これは他のオプションの指定
+  std::format("{:+6}\n", 20); // sign
+  std::format("{:#6}\n", 20); // alt
+  std::format("{:06}\n", 20); // pad
+
+  // 曖昧では無い場合はコンパイルエラー
+  std::format("{:*6}\n", 20);
+  std::format("{:!6}\n", 20);
+  std::format("{:a6}\n", 20);
+}
+```
+
 ### precision
 ### type
 
