@@ -581,6 +581,63 @@ int main() {
 ```
 
 ### precision
+
+*precision*は浮動小数点数型の精度を指定するオプションです。*precision*に指定可能なのは正の整数値のみにで、必ず`.`から始まる必要があります。
+
+この精度とは小数点以下の桁数のことではなく、小数点を除いた数値の桁数の指定です。デフォルト（指定しない場合）は6が使用されています。
+
+```cpp
+#include <format>
+
+int main() {
+  double v = 3.141592653589793;
+  std::cout << std::format("{:.1}\n", v);
+  std::cout << std::format("{:.5}\n", v);
+  std::cout << std::format("{:.10}\n", v);
+}
+```
+```
+3
+3.1416
+3.141592654
+```
+
+数値が指定された桁数に満たない場合は、可能なところまで文字列化されます（スペースや0で埋められたりはしません）。
+
+```cpp
+#include <format>
+
+int main() {
+  double v = 3.14;
+  std::cout << std::format("|{:.5}|\n", v);
+}
+```
+```
+|3.14|
+```
+
+*precision*にはもう一つ役割があり、それは文字列型に対してその最大長を指定するものです。
+
+```cpp
+#include <format>
+
+using namespace std::literals;
+
+int main() {
+  auto str = "123456789abcdef"sv;
+  std::cout << std::format("{:.1}\n", str);
+  std::cout << std::format("{:.5}\n", str);
+  std::cout << std::format("{:.10}\n", str);
+}
+```
+```
+1
+12345
+123456789a
+```
+
+*width*は最小幅でしたが*precision*は最大幅を指定するものなので、*precision*の値からはみ出る部分の文字は出力されません。ただし、ここでの文字幅もターミナルなどに表示した時の文字幅とはほぼ無関係で、*aling*の際と同じカウント（特定の文字が幅2、それ以外は幅1として扱われる）で出力幅が決まります。
+
 ### type
 
 
