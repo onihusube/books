@@ -615,29 +615,7 @@ int main() {
 ```
 |3.14|
 ```
-
-*precision*にはもう一つ役割があり、それは文字列型に対してその最大長を指定するものです。
-
-```cpp
-#include <format>
-
-using namespace std::literals;
-
-int main() {
-  auto str = "123456789abcdef"sv;
-  std::cout << std::format("{:.1}\n", str);
-  std::cout << std::format("{:.5}\n", str);
-  std::cout << std::format("{:.10}\n", str);
-}
-```
-```
-1
-12345
-123456789a
-```
-
-*width*は最小幅でしたが*precision*は最大幅を指定するものなので、*precision*の値からはみ出る部分の文字は出力されません。ただし、ここでの文字幅もターミナルなどに表示した時の文字幅とはほぼ無関係で、*aling*の際と同じカウント（特定の文字が幅2、それ以外は幅1として扱われる）で出力幅が決まります。
-
+ただし、ここでの文字幅もターミナルなどに表示した時の文字幅とはほぼ無関係で、*aling*の際と同じカウント（特定の文字が幅2、それ以外は幅1として扱われる）で出力幅が決まります。
 
 ### width と precision の動的な指定
 
@@ -697,15 +675,91 @@ int main() {
 }
 ```
 
-### type
+### type 
 
+最後の*type*オプションはデータの表示の仕方を指定するオプションです。この*type*はフォーマット対象のデータ型とは異なるものです。
+
+*type*オプションは基本的に半角英字1文字で指定します。他のオプションと異なり、*type*オプションは型ごとに可能な指定が異なっていたり意味が微妙に違ったりするので、それぞれの型のグループ毎に個別に見ていくことにします。
+
+### 文字列型のフォーマット
+
+文字列型のフォーマット文字列構文の全体は次のようになります。
+
+```
+{ index : fill align width .precision type(s) }
+```
+
+*sing*とか*alt*などは文字列型では指定可能ではなく、文字列型の*type*オプションは`s`のみです。
+
+```cpp
+#include <format>
+
+using namespace std::literals;
+
+int main() {
+  std::cout << std::format("{:s}\n", "string");   // const char*
+  std::cout << std::format("{:s}\n", "string"sv); // string_view
+  std::cout << std::format("{:s}\n", "string"s);  // string
+}
+```
+
+ただし、*type*オプションを省略したときでも`s`が指定されているかのように扱われるので、文字列型に対する*type*オプションはほぼ無意味です。しいて言うなら、文字列変数で置換したい置換フィールドに整数型などが間違って指定された場合にコンパイルエラーとすることができます。
+
+```cpp
+#include <format>
+
+int main() {
+  // ok、どちらも同じ出力結果
+  std::format("{:}\n", "string");
+  std::format("{:s}\n", "string");
+
+  // ng、数値型にはsが使用できない
+  std::format("{:s}\n", 0);
+  std::format("{:s}\n", 256);
+  std::format("{:s}\n", 1.0);
+}
+```
+
+ただし、`bool`型では`s`オプションが有効なので、`bool`値が指定されるとエラーになりません。
+
+文字列型における*precision*オプションは、文字列に対してその最大長を指定という意味を持ちます。
+
+```cpp
+#include <format>
+
+using namespace std::literals;
+
+int main() {
+  auto str = "123456789abcdef"sv;
+  std::cout << std::format("{:.1s}\n", str);
+  std::cout << std::format("{:.5s}\n", str);
+  std::cout << std::format("{:.10s}\n", str);
+}
+```
+```
+1
+12345
+123456789a
+```
+
+*width*の指定する値は最小幅であり、*precision*の値は最大幅を指定するものです。そのため、*precision*の値からはみ出る部分の文字は出力されません。なお、文字幅は数値型における*precision*（および*fill*/*align*）と同様の計算によって決まります。
+
+### 整数型のフォーマット
+
+整数型のフォーマット文字列では、ここまで紹介していたすべてのオプションが使用可能です、
+
+```
+{ index : fill align sign alt(#) pad(0) width .precision type }
+```
+
+
+
+### 文字型のフォーマット
+
+### 浮動小数点数型のフォーマット
+### `bool`型のフォーマット
 
 ### エスケープ
-
-## フォーマット文字列の構文2 整数型
-## フォーマット文字列の構文2 浮動小数点数型
-## フォーマット文字列の構文2 文字/文字列型
-## フォーマット文字列の構文2 `bool`型
 
 ## `std::formatter`
 
