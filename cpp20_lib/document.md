@@ -1081,6 +1081,66 @@ int main() {
 
 ## `std::formatter`
 
+前節で紹介したのは組み込み型のフォーマット文字列の構文であって、標準ライブラリのほとんどの型やユーザー定義の型などでは使用できません。使用しようとするとコンパイルエラーになります。
+
+```cpp
+#include <format>
+
+struct vec3 {
+  int elem[3];
+};
+
+int main() {
+  vec v = {1, 2, 3};
+  std::optional<int> opt = 10;
+
+  std::format( "{}", v);    // ng
+  std::format( "{}", opt);  // ng
+}
+```
+
+ユーザー定義の型に対して`std::format()`を使用するためには、`std::format()`にその型のためのフォーマット文字列構文やフォーマット方法を教える必要があるため、デフォルトでは何もできないのです。
+
+どうやってそれを教えてあげるかというと、`std::formatter`というクラステンプレートをフォーマットしたい型に対して特殊化（部分特殊化）して、そのメンバ関数を適切に定義することで行います。
+
+実のところ、前節で紹介した組み込み型のフォーマット文字列構文もこの`std::formatter`の特殊化が組み込み型に対してあらかじめ提供され（ていることが保証され）ており、なおかつその構文やフォーマット方法が規定されているために組み込み型で`std::format()`が使用可能となっています。つまりは、`std::format()`にアダプトする必要があるという観点からは、組み込み型は何ら特別扱いされていません。
+
+`std::formatter<T, CharT>`は`T`に対象の型、`CharT`に文字型（`char/wchar_t`）を取り、次のような宣言になっています。
+
+```cpp
+namespace std {
+  // std::formatterのシグネチャ
+  template<typename T, typename CharT = char>
+  struct formatter;
+}
+```
+
+第2引数の文字型は`std::foramt()`に渡されたフォーマット文字列の文字型に対応していて、`std::foramt()`のフォーマット文字列が`char/wchar_t`文字列の2つしか取らないので、現状は他の文字型を指定しても意味がありません。
+
+この文字型はすなわち`std::foramt()`の出力文字列の文字型でもあるので、`std::formatter<T, CharT>`の特殊化は型`T`の`CharT`文字列に対するフォーマッターを定義します。`CharT`には`char`がデフォルトで指定されているため、`T`に対してだけ特殊化すればとりあえず片方は提供できます。
+
+```cpp
+// アダプトしたい型
+struct vec3 {
+  int elem[3];
+};
+
+// formatter特殊化1a、char
+template<>
+struct std::formatter<vec3, char>;
+
+// formatter特殊化1b、char（文字型省略）
+template<>
+struct std::formatter<vec3>;
+
+// formatter特殊化2、wchar_t
+template<>
+struct std::formatter<vec3, wchar_t>;
+```
+
+
+
+
 \clearpage
 
 # `<bit>`
