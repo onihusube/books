@@ -1138,7 +1138,109 @@ template<>
 struct std::formatter<vec3, wchar_t>;
 ```
 
+ここでは、この`vec3`型を例に`std::formatter`へのアダプト方法を見ていきます。なお、簡略化のために`char`文字列に対するフォーマッターのみを扱います。
 
+`std::formatter`の特殊化にはデフォルト構築・コピー代入と構築・デストラクト可能・`swap`可能などの性質が要求されます。何かメンバ変数を持つことは可能ですがそれがこれらを損ねないようにする必要があるほか、そのオブジェクトは`std::format()`内部で構築されるのでコンストラクタは定義しない方が良いでしょう。
+
+その上で、`std::formatter`の特殊化はフォーマット文字列のパースとフォーマットのために`parse()`と`format()`の2つのメンバ関数を持っている必要があります。この2つのメンバ関数によって任意の型のためのフォーマット文字列構文とフォーマット方法を定義します。
+
+```cpp
+template<>
+struct std::formatter<vec3, char> {
+
+  // フォーマット文字列をパースする
+  constexpr auto parse(std::format_parse_context& pc);
+
+  // フォーマットを行う
+  template<typename FC>
+  auto format(const vec3& v, FC& fc);
+};
+```
+
+`std::format()`内部では、型`T`と文字型`CharT`による特殊化`std::formatter<T, CharT>`のオブジェクト`f`を構築し、まず`f.parse()`によってフォーマット文字列の妥当性検査を行い、パースしたオプションを`f`に保存し、次に`f.format()`に`T`のオブジェクトを渡して呼び出して文字列化を行わせます。この時、それぞれの場合に必要な情報（フォーマット文字列やフォーマット結果出力先など）を渡しているのが`std::format_parse_context`と`std::format_context`（例では`FC`となっているところに渡される）です。なお、これは文字型が`char`の場合のもので、`wchar_t`の場合は先頭に`w`が付きます。
+
+`std::format()`では、置換フィールドの*index*オプションを無視すれば置換フィールドとフォーマット対象引数列の対応はその出現順となります。従って、`std::format()`内部からはフォーマット対象引数に対応する置換フィールドを特定する事ができ、型`T`のフォーマッターに対応するフォーマット文字列を正しく渡す事ができます。
+
+`parse()`に渡される`std::format_parse_context`はまさにその情報を保持している範囲（`range`）オブジェクトであり、`T`の引数に対応する1つの置換フィールドを参照しています。`std::format_parse_context`オブジェクトが参照する1つの置換フィールド（`{...}`）の範囲`[begin, end)`は、`begin`は`{`及び`:`の次の文字であり`end()`は`}`になります。
+
+```cpp
+// vec3のためのパースの実装
+// とりあえずオプションなしのみを受理する
+constexpr auto parse(std::format_parse_context& pc) {
+  auto it = pc.begin();
+  auto end = pc.begin();
+
+  // フォーマット文字列は常に空
+  if (it != end) {
+    // フォーマット文字列の構文エラー
+    throw std::format_error{"The vec3 format string has no options."};
+  }
+
+  // {}が閉じていることをチェック
+  if (*end != '}') {
+    throw std::format_error{"invalid format."};
+  }
+
+  // パース終了地点のイテレータを返す
+  return end;
+}
+```
+
+*index*オプションは置換フィールドと引数の対応を変えるものであり、これをパースして適切な対応をとるのは`std::format()`の役目です。そのため、`parse()`に渡される`std::format_parse_context`の参照する置換フィールド範囲には*index*オプションとそれに続く`:`は含まれておらず、*index*がなく他のオプションがある場合でも`:`の次の文字から開始されます。
+
+`std::format_parse_context`の参照範囲と引数対応の様子
+
+![](./img/format_parse_context.png)
+
+コンパイル時フォーマット文字列チェックのために`parse()`は`constexpr`関数である必要がありますが、構文エラーを発生させるには実行時でもコンパイル時でも同様に`throw`式で行えます。この部分をラップしたり工夫することで（コンパイラ毎に調整が必要とはいえ）コンパイル時のフォーマット構文エラーメッセージを見やすくする事ができます。
+
+このフォーマット文字列（とは言っても`{}`のみですが）に対して`vec3`のフォーマットは例えば`{1, 2, 3}`のように出力することにします。`format()`にその文字列化の実装を記述します。
+
+```cpp
+// vec3のフォーマット
+// vec3{1,2,3}を{1, 2, 3}のように出力
+template<typename FC>
+auto format(const vec3& v, FC& fc) {
+  // フォーマット結果出力先の出力イテレータ
+  auto out = fc.out();
+
+  // outに1文字づつ出力していく
+  *out = '{';
+  ++out;
+
+  // format_toを用いて組み込み型のフォーマットを委譲する
+  out = std::format_to(out, "{:d}, ", v.elem[0]);
+  out = std::format_to(out, "{:d}, ", v.elem[1]);
+  out = std::format_to(out, "{:d}"  , v.elem[2]);
+
+  *out = '}';
+  ++out;
+
+  // 出力完了後のイテレータを返す
+  return out;
+}
+```
+
+この2つの関数を`std::formatter<vec3, char>`に追加してやると、とりあえず最低限のフォーマットが可能になります。
+
+```cpp
+#include <format>
+
+struct vec3 {
+  int elem[3];
+};
+
+int main() {
+  vec v = {2, 4, 6};
+
+  std::cout << std::format("{}", v); // ok
+}
+```
+```
+{2, 4, 6}
+```
+
+### 組み込み型のフォーマッターを再利用する
 
 
 \clearpage
