@@ -1152,12 +1152,11 @@ struct std::formatter<vec3, char> {
   constexpr auto parse(std::format_parse_context& pc);
 
   // フォーマットを行う
-  template<typename FC>
-  auto format(const vec3& v, FC& fc);
+  auto format(const vec3& v, std::format_context& fc);
 };
 ```
 
-`std::format()`内部では、型`T`と文字型`CharT`による特殊化`std::formatter<T, CharT>`のオブジェクト`f`を構築し、まず`f.parse()`によってフォーマット文字列の妥当性検査を行い、パースしたオプションを`f`に保存し、次に`f.format()`に`T`のオブジェクトを渡して呼び出して文字列化を行わせます。この時、それぞれの場合に必要な情報（フォーマット文字列やフォーマット結果出力先など）を渡しているのが`std::format_parse_context`と`std::format_context`（例では`FC`となっているところに渡される）です。なお、これは文字型が`char`の場合のもので、`wchar_t`の場合は先頭に`w`が付きます。
+`std::format()`内部では、型`T`と文字型`CharT`による特殊化`std::formatter<T, CharT>`のオブジェクト`f`を構築し、まず`f.parse()`によってフォーマット文字列の妥当性検査を行い、パースしたオプションを`f`に保存し、次に`f.format()`に`T`のオブジェクトを渡して呼び出して文字列化を行わせます。この時、それぞれの場合に必要な情報（フォーマット文字列やフォーマット結果出力先など）を渡しているのが`std::format_parse_context`と`std::format_context`です。なお、これは文字型が`char`の場合のもので、`wchar_t`の場合は先頭に`w`が付きます。
 
 `std::format()`では、置換フィールドの*index*オプションを無視すれば置換フィールドとフォーマット対象引数列の対応はその出現順となります。従って、`std::format()`内部からはフォーマット対象引数に対応する置換フィールドを特定する事ができ、型`T`のフォーマッターに対応するフォーマット文字列を正しく渡す事ができます。
 
@@ -1177,7 +1176,7 @@ constexpr auto parse(std::format_parse_context& pc) {
   }
 
   // {}が閉じていることをチェック
-  if (*end != '}') {
+  if (*it != '}') {
     throw std::format_error{"invalid format."};
   }
 
@@ -1186,7 +1185,7 @@ constexpr auto parse(std::format_parse_context& pc) {
 }
 ```
 
-*index*オプションは置換フィールドと引数の対応を変えるものであり、これをパースして適切な対応をとるのは`std::format()`の役目です。そのため、`parse()`に渡される`std::format_parse_context`の参照する置換フィールド範囲には*index*オプションとそれに続く`:`は含まれておらず、*index*がなく他のオプションがある場合でも`:`の次の文字から開始されます。
+なお、*index*オプションは置換フィールドと引数の対応を変えるものであり、これをパースして適切な対応をとるのは`std::format()`の役目です。そのため、`parse()`に渡される`std::format_parse_context`の参照する置換フィールド範囲には*index*オプションとそれに続く`:`は含まれておらず、*index*がなく他のオプションがある場合でも`:`の次の文字から開始されます。
 
 `std::format_parse_context`の参照範囲と引数対応の様子
 
@@ -1194,13 +1193,12 @@ constexpr auto parse(std::format_parse_context& pc) {
 
 コンパイル時フォーマット文字列チェックのために`parse()`は`constexpr`関数である必要がありますが、構文エラーを発生させるには実行時でもコンパイル時でも同様に`throw`式で行えます。この部分をラップしたり工夫することで（コンパイラ毎に調整が必要とはいえ）コンパイル時のフォーマット構文エラーメッセージを見やすくする事ができます。
 
-このフォーマット文字列（とは言っても`{}`のみですが）に対して`vec3`のフォーマットは例えば`{1, 2, 3}`のように出力することにします。`format()`にその文字列化の実装を記述します。
+このフォーマット文字列（とは言っても`{}`のみですが）に対して`vec3`のフォーマットは例えば`{1, 2, 3}`のように出力することにします。`format()`にはその文字列化の実装を記述します。
 
 ```cpp
-// vec3のフォーマット
+// vec3のためのフォーマットの実装
 // vec3{1,2,3}を{1, 2, 3}のように出力
-template<typename FC>
-auto format(const vec3& v, FC& fc) {
+auto format(const vec3& v, std::format_context& fc) {
   // フォーマット結果出力先の出力イテレータ
   auto out = fc.out();
 
@@ -1208,7 +1206,7 @@ auto format(const vec3& v, FC& fc) {
   *out = '{';
   ++out;
 
-  // format_toを用いて組み込み型のフォーマットを委譲する
+  // format_toを用いて組み込み型のフォーマット実装へ委譲する
   out = std::format_to(out, "{:d}, ", v.elem[0]);
   out = std::format_to(out, "{:d}, ", v.elem[1]);
   out = std::format_to(out, "{:d}"  , v.elem[2]);
@@ -1221,7 +1219,11 @@ auto format(const vec3& v, FC& fc) {
 }
 ```
 
-この2つの関数を`std::formatter<vec3, char>`に追加してやると、とりあえず最低限のフォーマットが可能になります。
+`parse()`の1つ目の引数には`std::format`に渡されたフォーマット対象の引数への参照が渡されるので、フォーマットする値はここから読み出します。2つ目の引数には、フォーマット後の出力先などの情報が渡されており、`fc.out()`によって得られる出力イテレータに対してフォーマット済み文字列を出力することで文字列化を行います。
+
+自前の型とは言っても、ほとんどの型（クラス）では結局そのメンバには組み込み型が入っていると思います。組み込み型に対しては最初から`std::formatter`が用意されているので`std::format()`等が使用可能なため、フォーマット処理を組み込み型のフォーマットに帰結させてやれば実装をかなり省略できます。
+
+この2つの関数を`std::formatter<vec3, char>`に追加（当然ながら`public`で）してやると、とりあえず最低限のフォーマットが可能になります。
 
 ```cpp
 #include <format>
@@ -1239,6 +1241,115 @@ int main() {
 ```
 {2, 4, 6}
 ```
+
+ところで、`parse()`の2つ目の引数の型の`std::format_context`は`std::basic_format_context`のエイリアスで、これは2つテンプレートパラメータをとるクラステンプレートです。`std::format_context`はその2つのテンプレートパラメータを埋めたものですが、`parse()`の2つ目の引数は正確には`std::basic_format_context<Out, char>`（`Out`は未規定）の左辺値を受け取れることが求められており、それは必ずしも`std::format_context`と一致しない場合があります。
+
+ここでの例は説明のために`std::format_context`を用いていましたが、ポータビリティのためには`parse()`の第2引数はテンプレートパラメータで受けたほうが良いでしょう。
+
+```cpp
+template<>
+struct std::formatter<vec3, char> {
+
+  // フォーマット文字列をパースする
+  constexpr auto parse(std::format_parse_context& pc);
+
+  // フォーマットを行う
+  auto format(const vec3& v, auto& fc);
+};
+```
+
+以降のサンプルコードはこのようにすることにします。
+
+### オプションを追加する
+
+次に、フォーマット文字列を拡張してオプションを1つ追加してみます。`{:v}`のように指定されたときに、フォーマット後の出力を`(1, 2, 3)`のように変えるようにします。ただし、`{}`の時は先ほどと同じフォーマットをさせたいため、オプションの有無で結果が変わります。すなわちフォーマット文字列パース時にオプションを認識したらそれを保持しておかなければなりません。これは単純に`std::formatter`のメンバ変数として保存しておくことができます。
+
+まずは`parse()`でそのような構文を受理可能にします。
+
+```cpp
+template<>
+struct std::formatter<vec3, char> {
+  // オプションを保存するメンバ変数
+  char opt = ' ';
+
+  // vec3のためのパースの実装
+  // {:v}を受理する
+  constexpr auto parse(std::format_parse_context& pc) {
+    auto it = pc.begin();
+    auto end = pc.begin();
+
+    // {}の時
+    if (it == end) {
+      return end;
+    }
+
+    // {:v}の時
+    if (*it == 'v') {
+      opt = 'v';
+      ++it;
+    } else {
+      throw std::format_error{"Unknown option for vec3."};  
+    }
+
+    // {}が閉じていることをチェック
+    if (it != end && *it != '}') {
+      throw std::format_error{"invalid format."};
+    }
+
+    return end;
+  }
+  
+  // vec3のためのフォーマットの実装
+  auto format(const vec3& v, auto& fc);
+};
+```
+
+オプションが指定されているかのチェックは愚直な文字列の検査です。この場合は`v`オプションがあるか無いかだけなので簡単ですが、組み込み型のように複雑なオプションを指定可能としたいのならばフォーマット文字列の文法をきちんと定義する必要があるでしょう。
+
+パースしたオプション指定はメンバ変数`opt`に保存しておきます。
+
+次に、`format()`ではここでパースしたオプションに応じて文字列化処理を変えます。
+
+```cpp
+template<>
+struct std::formatter<vec3, char> {
+  // オプションを保存するメンバ変数
+  char opt = ' ';
+
+  // フォーマット文字列をパースする
+  constexpr auto parse(std::format_parse_context& pc);
+
+  // フォーマットを行う
+  auto format(const vec3& v, auto& fc) const {
+    // フォーマット結果出力先の出力イテレータ
+    auto out = fc.out();
+
+    // outに1文字づつ出力していく
+    if (opt == 'v') {
+      *out = '(';
+    } else {
+      *out = '{';
+    }
+    ++out;
+
+    // format_toを用いて組み込み型のフォーマット実装へ委譲する
+    out = std::format_to(out, "{:d}, ", v.elem[0]);
+    out = std::format_to(out, "{:d}, ", v.elem[1]);
+    out = std::format_to(out, "{:d}"  , v.elem[2]);
+
+    if (opt == 'v') {
+      *out = ')';
+    } else {
+      *out = ')';
+    }
+    ++out;
+
+    // 出力完了後のイテレータを返す
+    return out;
+  }
+};
+```
+
 
 ### 組み込み型のフォーマッターを再利用する
 
