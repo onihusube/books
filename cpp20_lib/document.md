@@ -1222,7 +1222,9 @@ auto format(const vec3& v, std::format_context& fc) {
 }
 ```
 
-`parse()`の1つ目の引数には`std::format`に渡されたフォーマット対象の引数への参照が渡されるので、フォーマットする値はここから読み出します。2つ目の引数には、フォーマット後の出力先などの情報が渡されており、`fc.out()`によって得られる出力イテレータに対してフォーマット済み文字列を出力することで文字列化を行います。
+`format()`の1つ目の引数には`std::format`に渡されたフォーマット対象の引数への参照が渡されるので、フォーマット対象の値はここから読み出します。2つ目の引数には、フォーマット後の出力先などの情報が渡されており、`fc.out()`によって得られる出力イテレータに対してフォーマット済み文字列を出力することで文字列化を行います。
+
+この`format()`の1つ目の引数は、左辺値を受け取れてそれを変更しないこと、および変換可能な型も受け入れ可能であることが求められます。そのため、`format()`の1つ目の引数型はアダプトする型を`T`とすると、`const T&`もしくは`T`で宣言しておかなければなりません。また、`format()`の出力は、第一引数の値、`fc.lcale()`（使用するロケールオブジェクト）、および`parse()`でパースしたフォーマット文字列以外のものに依存してはなりません。例えばグローバル変数とか外部入力に依存してはなりませんが、フォーマット文字列をパースしてその内容をメンバ変数などに保存した情報は用いても大丈夫です。
 
 自前の型とは言っても、ほとんどの型（クラス）では結局そのメンバには組み込み型が入っていると思います。組み込み型に対しては最初から`std::formatter`が用意されているので`std::format()`等が使用可能なため、フォーマット処理を組み込み型のフォーマットに帰結させてやれば実装をかなり省略できます。
 
@@ -1517,6 +1519,103 @@ int main() {
   std::vformat("{:^+#06x}\n", std::make_format_args(v));
 }
 ```
+
+### その他の例
+
+ここではより簡易な他の型に対する例を簡単に載せておきます。`std::formatter`特殊化実装の参考になるはずです。
+
+1つ目は`std::optional`です。C++20ではまだこれに対する`std::formatter`は提供されていないため、`std::optional`のフォーマットのためにはフォーマッターを実装しなければなりません。
+
+ここでは、`std::optional<T>`のオブジェクトが空の時は`None`と出力し、値を保持している場合はその値を`T`のフォーマットを利用して出力することにします。
+
+```cpp
+// std::optional<T>のためのフォーマッター
+template<typename T>
+struct std::formatter<std::optional<T>, char> {
+  // Tのフォーマッターを利用する
+  std::formatter<T, char> tf;
+
+  constexpr auto parse(std::format_parse_context& pc) {
+    // パースは丸投げ
+    return tf.parse(pc);
+  }
+
+  auto format(const std::optional<T>& opt, auto& fc) {
+    if (opt) {
+      // 有効値の場合はその値を文字列化
+      return tf.format(*opt, fc);
+    } else {
+      // 無効値の場合は"None"と出力
+      const char none[] = "None";
+      return std::copy_n(none, 4, fc.out());
+    }
+  }
+};
+```
+
+`std::optional<T>`に対して`std::formatter<T, char>`をメンバとして持っておいて、パース時もフォーマット時もそちらに丸投げすることで、実装すべき部分は`std::optional`の有効性をチェックして無効値の時に`None`と出力する部分だけにしています。
+
+```cpp
+#include <format>
+
+int main() {
+  std::optional<int> opt1{};
+  std::optional<int> opt2{-20};
+  
+  std::cout << std::format("{:+04d}\n", opt1);    
+  std::cout << std::format("{:+04d}\n", opt2);
+}
+```
+```
+None
+-020
+```
+
+なお、`std::optional`等の型に対する標準フォーマッターの提供はC++26以降になりそうです・・・
+
+2つ目の例は列挙型の値のフォーマットです。列挙値に対してその列挙値名を出力することにします。
+
+```cpp
+// フォーマットしたい列挙型
+enum class color { red, green, blue };
+
+// color列挙型に対応する列挙値名
+const char* color_names[] = { "red", "green", "blue" };
+
+// color列挙型のためのフォーマッター
+template<>
+struct std::formatter<color, char> : std::formatter<const char*> {
+
+  // 継承することでparse()は基底のものをそのまま使える
+
+  auto format(color c, format_context& ctx) {
+    // 列挙値を整数値にして、対応する名前文字列を引き当て
+    int idx = static_cast<int>(c);
+    // 基底クラスのformat()へ委譲
+    return std::formatter<const char*>::format(color_names[idx], ctx);
+  }
+};
+```
+
+ここでは、文字列（`const char*`）のための`std::formatter`特殊化を後悔継承することで、`parse()`をそのまま使用し実装を省略しています。`format()`でも同様にしたいのですが、派生クラスで同名関数を定義しているため基底クラスの`format()`が隠蔽されています。そのため、この例のように基底クラスを明示して`format()`を呼び出す必要があります（この構文は静的メンバ関数の呼び出しではありません）。
+
+```cpp
+#include <format>
+
+int main() {
+  color c1 = color::red;
+  color c2 = color::blue;
+  
+  std::cout << std::format("{:>6s}\n", c1);
+  std::cout << std::format("{:>6s}\n", c2);
+}
+```
+```
+red
+blue
+```
+
+2つ目の例のように、組み込み型フォーマッターをコンポジション（メンバとして保持）せずに継承すると必要ない場合`parse()`の実装を完全に省略できるメリットがありますが、ぱっと見何してるのかわからなくなるのと`format()`での委譲構文が少し煩雑になります。好きなほうで実装してください。
 
 \clearpage
 
