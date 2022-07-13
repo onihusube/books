@@ -1160,36 +1160,39 @@ struct std::formatter<vec3, char> {
 
 `std::format()`では、置換フィールドの*index*オプションを無視すれば置換フィールドとフォーマット対象引数列の対応はその出現順となります。従って、`std::format()`内部からはフォーマット対象引数に対応する置換フィールドを特定する事ができ、型`T`のフォーマッターに対応するフォーマット文字列を正しく渡す事ができます。
 
-`parse()`に渡される`std::format_parse_context`はまさにその情報を保持している範囲（`range`）オブジェクトであり、`T`の引数に対応する1つの置換フィールドを参照しています。`std::format_parse_context`オブジェクトが参照する1つの置換フィールド（`{...}`）の範囲`[begin, end)`は、`begin`は`{`及び`:`の次の文字であり`end()`は`}`になります。
+`parse()`に渡される`std::format_parse_context`はまさにその情報を保持している範囲（`range`）オブジェクトであり、`T`の引数に対応する1つの置換フィールドを参照しています。`std::format_parse_context`オブジェクトが参照する1つの置換フィールド（`{...}`）の範囲`[begin, end)`の`begin`は`{`もしくは`:`の次の文字、`end`は`}`になります。
+
+*index*オプションは置換フィールドと引数の対応を変えるものであり、これをパースして適切な対応をとるのは`std::format()`の役目です。そのため、`std::format_parse_context`の参照する置換フィールド範囲には*index*オプションとそれに続く`:`は含まれておらず、`:`の次の文字から開始されます。
+
+`std::format_parse_context`の参照範囲と引数対応の様子
+
+![](./img/format_parse_context.png)
+
+`parse()`で処理すべきなのはこの範囲の文字列で、パースを正常に終了した場合は最初の非フォーマット文字の位置、すなわち`}`を指すイテレータを返す必要があります。
+
+まずはとりあえず空のオプション（`{}`）を受け入れるようにします。
 
 ```cpp
 // vec3のためのパースの実装
 // とりあえずオプションなしのみを受理する
 constexpr auto parse(std::format_parse_context& pc) {
+  // フォーマット文字列範囲を取得
   auto it = pc.begin();
-  auto end = pc.begin();
+  auto end = pc.end();
 
-  // フォーマット文字列は常に空
-  if (it != end) {
-    // フォーマット文字列の構文エラー
+  // フォーマット文字列が空の場合
+  // it == end or *it == '}' のどちらかである事が保証される
+  if (it != end && *it != '}') {
+    // どちらでもない場合は空でない
     throw std::format_error{"The vec3 format string has no options."};
   }
 
-  // {}が閉じていることをチェック
-  if (*it != '}') {
-    throw std::format_error{"invalid format."};
-  }
-
   // パース終了地点のイテレータを返す
-  return end;
+  return it;
 }
 ```
 
-なお、*index*オプションは置換フィールドと引数の対応を変えるものであり、これをパースして適切な対応をとるのは`std::format()`の役目です。そのため、`parse()`に渡される`std::format_parse_context`の参照する置換フィールド範囲には*index*オプションとそれに続く`:`は含まれておらず、*index*がなく他のオプションがある場合でも`:`の次の文字から開始されます。
-
-`std::format_parse_context`の参照範囲と引数対応の様子
-
-![](./img/format_parse_context.png)
+フォーマット文字列が空であるとき、`pc.begin() == pc.end()`もしくは`*pc.begin() == '}'`のどちらかになることが保証されています（どちらあるいは両方になるかは保証がありません）。なので、フォーマット文字列が空かどうかはこのことをチェックすれば分かります。1つのフォーマット文字列範囲の終端に到達している時に`pc.begin() == pc.end()`とならない実装の場合、エンドイテレータは別のところを指している可能性があるため、`parse()`から返すイテレータには`pc.begin()`から取得して進めたイテレータ（上記例では`it`）を使用するようにした方がよりポータブルになります（実際、clangの実装とMSVCの実装でこの点が異なります）。
 
 コンパイル時フォーマット文字列チェックのために`parse()`は`constexpr`関数である必要がありますが、構文エラーを発生させるには実行時でもコンパイル時でも同様に`throw`式で行えます。この部分をラップしたり工夫することで（コンパイラ毎に調整が必要とはいえ）コンパイル時のフォーマット構文エラーメッセージを見やすくする事ができます。
 
@@ -1276,19 +1279,14 @@ struct std::formatter<vec3, char> {
   // {:v}を受理する
   constexpr auto parse(std::format_parse_context& pc) {
     auto it = pc.begin();
-    auto end = pc.begin();
+    auto end = pc.end();
 
-    // {}の時
-    if (it == end) {
-      return end;
-    }
-
-    // {:v}の時
+    // {:v}をチェック
     if (*it == 'v') {
       opt = 'v';
+
+      // vの次'}'へ進める
       ++it;
-    } else {
-      throw std::format_error{"Unknown option for vec3."};  
     }
 
     // {}が閉じていることをチェック
@@ -1296,10 +1294,9 @@ struct std::formatter<vec3, char> {
       throw std::format_error{"invalid format."};
     }
 
-    return end;
+    return it;
   }
-  
-  // vec3のためのフォーマットの実装
+
   auto format(const vec3& v, auto& fc);
 };
 ```
@@ -1316,7 +1313,6 @@ struct std::formatter<vec3, char> {
   // オプションを保存するメンバ変数
   char opt = ' ';
 
-  // フォーマット文字列をパースする
   constexpr auto parse(std::format_parse_context& pc);
 
   // フォーマットを行う
@@ -1340,7 +1336,7 @@ struct std::formatter<vec3, char> {
     if (opt == 'v') {
       *out = ')';
     } else {
-      *out = ')';
+      *out = '}';
     }
     ++out;
 
@@ -1350,9 +1346,157 @@ struct std::formatter<vec3, char> {
 };
 ```
 
+パース時に保存しておいたオプション情報（`opt`）によってかっこの種類を変えているだけなので特に難しいところはありません。これによって、`vec3`型のフォーマットにおいて`v`オプションが使用可能となります。
 
-### 組み込み型のフォーマッターを再利用する
+```cpp
+#include <format>
 
+int main() {
+  vec3 v = {1, 2, 3};
+  
+  std::cout << std::format("{}\n", v);
+  std::cout << std::format("{:v}\n", v);  // ok
+}
+```
+```
+{1, 2, 3}
+(1, 2, 3)
+```
+
+### 既存のフォーマット構文の拡張
+
+`vec3`の要素は`int`固定なので、`int`（整数型）のフォーマットオプションを受けて各要素をそれによってフォーマットするようにしてみます。その際、前項の`v`オプションは一番最後に指定することにします。
+
+```cpp
+template<>
+struct std::formatter<vec3, char> {
+  char opt = ' ';
+  // int型のフォーマッターを活用
+  std::formatter<int, char> intf;
+  
+  // vec3のためのパースの実装
+  constexpr auto parse(std::format_parse_context& pc) {
+    auto it = pc.begin();
+    auto end = pc.end();
+
+    // 終端を探す（endは必ずしも置換フィールドの終端ではないため）
+    const auto pos = std::string_view{it, end}.find_first_of('}');
+    if (pos == std::string_view::npos) {
+      // }が閉じてない
+      throw std::format_error{"invalid format."};
+    }
+
+    // パース対象のオプション文字列全体
+    // "{:+v}..."の"+v"
+    std::string local_fmt{it, it + pos};
+
+    // vの有無をチェック
+    // ローカルフォーマット文字列を構成して'}'で終わるようにする
+    if (local_fmt.back() == 'v') {
+      opt = 'v';
+      local_fmt.back() = '}';
+    } else {
+      local_fmt.push_back('}');
+    }
+
+    // ローカルフォーマット文字列を整数型のフォーマッタにパースさせる
+    std::format_parse_context pc2{local_fmt};
+    intf.parse(pc2);
+
+    // 終端（最初の'}'）まで進める
+    it += pos;
+
+    // {}が閉じていることをチェック
+    if (it != end && *it != '}') {
+      throw std::format_error{"invalid format."};
+    }
+
+    return it;
+  }
+  
+  // vec3のためのフォーマットの実装
+  auto format(const vec3& v, auto& fc);
+};
+```
+
+フォーマット文字列が空であるときは`pc.begin() == pc.end()`もしくは`*pc.begin() == '}'`のどちらかになることからわかるように、`parse()`内でのエンドイテレータ（`pc.end()`）は必ずしも1つの置換フィールドの終端`}`を指していません。規格的にはどうやら未規定であり、むしろ実装としては`std::format()`に渡されたフォーマット文字列の終端を指している場合が多いようです。従って、フォーマット文字列内でのエンドイテレータの位置を仮定した処理は意図通りにならないため、基本的には先頭から順番にパースしていきます。とはいえ、`parse()`内での先頭イテレータの位置は必ず対応する置換フィールドのオプション文字列先頭なので、そこから1つの置換フィールドの終端を見つけるのは難しくありません。
+
+この例では、オリジナルの`v`オプションはあるとしたらオプションの最後、すなわち`}`の1つ前なので、終端を見つけたら`v`オプションの有無は簡単にチェックできます。`v`オプション以外の部分は整数型のフォーマットをそのまま指定可能にしたいのでその部分は整数型のフォーマッターに委譲するとかなり楽できます。そのためにこの例では、オプション文字列をローカル`std::string`に切り出して終端を`}`で閉じることで即席フォーマット文字列として整数型のフォーマッタに渡し、その整数型のフォーマッタはメンバ`intf`として保持しています。C++20からは`std::string`が定数式で使用可能となっているため、`std::string`をここで使用しても`parse()`はコンパイル時に実行可能です。
+
+`format()`では、`parse()`で保存されたオプション情報`opt`と`intf`を活用してフォーマットを行います。とはいえ、`v`オプションのみの時と異なるのは`intf`によって整数型のフォーマッタへ処理を委譲する部分だけです。
+
+```cpp
+template<>
+struct std::formatter<vec3, char> {
+  // オプションを保存するメンバ変数
+  char opt = ' ';
+  std::formatter<int, char> intf;
+
+  constexpr auto parse(std::format_parse_context& pc);
+
+  // フォーマットを行う
+  auto format(const vec3& v, auto& fc) {
+    // フォーマット結果出力先の出力イテレータ
+    auto out = fc.out();
+
+    // outに1文字づつ出力していく
+    if (opt == 'v') {
+      *out = '(';
+    } else {
+      *out = '{';
+    }
+    ++out;
+
+    // 要素間のデリミタ文字列
+    const char delim[3] = ", ";
+
+    // format_parse_contextの出力イテレータを更新
+    fc.advance_to(out);
+    // 整数型のフォーマッタによってフォーマットしてもらう
+    out = intf.format(v.elem[0], fc);
+    // デリミタの出力
+    out = std::copy_n(delim, 2, out);
+
+    fc.advance_to(out);
+    out = intf.format(v.elem[1], fc);
+    out = std::copy_n(delim, 2, out);
+    
+    fc.advance_to(out);
+    out = intf.format(v.elem[2], fc);
+
+    if (opt == 'v') {
+      *out = ')';
+    } else {
+      *out = '}';
+    }
+    ++out;
+
+    // 出力完了後のイテレータを返す
+    return out;
+  }
+};
+```
+
+`fc.advance_to()`は渡した出力イテレータによって`std::format_parse_context`の保持する出力イテレータを更新するものです。これによって出力イテレータを現在のものに置き換えることで、整数型のフォーマッタ`intf`に対して現在の`std::format_parse_context`を再利用する事ができます。後は`vec3`の各要素に対して、この`format()`と同じように`intf.format()`を使用すれば`fc`の出力先にフォーマット結果が出力されます。`intf`には`parse()`の実行時にオプションのパース結果が保存されているため、それに従ったフォーマットが行われます。
+
+これによって、`vec3`のフォーマット文字列構文で整数型のフォーマット指定が使用できるようになります。
+
+```cpp
+#include <format>
+
+int main() {
+  vec3 v = {1, -2, 3};
+  
+  std::cout << std::format("{:^+#06x}\n", v);   // ok
+  std::cout << std::format("{:^+#06xv}\n", v);  // ok
+}
+```
+```
+{ +0x1 ,  -0x2 ,  +0x3 }
+( +0x1 ,  -0x2 ,  +0x3 )
+```
+
+ここでの例のように、独自のフォーマッターを実装するときはいかに組み込み型のフォーマッターを活用するかが肝です。
 
 \clearpage
 
