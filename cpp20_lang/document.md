@@ -1,7 +1,7 @@
 ---
 title: C++20 コア言語機能
 author: onihusube
-date: 2021/12/30
+date: 2022/08/13
 geometry:
   width: 188mm
   height: 263mm
@@ -25,7 +25,7 @@ titlecolor:
     y: 0.0
     k: 0.0
 okuduke:
-  revision: 初版
+  revision: 第2版
   printing: ねこのしっぽ
 ---
 \clearpage
