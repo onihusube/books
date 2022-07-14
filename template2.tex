@@ -554,10 +554,13 @@ $else$
 \definecolor{listing-rule}{HTML}{B3B2B3}
 \definecolor{listing-numbers}{HTML}{B3B2B3}
 \definecolor{listing-text-color}{HTML}{000000}
-\definecolor{listing-keyword-2}{HTML}{1284CA}
-\definecolor{listing-keyword-3}{HTML}{9137CB}
-\definecolor{listing-string}{HTML}{00999A}
-\definecolor{listing-comment}{HTML}{8E8E8E}
+%\definecolor{listing-keyword-2}{HTML}{1284CA}
+%\definecolor{listing-keyword-3}{HTML}{9137CB}
+%\definecolor{listing-string}{HTML}{00999A}
+\definecolor{listing-string}{HTML}{F6AA00}
+%\definecolor{listing-comment}{HTML}{8E8E8E}
+\definecolor{listing-comment}{HTML}{77D9A8}
+%\definecolor{listing-comment}{HTML}{D8F255}
 
 $if(color_cmyk)$
 %\definecolor{listing-keyword}{cmyk}{100.0, 45.0, 0.0, 0.0}   % キーワードの色、識別子と同じ
@@ -565,8 +568,12 @@ $if(color_cmyk)$
 \definecolor{listing-keyword}{cmyk}{1.0, 0.45, 0.0, 0.0}   % キーワードの色、識別子と同じ
 \definecolor{listing-identifier}{cmyk}{1.0, 0.45, 0.0, 0.0}
 $else$
-\definecolor{listing-keyword}{HTML}{435489}   % キーワードの色、識別子と同じ
-\definecolor{listing-identifier}{HTML}{435489}
+%\definecolor{listing-keyword}{HTML}{9A0079}   % キーワードの色、識別子と同じ
+\definecolor{listing-keyword}{HTML}{FF8082}   % キーワードの色、識別子と同じ
+%\definecolor{listing-keyword}{HTML}{005AFF}   % キーワードの色、識別子と同じ
+%\definecolor{listing-identifier}{HTML}{435489}
+\definecolor{listing-identifier}{HTML}{005AFF}
+%\definecolor{listing-identifier}{HTML}{66CCFF}
 $endif$
 
 $endif$
@@ -596,8 +603,9 @@ $endif$
   abovecaptionskip = 0em,
   belowcaptionskip = 1.0em,
   keywordstyle     = {\color{listing-keyword}\bfseries},
-  keywordstyle     = {[2]\color{listing-keyword-2}\bfseries},
-  keywordstyle     = {[3]\color{listing-keyword-3}\bfseries\itshape},
+  keywordstyle     = [1]{\color{listing-keyword}\bfseries},
+  keywordstyle     = [2]{\color{listing-keyword}\bfseries},
+  keywordstyle     = [3]{\color{listing-keyword}\bfseries\itshape},
   sensitive        = true,  % 大文字小文字の区別
   identifierstyle  = \color{listing-identifier},
   commentstyle     = \color{listing-comment},
@@ -609,7 +617,7 @@ $endif$
 
 % C++固有指定
 \lstdefinelanguage{C++}{
-  morekeywords={
+  morekeywords=[1]{
     % 予約語
     break,case,catch,class,continue,default,virtual,
     do,else,enum,export,for,if,new,private,auto,register,
@@ -620,11 +628,11 @@ $endif$
     override,final,import,module
   },
   % データ型
-  morekeywords={[2]
+  morekeywords=[2]{
     bool,char,char8_t,chra16_t,char32_t,double,float,int,long,short,unsigned,void
   },
   % 組み込みリテラル
-  morekeywords={[3]
+  morekeywords=[3]{
     nullptr,true,false
   },
   sensitive = true,
