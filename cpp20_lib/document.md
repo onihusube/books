@@ -5325,7 +5325,7 @@ int main() {
 |`%b`, `%h`|月の略称|`Apr`, `4`|
 |`%p`|午前・午後|`AM`, `PM`|
 
-通常の`std::format()`と同様に、ロケール依存フォーマットのためには`L`オプションが必要です。また、`std::format()`に`std::locale`オブジェクトが渡されない場合はグローバルロケールが使用されます。
+通常の`std::format()`と同様に、ロケール依存フォーマットを有効にするには`L`オプションが必要です。また、`std::format()`に`std::locale`オブジェクトが渡されない場合はグローバルロケールが使用されます。
 
 ```cpp
 #include <chrono>
@@ -5337,7 +5337,7 @@ int main() {
   auto now = system_clock::now();
 
   std::cout << std::format(loc, "{:L%b (%B) %Od %a (%A) %p %OI}\n", now);
-  std::cout << std::format("{:L%b (%B) %Od %a (%A) %p %OI}\n", now);
+  std::cout << std::format(     "{:L%b (%B) %Od %a (%A) %p %OI}\n", now);
 }
 ```
 ```
@@ -5464,7 +5464,7 @@ int main() {
 
 ### その他
 
-日付時刻以外のところに関して、特殊な意味を持つフォーマット指定（と文字）が用意されています。
+日付時刻以外のところに関して、特殊な意味を持つフォーマット指定が用意されています。
 
 |フォーマット指定|意味|
 |---|---|
@@ -5474,6 +5474,40 @@ int main() {
 |`%q`|`duration`のサフィックス|
 |`%Q`|`duration`の数値|
 
+`%q %Q`オプションは、オプションなしでフォーマットする場合の`duration`の出力文字列を値とサフィックス部分に分けて扱えるオプションです。
+
+```cpp
+#include <chrono>
+
+int main() {
+  std::cout << std::format("|{:%%|%t|%n|}\n", 2022y);
+  std::cout << std::format("{} {}\n", 13h, 1s);
+  std::cout << std::format("{:%Q [%q]}\n", 13h);
+  std::cout << std::format("{:%Q [%q]}\n", 1s);
+  std::cout << std::format("{:%Q [%q]}\n", 0.1s);
+  std::cout << std::format("{:%Q [%q]}\n", 1000us);
+}
+```
+```
+|%|	|
+|
+13h 1s
+13 [h]
+1 [s]
+0.1 [s]
+1000 [us]
+```
+
+`%n &t`のようなオプションが用意されていることからも分かるように、置換フィールド内ではエスケープシーケンスが使用できません。
+
+```cpp
+#include <chrono>
+
+int main() {
+  std::format("{:%c\n}", 2022y);  // ng
+  std::format("{:%c\t}", 2022y);  // ng
+}
+```
 
 ## 日付時刻文字列のパース
 
