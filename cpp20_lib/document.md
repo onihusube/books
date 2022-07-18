@@ -513,7 +513,7 @@ namespace std {
 
 `std::move_constructible`には、`T`がオブジェクト型である場合にのみ意味論要件があります。オブジェクト型とはすなわち、ポインタ型とか参照型ではない場合です。
 
-`rv`を`T`の右辺値、`u2`を`rv`と等値な別の`T`のオブジェクトとして、次の要件を満たす必要があります
+`rv`を`T`の右辺値、`u2`を`rv`と等値な別の`T`のオブジェクトとして、以下の要件を満たす必要があります
 
 1. `T u = rv;`の後で、`u`と`u2`は等値
 2. `T(rv)`は`u2`と等値
@@ -541,7 +541,7 @@ namespace std {
 
 `std::copy_constructible`には、`T`がオブジェクト型である場合にのみ意味論要件があります。
 
-`v`を`T`の左辺値もしくは`const`な`T`の右辺値として、次の要件を満たす必要があります
+`v`を`T`の左辺値もしくは`const`な`T`の右辺値として、以下の要件を満たす必要があります
 
 1. `T u = v;`の後で、`v`と`u`は等値
 2. `T(v)`は`v`と等値
@@ -549,17 +549,80 @@ namespace std {
 
 これは普通にコピーに求められることでしょう。
 
-`std::copy_constructible`は`std::move_constructible`を包摂しているため、より強い制約としてコンセプトの半順序において`std::move_constructible`よりも優先順位が高くなります。
+`std::copy_constructible`は`std::move_constructible`を包摂しているため、より強い制約としてコンセプトの半順序において`std::move_constructible`よりも優先順位が高くなります。このことは、ムーブコンストラクタが定義されない場合には右辺値に対してコピーコンストラクタが呼ばれることにも対応しています。
 
 ## 比較
 
 ### `equality_comparable(_with)`
 
+`std::equality_comparable`は、型が同値比較可能であることを表すコンセプトであり、`std::equality_comparable_with`は2つの型の間で同値比較可能であることを表すコンセプトです。
+
 ```cpp
 namespace std {
+  // 説明専用コンセプト
+  template<class T, class U>
+  concept weakly-equality-comparable-with = ...;
 
+  template<class T>
+  concept equality_comparable = weakly-equality-comparable-with<T, T>;
+
+  template<class T, class U>
+  concept equality_comparable_with =
+    equality_comparable<T> && equality_comparable<U> &&
+    common_reference_with<const remove_reference_t<T>&, const remove_reference_t<U>&> &&
+    equality_comparable<
+      common_reference_t<
+        const remove_reference_t<T>&,
+        const remove_reference_t<U>&>> &&
+    weakly-equality-comparable-with<T, U>;
 }
 ```
+
+`std::equality_comparable<T>`は、`T`のオブジェクト同士の間で`== !=`による比較が可能である場合に`true`となり、`std::equality_comparable_with<T, U>`は、`T`のオブジェクトと`U`のオブジェクトのあいだで`== !=`による比較が可能である場合に`true`となります。
+
+`weakly-equality-comparable-with`は次のように定義される説明専用のコンセプトで、`T`と`U`の間の`== !=`演算子が使用可能かをチェックするものです。
+
+```cpp
+template<class T, class U>
+concept weakly-equality-comparable-with =
+  requires(const remove_reference_t<T>& t,
+           const remove_reference_t<U>& u)
+  {
+    { t == u } -> boolean-testable;
+    { t != u } -> boolean-testable;
+    { u == t } -> boolean-testable;
+    { u != t } -> boolean-testable;
+  };
+```
+
+これは、`std::equality_comparable`と`std::equality_comparable_with`の間で共通する制約式をまとめて抽出しているだけです。`boolean-testable`は説明専用のコンセプトで、`boolean-testable<T>`で`T`が`bool`型あるいは文脈的に`bool`に変換可能な型である場合に`true`となるものです。
+
+これらのコンセプトには意味論要件があります。
+
+まず`weakly-equality-comparable-with`は、`t, u`を`const remove_reference_t<T>`と`const remove_reference_t<U>`型のオブジェクトとして、以下の要件を満たす必要があります
+
+- `t == u`、`u == t`、`t != u`、`u != t`はすべて同じ定義域を持つ
+- `bool(t == u) == bool(u == t)`
+- `bool(t != u) == !bool(t == u)`
+- `bool(u != t) == bool(t != u)`
+
+1つ目の条件に現れている定義域とは、式（関数）の引数全体からその式を不正にするような入力を除いた部分（集合）の事を言います。ここでは、`== !=`のとりうる引数値全体からその`== !=`にとって正常ではない入力を除いた引数値全体の事を言っていて、それが`== !=`で一貫していてなおかつ引数順序で変化しないことを指定しています。
+
+演算子オーバーロードを巧妙に使用する型などでは、`==`と`!=`の結果が一貫していなかったり、そもそも`bool`を返さなかったり、引数型を逆にすると結果が変わったりなどが起こりえます。これらの要件はそのような通常`== !=`に期待しないような振る舞いがないことを指定しています。
+
+次に`std::equality_comparable`は、`T`のオブジェクトを`a, b`として、以下の要件を満たす必要があります
+
+- `bool(a == b)`は、`a`と`b`が等値である場合に`true`となり、それ以外の場合は`false`となる
+
+これはそのままでしょう。これを満たさない`==`演算子は同値比較において使い物になりません。この要件と`weakly-equality-comparable-with`の意味論要件が組み合わさることで、このことは`!=`演算子にも要求されており、両演算子で引数順序によらず満たさなければなりません。
+
+最後に`std::equality_comparable_with`は、`t, u`を`const remove_reference_t<T>`と`const remove_reference_t<U>`型の左辺値、`C`をそれらの間の共通の参照型として、以下の要件を満たす必要があります
+
+- `bool(t == u) == bool(C(t) == C(u))`
+
+これは`common_reference_with`の意味論要件と似ています（あちらは`==`演算子を使用していない）。共通参照型に束縛してから比較しても結果が一貫している必要があります。
+
+
 ### `totally_ordered(_with)`
 
 ```cpp
@@ -567,6 +630,10 @@ namespace std {
 
 }
 ```
+
+### `common_reference_with`の意味合い
+
+に`std::equality_comparable`
 
 ## 型のオブジェクト的性質
 
