@@ -59,7 +59,598 @@ hello world!
 \clearpage
 
 # `<concepts>`
+
+C++20より、コア言語機能としてのコンセプト機能が導入されました。それに伴って、基礎的なコンセプト（制約式としてのコンセプト）がこの`<concepts>`ヘッダで提供されます。ここで容易されているコンセプトは、言語ので頻出する概念について定義されたものだったり数学的な二項関係のうちよく使用するものについて定義されたものだったりと、基礎的でよく使用する概念をコードとして書き起こしたものが定義されています。
+
+ここでは、各コンセプトをある程度のグループに分けて見ていきます。個別のコンセプトの項では、概要->宣言例->詳細のような順番で説明していきます。
+
+## 型の関係
+
+### `same_as`
+
+`std::same_as`は2つの型が同じ型であることを表すコンセプトです。
+
+```cpp
+namespace std {
+  // 説明専用コンセプト
+  template <class T, class U>
+  concept same-as-impl = is_same_v<T, U>;
+
+  template <class T, class U>
+  concept same_as = same-as-impl<T, U> && same-as-impl<U, T>;
+}
+```
+
+`std::same_as<T, U>`は、`T`と`U`が同じ型である場合に`true`となります。
+
+定義が複雑な（`same-as-impl`を経由している）のは、`std::same_as<T, U>`と`std::same_as<U, T>`を同じ意味とするためです。`same-as-impl`を経由しないで実装する場合、`std::same_as<T, U>`と`std::same_as<U, T>`は互いに異なる制約式であるとみなされ、コンセプトの半順序において順序付けできなくなります。
+
+```cpp
+#include <concepts>
+
+template<typename T, U>
+  requires std::same_as<T, U>
+void f(); // (1)
+
+template<typename T, U>
+  requires std::same_as<U, T> && (sizeof(T) == 4)
+//                      ~~~~
+void f(); // (2)
+
+// sizeof(int) == 4であるとして
+f<int, int>();  // (2)が呼ばれる
+```
+
+この(1)と(2)の`std::same_as`による制約では`T, U`の指定順序が逆になっています。明らかに、逆になったところで制約の意味は変化しませんが、`same-as-impl`を経由しないで実装していると`is_same_v<T, U>`と`is_same_v<U, T>`が異なる制約とみなされることから``std::same_as<T, U>`と`std::same_as<U, T>`は異なる制約として扱われ、この例は2つの`f()`の間で順序付けできなくなりコンパイルエラーとなります。
+
+もちろん、このような挙動は非直感的であるので、それを避けるために`same-as-impl`を経由した上記のような実装になっています。このように、ある制約式に別の制約式が含まれていることを包摂関係といい、`std::same_as`の実装のように相互に包摂関係を持つようにするテクニックの事を対称包摂イディオム(*Symmetric Subsumption Idiom*)と呼びます。
+
+### `derived_from`
+
+`std::derived_from`は2つの型が継承関係にあるかどうかを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class Derived, class Base>
+  concept derived_from =
+    is_base_of_v<Base, Derived> &&
+    is_convertible_v<const volatile Derived*, const volatile Base*>;
+}
+```
+
+`std::derived_from<D, B>`は、`D`が`B`の派生クラスである場合に`true`となります。
+
+このコンセプトによる継承関係は、`D`が`B`を公開継承していてかつ`B`が曖昧な基底クラスではないことを判定します。従って、例えば`private/public`継承や、間接的に同じクラスを2回継承している場合などは`false`となります。
+
+```cpp
+#include <concepts>
+
+struct B {};
+
+// public継承
+struct D1 : B {};
+
+// private継承
+struct D2 : private B {};
+
+// protected継承
+struct D3 : protected B {};
+
+// 曖昧な継承
+struct D4 : B, D1 {};
+
+
+template<std::derived_from<B>, T>
+void f();
+
+f<D1>();  // ok
+f<D2>();  // ng
+f<D3>();  // ng
+f<D4>();  // ng
+```
+
+これ以外の場合（仮想継承や継承の継承など）では意図通りに判定することができます。
+
+### `convertible_to`
+
+`std::convertible_to`は、2つの型の間の変換可能性を表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class From, class To>
+  concept convertible_to =
+    is_convertible_v<From, To> &&
+    requires {
+      static_cast<To>(declval<From>());
+    };
+}
+```
+
+`std::convertible_to<From, To>`は、`From`から`To`へ暗黙的にも明示的にも変換可能である場合に`true`となります。
+
+このコンセプトには意味論要件があります。
+
+まず、`FromR`を`std::add_rvalue_reference_t<From>`（`From`がポインタ型でも左辺値参照型でもない場合に`&&`を付加する）、`test()`を次のように定義して
+
+```cpp
+To test(FromR (&f)()) {
+  return f();
+}
+```
+
+ここでの`f()`は副作用がなく`FromR`を返す関数であるとして、以下の要件を満たす必要があります
+
+1. 次のどちらかを満たす
+    - `To`はオブジェクト型でもオブジェクトへの参照型でもない
+    - `static_cast<To>(f())`と`test(f)`は等しい結果となる
+2. 次のいずれかを満たす
+    - `FromR`はオブジェクトへの参照型ではない
+    - `FromR`が非`const`右辺値参照型の場合、`f()`の呼び出しによって参照されるオブジェクトの状態は、変換の実行の後でも有効だが未規定となる
+    - `f()`の呼び出しによって参照されるオブジェクトは変換の実行によって変更されない
+
+意味論要件は静的に指定不可能な実行時の振る舞いについて規定しようとするものなので、ここで指定されていることも変換を実行した際に起こること（起きてもいいこと）を制限しようとするものです。
+
+1の条件は全体として、ポインタ型への変換以外の場合は明示的変換（`static_cast`）と暗黙変換（`return`文での変換）が同一の結果となることを指定しています。
+
+2の条件は全体として、ポインタ型からの変換以外の時のムーブの振る舞いについて指定しています。`FromR`が右辺値参照の場合には関連するものは適切にムーブされ、それ以外の場合（`From&`、`const From&&`など）は関連するものはコピーされ副作用を及ぼさないことを指定しています。ここでの、`f()`の呼び出しによって参照されるオブジェクトというのは、`FromR`の内部状態あるいはその構築に使用される引数のことです。
+
+分かりづらいですがこれらの事が守られない場合、暗黙変換と明示変換で結果が異なったり、変換時にグローバル状態を変更したりなど、変換に伴って意図しない副作用が起こりえます。この意味論要件はそのようなことが無いことを指定するとともに、C++における変換とはそういうことが起こらないものであることを定義しています。謎の`test()`とか`f()`を使用しているのは、単に関数の`return`文が暗黙変換を導入するのに都合が良いからです。
+
+コンセプトがその引数型について、構文要件と意味論要件をすべて（等しさの保持などの暗黙要件も含めて）満たしている時、その引数型はコンセプトのモデルになる（なっている）のように言います。コンセプトのモデルとならない使用は全て未定義動作となります。
+
+### `common_reference_with`
+
+`std::common_reference_with`は、2つの型の間に共通の参照型（*common reference type*）が存在していることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class T, class U>
+  concept common_reference_with =
+    same_as<common_reference_t<T, U>, common_reference_t<U, T>> &&
+    convertible_to<T, common_reference_t<T, U>> &&
+    convertible_to<U, common_reference_t<T, U>>;
+}
+```
+
+`std::common_reference_with<T, U>`は、`T`と`U`の間に共通の参照型（`common_reference_t<T, U>`）が存在する場合に`true`となります。
+
+`T`と`U`に対する共通の参照型とは、`T`と`U`の両方のオブジェクトを束縛可能な参照型の事です。これは、C++17以前のイテレータ型の`value_type`と`reference`両方を束縛可能な型として導入されました。普通の（`forward`以上の）イテレータの場合、`value_type`を`T`とすると`reference`は`T&`となり、これらに対する共通の参照型は`const T&`です。しかし、より複雑なイテレータ（プロクシイテレータなど）では必ずしもこのような型が存在するとは限りません。
+
+共通の参照型が存在していると次のような操作が可能となり、これは一部のアルゴリズムの実装において頻出します。
+
+```cpp
+// Iはイテレータ型とする
+template<typename I>
+void f(I it, I::value_type v) {
+  using CR = std::common_reference_t<I::reference, I::value_type>;
+
+  // 共に束縛可能
+  CR r1 = *it;
+  CR r2 = v;
+}
+```
+
+このような型を定義し求めるために`std::common_reference_t`が導入され、2つの型の間にそれが存在することを要求するために`std::common_reference_with`コンセプトが導入されました。ちなみに、共通の参照型と言っていますが`common_reference_t`の型は必ずしも参照型ではなく、そうである必要もありません。
+
+`std::common_reference_with`には意味論要件があります。
+
+型`C`を`std::common_reference_with<T, U>`、`T`と`U`のオブジェクトあるいは参照を`t1, t2`と`u1, u2`として、以下の要件を満たす必要があります。
+
+1. `t1`と`t2`が等しい時、`C(t1)`と`C(t2)`も等しい
+2. `u1`と`u2`が等しい時、`C(u1)`と`C(u2)`も等しい
+
+共通の参照型への変換は値の等価性を保持する必要がある、という事を言っています。先程のイテレータの例でもそうですが、共通の参照型への束縛に当たってその値が変な変換を受けることは想定されていません。そのため、共通の参照型への束縛はその値を変更するようなものであってはならないわけです。
+
+### `common_with`
+
+`std::common_with`コンセプトは、2つの型の間に共通の型（*common type*）が存在していることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class T, class U>
+  concept common_with =
+    same_as<common_type_t<T, U>, common_type_t<U, T>> &&
+    requires {
+      static_cast<common_type_t<T, U>>(declval<T>());
+      static_cast<common_type_t<T, U>>(declval<U>());
+    } &&
+    common_reference_with<
+      add_lvalue_reference_t<const T>,
+      add_lvalue_reference_t<const U>> &&
+    common_reference_with<
+      add_lvalue_reference_t<common_type_t<T, U>>,
+      common_reference_t<
+        add_lvalue_reference_t<const T>,
+        add_lvalue_reference_t<const U>>>;
+}
+```
+
+`std::common_with<T, U>`は、`T`と`U`の間に共通の型（`common_type_t<T, U>`）が存在する場合に`true`となります。
+
+`std::common_with`には意味論要件があります。
+
+型`C`を`std::common_with<T, U>`、`T`と`U`のオブジェクトあるいは参照を`t1, t2`と`u1, u2`として、以下の要件を満たす必要があります。
+
+1. `t1`と`t2`が等しい時、`C(t1)`と`C(t2)`も等しい
+2. `u1`と`u2`が等しい時、`C(u1)`と`C(u2)`も等しい
+
+`std::common_reference_with`の意味論要件と同じことを言っています。
+
+`std::common_reference_with`と`std::common_with`は一見すると同じことを言っているような気がしてきますが、`std::common_type_t`が常に非`const`かつ非参照であるのに対して`std::common_reference_t`は参照である場合があるという違いがあります。他にも、`std::common_type_t`が2つの型の集合論的な意味での共通部分を表しているのに対して、`std::common_reference_t`は和集合を表しているという意味的な違いもあります。
+
+## 数値型の類別
+
+組み込みの数値型（整数型や浮動小数点数型）を表すコンセプトとして、次の4つが用意されています。
+
+```cpp
+namespace std {
+  template<class T>
+  concept integral = is_integral_v<T>;
+
+  template<class T>
+  concept signed_integral = integral<T> && is_signed_v<T>;
+
+  template<class T>
+  concept unsigned_integral = integral<T> && !signed_integral<T>;
+
+  template<class T>
+  concept floating_point = is_floating_point_v<T>;
+}
+```
+
+`std::integral<T>`は`T`が整数型である場合に、`std::signed_integral<T>`は`T`が符号付整数型である場合に、`std::unsigned_integral<T>`は`T`が符号なし整数型である場合に、`std::floating_point<T>`は`T`が浮動小数点数型である場合にそれぞれ`true`となります。
+
+`std::signed_integral`と`std::unsigned_integral`は`std::integral`を包摂しているため、この2つはコンセプトの半順序において`std::integral`よりも優先順位が高くなります。
+
+```Cpp
+template<std::integral T>
+void f(T t);  // (1)
+
+template<std::signed_integral T>
+void f(T t);  // (2)
+
+template<std::integral T>
+void g(T t);  // (3)
+
+template<std::unsigned_integral T>
+void g(T t);  // (4)
+
+
+f(-1);  // (2)が呼ばれる
+f(1u);  // (1)が呼ばれる
+
+g(-1);  // (1)が呼ばれる
+g(1u);  // (2)が呼ばれる
+```
+
+## 型の言語的的性質
+
+### `assignable_from`
+
+`std::assignable_from`は2つの型の間で代入操作が行えることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class LHS, class RHS>
+  concept assignable_from =
+    is_lvalue_reference_v<LHS> &&
+    common_reference_with<const remove_reference_t<LHS>&, const remove_reference_t<RHS>&> &&
+    requires(LHS lhs, RHS&& rhs) {
+      { lhs = std::forward<RHS>(rhs) } -> same_as<LHS>;
+    };
+}
+```
+
+`std::assignable_from<L, R>`は、`L`の左辺値へ`R`のオブジェクトが指定された値カテゴリで代入可能である場合に`true`となります。
+
+`std::assignable_from`には意味論要件があります。
+
+まず次のものを定義して
+
+- `lcopy` : 型`remove_cvref_t<LHS>`のオブジェクト
+- `lhs` : `lcopy`を参照している`LHS`の左辺値（参照）
+- `rhs` : `RhS`のオブジェクトもしくは参照（つまり、左辺値あるいは右辺値）
+- `rcopy` : `rhs`と等値の別のオブジェクト
+
+これらについて、以下の要件を満たす必要があります
+
+1. `addressof(lhs = rhs) == addressof(lcopy)`
+2. `lhs = rhs`の実行の後で、次のことが成り立つ
+      1. 自己代入でない限り、`lhs`は`rcopy`と等しい
+      2. `rhs`が非`const`な*xvalue*ならば、`rhs`の参照先オブジェクトの状態は有効だが未規定
+      3. `rhs`が*glvalue*ならば、`rhs`の参照先オブジェクトの状態は変更されない
+
+まずここでの`lhs`とは左辺値参照であり、それが参照しているオブジェクト実体が`lcopy`です。したがって、`lhs = rhs;`という代入は`lcopy`に対して行われます。1つ目の条件は代入操作が`lcopy`に対して行われており、その戻り値が`lcopy`の左辺値であることを言っています。
+
+2つ目の条件は主に代入後の両辺のオブジェクトの状態について指定するものです。2-1は当然のもので、正常な代入操作の後では等価性も自然に推移するはずです。2-2と2-3はどちらも`rhs`が*glvalue*である場合について指定しています。
+
+*xvalue*とは左辺値を`std::move()`して右辺値にしたもののことで、*glvalue*とは*lvalue*と*xvalue*のことです。そして、`const`な*xvalue*というのは`const`な左辺値を`std::move()`した右辺値の事で、これはムーブできない右辺値となります。
+
+すなわち、2-2は`rhs`がムーブされた場合の、2-3は`rhs`がコピーされた場合の、`rhs`の参照するオブジェクトの状態について指定しています。指定内容は通常のムーブとコピーの意味論に対応しています。
+
+2つ目の条件のいずれにも該当しないのは`rhs`が*prvalue*の場合で、この場合は`rhs`の状態について何も言っていません。これはおそらく、コピー省略やリロケーション等の最適化を許可するための空白です。
+
+### `swappable(_with)`
+
+`std::swappable`はその型において`swap`操作が可能であることを表すコンセプトです。同様に、`std::swappable_with`は2つの型の間で`swap`操作が可能であることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class T>
+  concept swappable = requires(T& a, T& b) { ranges::swap(a, b); };
+
+template<class T, class U>
+  concept swappable_with =
+    common_reference_with<T, U> &&
+    requires(T&& t, U&& u) {
+      ranges::swap(std::forward<T>(t), std::forward<T>(t));
+      ranges::swap(std::forward<U>(u), std::forward<U>(u));
+      ranges::swap(std::forward<T>(t), std::forward<U>(u));
+      ranges::swap(std::forward<U>(u), std::forward<T>(t));
+    };
+}
+```
+
+`std::swappable<T>`は`T`の2つのオブジェクト間で`std::ragens::swap`を用いて`swap`可能である場合に`true`となり、`std::swappable_with<T, U>`は`T, U`のオブジェクト間で`std::ragens::swap`を用いて`swap`可能である場合に`true`となります。
+
+`std::swappable_with`は組み込み型の中には満たすものがなく（おそらく標準ライブラリの型の中にもなく）、特別に定義されたユーザー定義型でのみ満たすことができます。
+
+このコンセプトのほとんどの部分は`std::ragens::swap`によって定義されています。`std::ragens::swap`はカスタマイゼーションポイントオブジェクトであり、`ragens::swap(a, b)`の様な呼び出しに対して次のいずれかの方法によって`swap`操作を実行するものです。
+
+- `a`および`b`の型に対して定義されている非メンバ`swap()`をADLで発見し使用する
+- 配列の`a, b`に対して要素ごとに再帰的に`ranges::swap`する
+- ムーブ操作（ムーブ代入と構築）によって`swap`する
+
+このいずれでも`swap`できない場合は呼び出しはエラーとなり、実行された`swap`操作が実際には値を`swap`しない場合は未定義動作（診断不要のill-formed）となります。その場合、それらの型は`swappable(_with)`コンセプトのモデルとなりません。
+
+ちなみに、`std::ragens::swap`も`<concepts>`ヘッダ内に定義されています。
+
+### `destructible`
+
+`std::destructible`は、型が例外を投げることなく破棄可能であることを表すコンセプトです。
+
+```cpp
+namespace std {
+template<class T>
+  concept destructible = is_nothrow_destructible_v<T>;
+}
+```
+
+`std::destructible<T>`は、`T`のデストラクタが呼び出し可能であり`noexcept(true)`である場合に`true`となります。
+
+このコンセプトの定義する破棄可能性では、デストラクタが例外を投げないことを要求します。デストラクタは通常暗黙`noexcept`なのであまり問題にはなりませんが、型によっては例外を投げる場合もあります。
+
+```cpp
+#include <concepts>
+
+template<std::destructible T>
+void f();
+
+struct S {
+  ~S() noexcept(false);
+};
+
+int main() {
+  f<int>(); // ok
+  f<S>();   // ng
+}
+```
+
+### `constructible_from`
+
+`std::constructible_from`は、ある型が指定された引数列で構築可能であることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class T, class... Args>
+  concept constructible_from = destructible<T> && is_constructible_v<T, Args...>;
+}
+```
+
+`std::constructible_from<T, Args...>`は型`T`が引数列`Args...`から構築可能である場合に`true`となります。
+
+`T`が集成体型ではないクラス型の場合、これは`Args...`によってコンストラクタが呼び出せることを表しています。また、`T`はポインタ型とか参照型でも使用可能です。
+
+### `default_initializable`
+
+`std::default_initializable`は、型がデフォルト初期化可能であることを表すコンセプトです。
+
+```cpp
+namespace std {
+  // 説明専用変数
+  template<class T>
+  inline constexpr bool is-default-initializable = ...;
+
+  template<class T>
+  concept default_initializable = constructible_from<T> &&
+                                  requires { T{}; } &&
+                                  is-default-initializable<T>;
+}
+```
+
+`std::default_initializable<T>`は、`T`がデフォルト構築可能かつデフォルト初期化である場合に`true`となります。
+
+デフォルト構築とは例えば`T t{};`等のような初期化で、デフォルト初期化とは`T t;`のような初期化の事です。コンセプト定義に使用される`is-default-initializable<T>`は、`T t;`（デフォルト初期化）が可能な場合にのみ`true`となる変数テンプレートです。
+
+`T t;`の形の初期化はデフォルトコンストラクタがトリビアルである場合に`T t{};`と異なっており、コンストラクタ呼び出しが省略可能となります。また、非常に複雑なことをすると、デフォルト構築不可能ながらデフォルト初期化は可能な型を作ることができます。
+
+```cpp
+struct S0 {
+  explicit S0() = default;
+};
+
+// S1は集成体型
+struct S1 { 
+  S0 x;
+};
+
+int main() {
+  S1 x;   // ok
+  S1 y{}; // ng
+}
+```
+
+このような~~（病的な）~~型の場合は`std::default_initializable`は`false`となります。
+
+```cpp
+static_assert(std::default_initializable<S1>); // ng
+```
+
+通常使用する分には、デフォルト初期化可能とデフォルト構築可能を同じ意味ととらえても問題ありません。
+
+### `move_constructible`
+
+`std::move_constructible`は、型がムーブ構築可能であることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class T>
+  concept move_constructible = constructible_from<T, T> && convertible_to<T, T>;
+}
+```
+
+`std::move_constructible<T>`は、`T`のムーブコンストラクタが定義されていて使用可能な場合に`true`となります。
+
+`std::move_constructible`には、`T`がオブジェクト型である場合にのみ意味論要件があります。オブジェクト型とはすなわち、ポインタ型とか参照型ではない場合です。
+
+`rv`を`T`の右辺値、`u2`を`rv`と等値な別の`T`のオブジェクトとして、次の要件を満たす必要があります
+
+1. `T u = rv;`の後で、`u`と`u2`は等値
+2. `T(rv)`は`u2`と等値
+3. `T`が非`const`ならば、1と2の操作の後の`rv`の状態は有効だが未規定
+    - `T`が`const`ならば、1と2の操作によって`rv`は変更されない
+
+`std::assignable_from`の意味論要件と通じる部分もあります。ムーブが行われた場合はムーブ元`rv`の状態はムーブ先に移行していなければなりません。また、`T`が`const`の場合は同じ操作でもムーブは起こりません。
+
+### `copy_constructible`
+
+`std::copy_constructible`は、型がコピー構築可能であることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class T>
+  concept copy_constructible =
+    move_constructible<T> &&
+    constructible_from<T, T&> && convertible_to<T&, T> &&
+    constructible_from<T, const T&> && convertible_to<const T&, T> &&
+    constructible_from<T, const T> && convertible_to<const T, T>;
+}
+```
+
+`std::copy_constructible<T>`は型にコピーコンストラクタが定義されていて使用可能な場合に`true`となります。
+
+`std::copy_constructible`には、`T`がオブジェクト型である場合にのみ意味論要件があります。
+
+`v`を`T`の左辺値もしくは`const`な`T`の右辺値として、次の要件を満たす必要があります
+
+1. `T u = v;`の後で、`v`と`u`は等値
+2. `T(v)`は`v`と等値
+3. 上記いずれの操作の後でも、`v`は変更されない
+
+これは普通にコピーに求められることでしょう。
+
+`std::copy_constructible`は`std::move_constructible`を包摂しているため、より強い制約としてコンセプトの半順序において`std::move_constructible`よりも優先順位が高くなります。
+
+## 比較
+
+### `equality_comparable(_with)`
+
+```cpp
+namespace std {
+
+}
+```
+### `totally_ordered(_with)`
+
+```cpp
+namespace std {
+
+}
+```
+
+## 型のオブジェクト的性質
+
+### `movable`
+
+```cpp
+namespace std {
+
+}
+```
+### `copyable`
+
+```cpp
+namespace std {
+
+}
+```
+### `semiregular`
+
+```cpp
+namespace std {
+
+}
+```
+### `regular`
+
+```cpp
+namespace std {
+
+}
+```
+
+## 関数呼び出し
+
+### `invocable`
+
+```cpp
+namespace std {
+
+}
+```
+
+### `regular_invocable`
+
+```cpp
+namespace std {
+
+}
+```
+
+### `predicate`
+
+```cpp
+namespace std {
+
+}
+```
+
+### `relation`
+
+```cpp
+namespace std {
+
+}
+```
+### `equivalence_relation`
+
+```cpp
+namespace std {
+
+}
+```
+### `strict_weak_order`
+
+```cpp
+namespace std {
+
+}
+```
+
+
+
 \clearpage
+
 # `<ranges>`
 
 ## Rangeコンセプト
@@ -6457,11 +7048,12 @@ int main() {
 これらのものでは、`xxx`のCPOを用いた比較が可能な場合はそれを用いて比較が行われ、不可能な場合にのみフォールバックします。
 
 \clearpage
+
 # `<version>`
 
 `<version>`ヘッダでは、C++標準ライブラリのバージョンに関わる情報を提供します。
 
-何を実装するのかは実装定義ですが、少なくとも標準で用意されている標準ライブラリの機能テストマクロ（`__cpp_­lib_xxx`の形式の事前定義マクロ）はこのヘッダをインクルードすることで全て使用可能になります。
+何を実装するのかは実装定義ですが、少なくとも標準で用意されている標準ライブラリの機能テストマクロ（`__cpp_lib_xxx`の形式の事前定義マクロ）はこのヘッダをインクルードすることで全て使用可能になります。
 
 ```cpp
 #include <version>
@@ -6471,7 +7063,7 @@ using namespace std::chrono;
 int main() {
   auto d = 59s + 10ms;
 
-#ifdef __cpp_­lib_­chrono
+#ifdef __cpp_lib_chrono
   // C++20 <chrono>では直接出力できる
   std::cout << d << '\n';
 #else 
@@ -6488,6 +7080,7 @@ int main() {
 このヘッダには、他にも実装定義のライブラリバージョン情報を含むことを意図しています。例えば、libc++の`_LIBCPP_VERSION`やlibstdc++の`__GLIBCXX__`などがこのヘッダ経由で利用可能となります。
 
 \clearpage
+
 # 謝辞
 
 本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者・執筆者の方々に厚く御礼申し上げます。
