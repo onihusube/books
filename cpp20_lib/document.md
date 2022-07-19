@@ -6982,6 +6982,74 @@ int main() {
 }
 ```
 
+## 三方比較演コンセプトの詳細
+
+```cpp
+namespace std {
+  // 説明専用コンセプト
+  template<class T, class Cat>
+  concept compares-as = same_as<common_comparison_category_t<T, Cat>, Cat>;
+
+  template<class T, class Cat = partial_ordering>
+  concept three_way_comparable =
+    weakly-equality-comparable-with<T, T> &&
+    partially-ordered-with<T, T> &&
+    requires(const remove_reference_t<T>& a, const remove_reference_t<T>& b) {
+      { a <=> b } -> compares-as<Cat>;
+    };
+
+  template<class T, class U, class Cat = partial_ordering>
+  concept three_way_comparable_with =
+    three_way_comparable<T, Cat> &&
+    three_way_comparable<U, Cat> &&
+    common_reference_with<const remove_reference_t<T>&, const remove_reference_t<U>&> &&
+    three_way_comparable<
+      common_reference_t<const remove_reference_t<T>&, const remove_reference_t<U>&>, Cat> &&
+    weakly-equality-comparable-with<T, U> &&
+    partially-ordered-with<T, U> &&
+    requires(const remove_reference_t<T>& t, const remove_reference_t<U>& u) {
+      { t <=> u } -> compares-as<Cat>;
+      { u <=> t } -> compares-as<Cat>;
+    };
+}
+```
+
+`weakly-equality-comparable-with`および`partially-ordered-with`は、比較系コンセプトの定義にも使用されていたものです。
+
+`std::three_way_comparable<T, C>`は、型`T`が三方比較可能であり、その戻り値型が比較カテゴリ型`C`に変換可能である場合に`true`となります。
+
+`std::three_way_comparable_with<T, U, C>`は、型`T, U`の間で三方比較可能であり、その戻り値型が比較カテゴリ型`C`に変換可能である場合に`true`となります。
+
+これらのコンセプトには意味論要件があります。
+
+`std::three_way_comparable`は、`const remove_reference_t<T>`型の左辺値`a, b`について、以下の要件を満たす必要があります
+
+- `(a <=> b == 0) == bool(a == b)`は`true`
+- `(a <=> b != 0) == bool(a != b)`は`true`
+- `((a <=> b) <=> 0)`と`(0 <=> (a <=> b))`は等しい
+- `(a <=> b < 0) == bool(a < b)`は`true`
+- `(a <=> b > 0) == bool(a > b)`は`true`
+- `(a <=> b <= 0) == bool(a <= b)`は`true`
+- `(a <=> b >= 0) == bool(a >= b)`は`true`
+- `Cat`が`std::strong_ordering`に変換可能ならば、`T`は`std::totally_orderd`のモデルである
+
+主に`<=>`による比較結果は通常の演算子の結果と一致していることを言っています。3つめの条件は引数順序で結果が変わらないことを言っており、最後の条件は結果の比較カテゴリと実際の比較が一致することを言っています。
+
+`std::three_way_comparable_with`は、`t, u`を`const remove_reference_t<T>`と`const remove_reference_t<U>`型の左辺値、`C`をそれらの型の共通の参照型として、以下の要件を満たす必要があります
+
+- `t <=> u`と`u <=> t`は同じ定義域を持つ
+- `((t <=> u) <=> 0)`と`(0 <=> (t <=> u))`は等しい
+- `(t <=> u == 0) == bool(t == u)`は`true`
+- `(t <=> u != 0) == bool(t != u)`は`true`
+- `Cat(t <=> u) == Cat(C(t) <=> C(u))`は`true`
+- `(t <=> u < 0) == bool(t < u)`は`true`
+- `(t <=> u > 0) == bool(t > u)`は`true`
+- `(t <=> u <= 0) == bool(t <= u)`は`true`
+- `(t <=> u >= 0) == bool(t >= u)`は`true`
+- `Cat`が`std::strong_ordering`に変換可能ならば`T, U`は`std::totally_orderd_with`のモデルである
+
+ほとんど`std::three_way_comparable`と同じ意味です。`std::common_reference_with`が要求されていることで共通参照型に束縛後も比較結果が変わらないことなどが追加で要求されています。
+
 ## 三方比較の結果型取得
 
 クラスのデフォルト`<=>`比較の戻り値型など、多数の型が参加する三方比較の結果型（比較カテゴリ型）を推論するのはなかなか難しいものがあります。コンパイラはすべてわかっていますが、それを取得するコードを書くのも少し手間です。
