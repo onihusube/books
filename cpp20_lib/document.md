@@ -60,9 +60,11 @@ hello world!
 
 # `<concepts>`
 
-C++20より、コア言語機能としてのコンセプト機能が導入されました。それに伴って、基礎的なコンセプト（制約式としてのコンセプト）がこの`<concepts>`ヘッダで提供されます。ここで容易されているコンセプトは、言語ので頻出する概念について定義されたものだったり数学的な二項関係のうちよく使用するものについて定義されたものだったりと、基礎的でよく使用する概念をコードとして書き起こしたものが定義されています。
+C++20より、コア言語機能としてのコンセプト機能が導入されました。それに伴って、基礎的なコンセプト（制約式としてのコンセプト）がこの`<concepts>`ヘッダで提供されます。ここで容易されているコンセプトは、言語ので頻出する概念について定義されたものだったり数学的な二項関係のうちよく使用するものについて定義されたものだったりと、基礎的でよく使用する概念をコードとして書き起こしたものが定義されています。ここでは、各コンセプトをある程度のグループに分けて見ていきます。個別のコンセプトの項では、概要->宣言例->詳細のような順番で説明していきます。
 
-ここでは、各コンセプトをある程度のグループに分けて見ていきます。個別のコンセプトの項では、概要->宣言例->詳細のような順番で説明していきます。
+また、標準のコンセプトの多くには定義に直接現れている構文要件に加えて文章で指定される意味論要件があります。構文要件はコンパイル時に静的にその判定ができるものですが、意味論要件は実行時にすらチェックできないようなものも含まれています。意味論要件を満たさなくてもコンパイルエラーにはなりませんが、そのような型はそのコンセプトの意図から外れているため未定義動作となります。C++20コンセプトにおいては、構文要件と意味論要件は共に重要で、2つ合わさって初めて意味のあるコンセプトとなります。そのため、本書でも意味論要件を記載するとともになるべく説明をしています。一見すると当たり前だったり何言ってるかわからなかったりしますが、ほとんどのものはそのコンセプトの定義する概念や操作に自然に求められることを記述しているだけです。
+
+なお、ここでは言語機能としてのコンセプトについてはある程度の知識があることを前提として解説しません。『C++20 コア言語機能』のコンセプトの章を予め読んでおくか、cpprefjpなどのコンセプト解説を頭に入れておくと良いでしょう。
 
 ## 型の関係
 
@@ -90,12 +92,11 @@ namespace std {
 
 template<typename T, U>
   requires std::same_as<T, U>
-void f(); // (1)
+void f(); // (1)        ^^^^
 
 template<typename T, U>
   requires std::same_as<U, T> && (sizeof(T) == 4)
-//                      ~~~~
-void f(); // (2)
+void f(); // (2)        ^^^^
 
 // sizeof(int) == 4であるとして
 f<int, int>();  // (2)が呼ばれる
@@ -194,7 +195,7 @@ To test(FromR (&f)()) {
 
 2の条件は全体として、ポインタ型からの変換以外の時のムーブの振る舞いについて指定しています。`FromR`が右辺値参照の場合には関連するものは適切にムーブされ、それ以外の場合（`From&`、`const From&&`など）は関連するものはコピーされ副作用を及ぼさないことを指定しています。ここでの、`f()`の呼び出しによって参照されるオブジェクトというのは、`FromR`の内部状態あるいはその構築に使用される引数のことです。
 
-分かりづらいですがこれらの事が守られない場合、暗黙変換と明示変換で結果が異なったり、変換時にグローバル状態を変更したりなど、変換に伴って意図しない副作用が起こりえます。この意味論要件はそのようなことが無いことを指定するとともに、C++における変換とはそういうことが起こらないものであることを定義しています。謎の`test()`とか`f()`を使用しているのは、単に関数の`return`文が暗黙変換を導入するのに都合が良いからです。
+分かりづらいですがこれらの事が守られない場合、暗黙変換と明示変換で結果が異なったり、変換時にグローバル状態を変更するなど変換に伴って意図しない副作用が起こったりします。この意味論要件はそのようなことが無いことを指定するとともに、C++における変換とはそういうことが起こらないものであることを定義しています。謎の`test()`とか`f()`を使用しているのは、単に関数の`return`文が暗黙変換を導入するのに都合が良いからです。
 
 コンセプトがその引数型について、構文要件と意味論要件をすべて（等しさの保持などの暗黙要件も含めて）満たしている時、その引数型はコンセプトのモデルになる（なっている）のように言います。コンセプトのモデルとならない使用は全て未定義動作となります。
 
@@ -230,7 +231,7 @@ void f(I it, I::value_type v) {
 }
 ```
 
-このような型を定義し求めるために`std::common_reference_t`が導入され、2つの型の間にそれが存在することを要求するために`std::common_reference_with`コンセプトが導入されました。ちなみに、共通の参照型と言っていますが`common_reference_t`の型は必ずしも参照型ではなく、そうである必要もありません。
+このような型を定義し求めるために`std::common_reference_t`が導入され、2つの型の間にそれが存在することを要求するために`std::common_reference_with`コンセプトが導入されました。ちなみに、共通の参照型と言っていますが`common_reference_t`の型は必ずしも参照型ではありません。
 
 `std::common_reference_with`には意味論要件があります。
 
@@ -239,7 +240,7 @@ void f(I it, I::value_type v) {
 1. `t1`と`t2`が等しい時、`C(t1)`と`C(t2)`も等しい
 2. `u1`と`u2`が等しい時、`C(u1)`と`C(u2)`も等しい
 
-共通の参照型への変換は値の等価性を保持する必要がある、という事を言っています。先程のイテレータの例でもそうですが、共通の参照型への束縛に当たってその値が変な変換を受けることは想定されていません。そのため、共通の参照型への束縛はその値を変更するようなものであってはならないわけです。
+共通の参照型への束縛では値を保持する必要があるという事を言っています。先程のイテレータの例でもそうですが、共通の参照型への束縛に当たってその値が変な変換を受けることは想定されていません。そのため、共通の参照型への束縛はその値を変更するようなものであってはならないわけです。
 
 ### `common_with`
 
@@ -599,7 +600,7 @@ concept weakly-equality-comparable-with =
 
 これらのコンセプトには意味論要件があります。
 
-まず`weakly-equality-comparable-with`は、`t, u`を`const remove_reference_t<T>`と`const remove_reference_t<U>`型のオブジェクトとして、以下の要件を満たす必要があります
+まず`weakly-equality-comparable-with`は、`t, u`を`const remove_reference_t<T>`と`const remove_reference_t<U>`型の左辺値として、以下の要件を満たす必要があります
 
 - `t == u`、`u == t`、`t != u`、`u != t`はすべて同じ定義域を持つ
 - `bool(t == u) == bool(u == t)`
@@ -625,15 +626,106 @@ concept weakly-equality-comparable-with =
 
 ### `totally_ordered(_with)`
 
+`std::totally_ordered`は、型が順序付け比較（`< <= > >=`の4つの演算子による比較）が可能であることを表すコンセプトであり、`std::totally_ordered_with`は2つの型の間で順序付け比較可能であることを表すコンセプトです。そしてどちらも、その順序付けが全順序の上で行われることを表します。
+
 ```cpp
 namespace std {
+  // 説明専用コンセプト
+  template<class T, class U>
+  concept partially-ordered-with = ...;
+  
+  template<class T>
+  concept totally_ordered =
+    equality_comparable<T> && partially-ordered-with<T, T>;
 
+  template<class T, class U>
+  concept totally_ordered_with =
+    totally_ordered<T> && totally_ordered<U> &&
+    equality_comparable_with<T, U> &&
+    totally_ordered<
+      common_reference_t<
+        const remove_reference_t<T>&,
+        const remove_reference_t<U>&>> &&
+    partially-ordered-with<T, U>;
 }
 ```
 
+`std::totally_ordered<T>`は、`T`のオブジェクト同士の間で`< <= > >=`による比較が可能である場合に`true`となり、`std::totally_ordered_with<T, U>`は、`T`のオブジェクトと`U`のオブジェクトのあいだで`< <= > >=`による比較が可能である場合に`true`となります。
+
+`std::totally_ordered`の定義を見ると`std::equality_comparable<T>`を包摂しているため、`std::totally_ordered`は`std::equality_comparable`よりも強い制約であり、`std::totally_ordered`であるためには同値比較も実装されていなければなりません。
+
+`partially-ordered-with`は次のように定義される説明専用のコンセプトで、`T`と`U`の間の`< <= > >=`演算子が使用可能かをチェックするものです。これは、`weakly-equality-comparable-with`と同様に`std::totally_ordered`と`std::totally_ordered_with`の間で共通する制約式をまとめて抽出しているだけです。
+
+```cpp
+template<class T, class U>
+concept partially-ordered-with =
+  requires(const remove_reference_t<T>& t, const remove_reference_t<U>& u) {
+    { t <  u } -> boolean-testable;
+    { t >  u } -> boolean-testable;
+    { t <= u } -> boolean-testable;
+    { t >= u } -> boolean-testable;
+    { u <  t } -> boolean-testable;
+    { u >  t } -> boolean-testable;
+    { u <= t } -> boolean-testable;
+    { u >= t } -> boolean-testable;
+  };
+```
+
+これらのコンセプトには意味論要件があります。
+
+まず`partially-ordered-with`は、`t, u`を`const remove_reference_t<T>`と`const remove_reference_t<U>`型の左辺値として、以下の要件を満たす必要があります
+
+- `t < u`、`t <= u`、`t > u`、`t >= u`、`u < t`、`u <= t`、`u > t`、`u >= t`はすべて同じ定義域を持つ
+- `bool(t < u) == bool(u > t)`は`true`
+- `bool(u < t) == bool(t > u)`は`true`
+- `bool(t <= u) == bool(u >= t)`は`true`
+- `bool(u <= t) == bool(t >= u)`は`true`
+
+`< <= > >=`の演算子は1つの順序関係の上での順序に基づいて結果を返すはずなので演算子間で結果は一貫していなければならず、そうなることを指定しています。
+
+次に`std::totally_ordered`は、`const remove_reference_t<T>`の左辺値を`a, b, c`として、以下の要件を満たす必要があります
+
+- `bool(a < b)`、`bool(b > a)`、`bool(a == b)`のいずれか1つだけが`true`となる
+- `bool(a < b)`かつ`bool(b < c)`ならば`bool(a < c)`
+- `bool(a <= b) == !bool(b < a)`
+- `bool(a >= b) == !bool(a < b)`
+
+これは（狭義）全順序関係が満たす数学的な性質についての要件です。1つ目は三分律、2つ目は推移律を表しており、残った2つは狭義の関係（`< >`）と広義の関係（`>= <=`）の間の関係（あるいは変換）を定めるものです。
+
+最後に`std::totally_ordered_with`は、`t, u`を`const remove_reference_t<T>`と`const remove_reference_t<U>`型の左辺値、`C`をそれらの型の共通の参照型として、以下の要件を満たす必要があります
+
+- `bool(t < u) == bool(C(t) < C(u))`は`true`
+- `bool(t > u) == bool(C(t) > C(u))`は`true`
+- `bool(t >= u) == bool(C(t) >= C(u))`は`true`
+- `bool(t <= u) == bool(C(t) <= C(u))`は`true`
+- `bool(u > t) == bool(C(u) > C(t))`は`true`
+- `bool(u < t) == bool(C(u) < C(t))`は`true`
+- `bool(u <= t) == bool(C(u) <= C(t))`は`true`
+- `bool(u >= t) == bool(C(u) >= C(t))`は`true`
+
+量は多いですが、`std::equality_comparable_with`の意味論要件と同じことを言っています。
+
 ### `common_reference_with`の意味合い
 
-に`std::equality_comparable`
+`std::equality_comparable_with`と`std::swappable_with`には`std::common_reference_with`コンセプトが含まれています。またそれは、`std::equality_comparable_with`を介して`std::totally_ordered_with`でも要求されます。
+
+これらのコンセプトはどれも2つの異なる型の間での二項関係や操作を定めるもので、`std::common_reference_with`はそのような関係の数学的な考察をベースとしてコンセプト定義に組み込まれています。
+
+同値関係や順序関係などの2つの要素の間の関係は二項関係として一般化され、集合$X$の二項関係とはその直積$X \times X$の部分集合$S$として定義されます。その部分集合$S$が満たす性質によって同値関係や順序関係といった具体的な関係が定義され、$S$の要素である順序対$(a, b)$に含まれている要素$a, b \in X$について$a = b$や$a < b$などのように表されます。
+
+この集合$X$とC++の型（組み込み型や構造体）を同一視するとこの数学的な二項関係の考え方をC++の型に対しても適用でき、`std::equality_comparable`や`std::totally_ordered`などのコンセプトはその考え方をベースとして設計されています。
+
+ところで、この二項関係は通常1つの集合$X$の2つの要素に対して定義されます。もちろん、異なる集合間に二項関係を拡張することは簡単ですが、同値関係や順序関係は通常1つの集合の上でしか定義できません。例えば、同値関係は満たすべき性質として反射律というもの（`a == a`が常に`true`となる性質）を要求しますが、異なる集合による二項関係ではこれを満たす事ができません（集合$X, Y$の直積$X \times Y$のどのような部分集合を取っても、$X$あるいは$Y$の要素$a$からなる順序対$(a, a)$の様な要素は存在しないため）。
+
+異なる2つの集合間で同値関係などの1つの集合の上でしか定義されない二項関係を定義するには、2つの集合を1つの集合として扱う必要があります。それは和集合を取ることで行えて、集合$X, Y$の和集合$U = X \cup Y$を用いて二項関係を定義すると、$U$の上ではありますが異なる2つの集合$X, Y$の間で同値関係や順序関係を定義する事ができます。
+
+これをC++の型で考えると、`std::equality_comparable_with`のように2つの異なる型`T, U`の間の二項関係を定義するコンセプトでは、その2つの型を包含するような型`V`が存在してその上での二項関係が定義されている必要があります。この型`V`を定義するのが`std::common_reference_t<T, U>`であり、`std::common_reference_with<T, U>`はそのような型`V`が存在することを指定します。すなわち、共通の参照型とは2つの型の共通部分というより和集合にあたる型です。
+
+`std::equality_comparable_with`をはじめとする2つの異なる型の間で可能な操作について定義するコンセプトでは、このような考察に基づいて2つの型の間に`V`のような型の存在を要求するために`std::common_reference_with`による制約を定義に含めています。
+
+イメージがつきにくいかもしれませんが、このような`V`は必ずしも元の`T, U`と異なる型であるわけではありません。例えば、`std::optional<T>`の要素（取り得る値）は`T`の全ての値と`std::nullopt`であり、`std::optional<T>`は`std::nullopt_t`との間で異種比較が可能です。この時の和集合（共通の参照型）`V`とは、`const std::optional<T>&`が該当します。実際`std::optional<T>`と`std::nullopt`のどちらの値もその値を保ったまま`V`によって束縛可能であり、`V`の上で比較可能です。この場合、集合的に見ると、`std::optional<T>`は`std::nullopt`という値を要素として初めから持っているため、和集合を取ると`std::nullopt_t`の唯一の値`std::nullopt`は`std::optional<T>`の`std::nullopt`と合併され、結果の`V`は`std::optional<T>`と一致します。
+
+ただし、このような考察をC++コードにエンコードする部分には色々問題があり（`std::optional<T>`と`std::nullopt_t`は`std::equality_comparable_with`を満たさないなど）、C++23でより正確な定義に置き換えられる予定で、その場合`std::common_reference_with`は直接的には現れなくなります。その場合でも、これらの考え方が変化したわけではなく、`std::common_reference_with`の意味が変わるわけでもありません。
 
 ## 型のオブジェクト的性質
 
