@@ -780,53 +780,87 @@ namespace std {
 
 ## 関数呼び出し
 
-### `invocable`
+### `invocable/regular_invocable`
+
+`invocable`は、指定された型と引数型の組み合わせで関数呼び出し可能であることを表すコンセプトです。
 
 ```cpp
 namespace std {
 
+  template<class F, class... Args>
+  concept invocable = requires(F&& f, Args&&... args) {
+    invoke(std::forward<F>(f), std::forward<Args>(args)...);
+  };
+
+  template<class F, class... Args>
+  concept regular_invocable = invocable<F, Args...>;
 }
 ```
 
-### `regular_invocable`
+`std::invocable<F, Args...>`は、型`F`のオブジェクトが型`Args...`の引数列を用いて`std::invoke`によって呼び出し可能である場合に`true`となります。
 
-```cpp
-namespace std {
+`std::invocable`と`std::regular_invocable`の構文的な要件は全く同じで、違いは意味論要件にあります。`std::regular_invocable`には次の意味論要件が指定されています
 
-}
-```
+- `F`と`Args...`による`std::invoke`の呼び出しは、同じ入力に対していつも同じ結果を返す必要があり、`F`のオブジェクト（関数オブジェクト）および引数（`Args...`）を変更しない
+
+これは、`F`の値`f`がその呼び出しに際して`f`の内外に一切の副作用を及ぼさないことを言っています。逆に、`std::invocable`コンセプトに対しては明確に副作用や内部状態の保持と更新が許可されています。
+
+この2つのコンセプトの違いは純粋に意味論要件のみなので、`std::regular_invocable`をあえて使用するのは副作用を持つ関数を受け入れないことを利用者に表明する意味を持ちます。
 
 ### `predicate`
 
-```cpp
-namespace std {
-
-}
-```
-
-### `relation`
+`std::predicate`は、述語（*predicate*）と呼ばれるものを表すコンセプトです。
 
 ```cpp
 namespace std {
-
+  template<class F, class... Args>
+  concept predicate =
+    regular_invocable<F, Args...> && boolean-testable<invoke_result_t<F, Args...>>;
 }
 ```
-### `equivalence_relation`
+
+`std::predicate<F, Args...>`は、`F`の`Args...`による呼び出しが`bool`値を返す場合に`true`となります。
+
+述語とは、主にイテレータに対するアルゴリズムで使用される、引数がある条件を満たしているかを判定する関数（オブジェクト）の事です。このコンセプトは、Rangeアルゴリズムにおいて述語を受け取る際に使用されており、`std::regular_invocable`による制約を含んでいることから明らかなように`std::predicate`で制約された述語は副作用や変更されうる内部状態を持ってはなりません。
+
+### 述語による二項関係
+
+まず、述語が2つの型の間の二項関係となっていることを表す`std::relation`コンセプトが次のように定義されています。
 
 ```cpp
 namespace std {
-
+  template<class R, class T, class U>
+  concept relation =
+    predicate<R, T, T> && predicate<R, U, U> &&
+    predicate<R, T, U> && predicate<R, U, T>;
 }
 ```
-### `strict_weak_order`
+
+`std::relation<R, T, U>`は、型`R`が`T`と`U`それぞれ及び両方に対する述語（`std::predicate`）である場合に`true`となります。
+
+ここでの二項関係は具体的に指定されるものではなく、利用される際に別途意味的に指定されて特定の二項関係を表すようになります。また、`T`と`U`の間だけではなく、`T`および`U`
+
+`std::common_reference_with`の要求がないことからも分かるように、この二項関係とは`std::equality_comparable_with`のように数学的な考察の上に定義されるものではなく、述語というC++における概念の上での二項関係を定義しています。とはいえ、どちらも数学的な意味の二項関係をベースとしている点では共通しています。
+
+`std::relation`コンセプトによる二項関係の具体的なものとして、`equivalence_relation`と`strict_weak_order`が定義されています。
 
 ```cpp
 namespace std {
+  template<class R, class T, class U>
+  concept equivalence_relation = relation<R, T, U>;
 
+  template<class R, class T, class U>
+  concept strict_weak_order = relation<R, T, U>;
 }
 ```
 
+`std::equivalence_relation<R, T, U>`は、述語`R`が`T`と`U`それぞれ及び両方に対する同値関係となる場合に`true`となります。
 
+`std::strict_weak_order<R, T, U>`は、述語`R`が`T`と`U`それぞれ及び両方に対する狭義の弱順序関係となる場合に`true`となります。
+
+どちらのコンセプトに対しても、二項関係が実際にその表現しているもの（同値関係/狭義弱順序関係）になっていることが意味論要件として指定されています。
+
+狭義の弱順序関係とは、`<`による順序関係であって、比較不可能な値同士を同値として扱って順序付けするような順序関係です。これは、`std::sort`など標準ライブラリ内で並べ替えを行う際に仮定される順序関係として要求されます。
 
 \clearpage
 
