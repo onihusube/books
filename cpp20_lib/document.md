@@ -279,7 +279,7 @@ namespace std {
 
 `std::common_reference_with`と`std::common_with`は一見すると同じことを言っているような気がしてきますが、`std::common_type_t`が常に非`const`かつ非参照であるのに対して`std::common_reference_t`は参照である場合があるという違いがあります。他にも、`std::common_type_t`が2つの型の集合論的な意味での共通部分を表しているのに対して、`std::common_reference_t`は和集合を表しているという意味的な違いもあります。
 
-## 数値型の類別
+## 数値型の分類
 
 組み込みの数値型（整数型や浮動小数点数型）を表すコンセプトとして、次の4つが用意されています。
 
@@ -707,9 +707,7 @@ concept partially-ordered-with =
 
 ### `common_reference_with`の意味合い
 
-`std::equality_comparable_with`と`std::swappable_with`には`std::common_reference_with`コンセプトが含まれています。またそれは、`std::equality_comparable_with`を介して`std::totally_ordered_with`でも要求されます。
-
-これらのコンセプトはどれも2つの異なる型の間での二項関係や操作を定めるもので、`std::common_reference_with`はそのような関係の数学的な考察をベースとしてコンセプト定義に組み込まれています。
+`std::equality_comparable_with`には`std::common_reference_with`コンセプトが含まれています。またそれは、`std::equality_comparable_with`を介して`std::totally_ordered_with`でも要求されます。これらのコンセプトはどれも2つの異なる型の間での二項関係や操作を定めるもので、`std::common_reference_with`はそのような関係の数学的な考察をベースとしてコンセプト定義に組み込まれています。
 
 同値関係や順序関係などの2つの要素の間の関係は二項関係として一般化され、集合$X$の二項関係とはその直積$X \times X$の部分集合$S$として定義されます。その部分集合$S$が満たす性質によって同値関係や順序関係といった具体的な関係が定義され、$S$の要素である順序対$(a, b)$に含まれている要素$a, b \in X$について$a = b$や$a < b$などのように表されます。
 
@@ -725,38 +723,60 @@ concept partially-ordered-with =
 
 イメージがつきにくいかもしれませんが、このような`V`は必ずしも元の`T, U`と異なる型であるわけではありません。例えば、`std::optional<T>`の要素（取り得る値）は`T`の全ての値と`std::nullopt`であり、`std::optional<T>`は`std::nullopt_t`との間で異種比較が可能です。この時の和集合（共通の参照型）`V`とは、`const std::optional<T>&`が該当します。実際`std::optional<T>`と`std::nullopt`のどちらの値もその値を保ったまま`V`によって束縛可能であり、`V`の上で比較可能です。この場合、集合的に見ると、`std::optional<T>`は`std::nullopt`という値を要素として初めから持っているため、和集合を取ると`std::nullopt_t`の唯一の値`std::nullopt`は`std::optional<T>`の`std::nullopt`と合併され、結果の`V`は`std::optional<T>`と一致します。
 
-ただし、このような考察をC++コードにエンコードする部分には色々問題があり（`std::optional<T>`と`std::nullopt_t`は`std::equality_comparable_with`を満たさないなど）、C++23でより正確な定義に置き換えられる予定で、その場合`std::common_reference_with`は直接的には現れなくなります。その場合でも、これらの考え方が変化したわけではなく、`std::common_reference_with`の意味が変わるわけでもありません。
+ただし、このような考察をC++コンセプトのコードにエンコードする部分には色々問題があり（`std::optional<T>`と`std::nullopt_t`は`std::equality_comparable_with`を満たさないなど）、C++23でより正確な定義に置き換えられる予定で、その場合`std::common_reference_with`は直接的には現れなくなります。その場合でも、これらの考え方が変化したわけではなく、`std::common_reference_with`の意味が変わるわけでもありません。
 
 ## 型のオブジェクト的性質
 
-### `movable`
+### `movable/copyable`
+
+`std::movable`は型がムーブ可能で有ることを表すコンセプトであり、`std::copyable`はそれに加えて型がコピー可能であることを表すコンセプトです。
 
 ```cpp
 namespace std {
+  template<class T>
+  concept movable = is_object_v<T> && move_constructible<T> &&
+                    assignable_from<T&, T> && swappable<T>;
 
+  template<class T>
+  concept copyable = copy_constructible<T> && movable<T> && assignable_from<T&, T&> &&
+                     assignable_from<T&, const T&> && assignable_from<T&, const T>;
 }
 ```
-### `copyable`
+
+`std::movable<T>`は`T`がムーブ構築とムーブ代入可能で有る場合に`true`となり、`std::copyable<T>`は`T`がコピー構築とコピー代入が可能で有る場合に`true`となります。
+
+ここでも`std::copyable`は`std::movable`を包摂しており、コンセプトの半順序関係でより強い制約として扱われます。
+
+`std::movable`の定義をよく見ると、`std::movable`は`std::swappable`を包摂しています。よく知られているように、ムーブ構築とムーブ代入が可能であればそれを用いて`swap`操作が可能となるため、この制約は冗長なように思われます。これは意図的なもので、C++におけるオブジェクトの基本操作としては`swap`が最も原始的な操作であり、それにムーブとコピーが続く、という考えをコンセプトの包摂関係によって表現するものです。
+
+### `semiregular/regular`
+
+`std::semiregular`は半正則な型を定義するコンセプトであり、`std::regular`は正則な型を定義するコンセプトです。
 
 ```cpp
 namespace std {
+  template<class T>
+  concept semiregular = copyable<T> && default_initializable<T>;
 
+  template<class T>
+  concept regular = semiregular<T> && equality_comparable<T>;
 }
 ```
-### `semiregular`
 
-```cpp
-namespace std {
+`std::regular<T>`は、`T`が`int`型などの基本型と同等に扱える場合に`true`となり、`std::semiregular<T>`は`T`が同値比較可能性を除いて`regular`で有る時に`true`となります。
 
-}
-```
-### `regular`
+コンセプトを再帰的に辿って行くと、`regular`（正則）な型とは以下の性質を満たす型です
 
-```cpp
-namespace std {
+- ポインタ型や参照型ではない
+- `swap`可能
+- ムーブ構築・代入可能
+- コピー構築・代入可能
+- デフォルト構築可能
+- 同値比較可能
 
-}
-```
+ここから、最後の同値比較可能性を除いた性質を満たす型が`semiregular`（半正則）な型です。
+
+正則な型とは、`int`など組み込み型と同様に、C++の型/オブジェクトに関する基本的な性質を全て備えた型のことを言っています。
 
 ## 関数呼び出し
 
