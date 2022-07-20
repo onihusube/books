@@ -2420,7 +2420,7 @@ blue
 
 `<bit>`では主に、良くあるビット演算のための関数が用意されています。
 
-このヘッダの関数は全て`constexpr`指定されているため定数式で使用可能です。また、`std::bit_cast()`と`std::byteswap()`を除いてすべての関数は符号なし整数型のみを引数に取るように制約されています。
+このヘッダの関数は全て`constexpr`指定されているため定数式で使用可能であり、`std::bit_cast()`と`std::byteswap()`を除いてすべての関数は符号なし整数型のみを引数に取るように制約されています。
 
 ## ビットレベルの再解釈
 
@@ -2428,7 +2428,7 @@ blue
 
 ```cpp
 namespace std {
-  // bit_castの宣言例
+  // bit_cast()の宣言例
   template<typename To, typename From>
   constexpr To bit_cast(const From& from) noexcept;
 }
@@ -2460,6 +2460,16 @@ int main() {
 `std::has_single_bit()`は入力整数値のビット列が、どこか1つだけ立っている（1になっている）かどうかを調べるものです。これはすなわち、整数値が2のべき乗丁度の値かどうかを判定するものです。
 
 ```cpp
+namespace std {
+  // has_single_bit()宣言例
+  template<std::unsigned_integral T>
+  constexpr bool has_single_bit(T x) noexcept;
+}
+```
+
+　
+
+```cpp
 #include <bit>
 
 int main() {
@@ -2470,13 +2480,24 @@ int main() {
 }
 ```
 
-この関数の入力は符号なし整数型のみです（符号付整数型は符号ビットがあるため）。
-
 この関数は提案当初は`ispow2`という名前でした。どういう意味を持つかという観点ではこちらの方が分かりやすいかもしれません。
 
 ### 2のべき乗値への丸め
 
-ある整数値を2のべき乗値へ丸める際には、その値より大きいか小さいかで丸め先が2通りあります。それぞれが切り上げ切り捨てに対応しており、切り上げには`std::bit_ceil()`を、切り捨てには`std::bit_floor()`が用意されています。名前からも分かるように、これは2のべき乗値への床関数/天井関数でもあります。
+ある整数値を2のべき乗値へ丸める際には、その値より大きいか小さいかで丸め先が2通りあります。それぞれ切り上げと切り捨てに対応しており、切り上げには`std::bit_ceil()`を、切り捨てには`std::bit_floor()`が用意されています。名前からも分かるように、これは2のべき乗値への床関数/天井関数でもあります。
+
+```cpp
+// bit_ceil()/bit_floor()の宣言例
+namespace std {
+  template<std::unsigned_integral T>
+  constexpr T bit_floor(T x) noexcept;
+
+  template<std::unsigned_integral T>
+  constexpr T bit_width(T x) noexcept;
+}
+```
+
+　
 
 ```cpp
 #include <bit>
@@ -2501,6 +2522,8 @@ int main() {
 
 これらの関数は整数値を2のべき乗値へ丸めるので、2のべき乗値の入力に対しては何もしません。
 
+\clearpage
+
 `std::bit_floor()/std::bit_ceil()`のイメージ図
 
 ![](./img/bit_floor_ceil.png)
@@ -2512,6 +2535,16 @@ int main() {
 ### 値を表現するために必要なビット幅を求める
 
 ある整数値について、その値を表現するために必要な最小のビット幅を求めるのが`std::bit_width()`です。
+
+```cpp
+namespace std {
+  // bit_width()の宣言例
+  template<std::unsigned_integral T>
+  constexpr T bit_width(T x) noexcept;
+}
+```
+
+\clearpage
 
 ```cpp
 #include <bit>
@@ -2553,6 +2586,21 @@ int main() {
 シフトには左シフトと右シフトの2種類があり、循環シフトにおいても`std::rotl()`（左シフト）と`std::rotr()`（右シフト）の2つが用意されています。
 
 ```cpp
+// rotl()/rotr()の宣言例
+namespace std {
+  template<std::unsigned_integral T>
+  [[nodiscard]]
+  constexpr T rotl(T x, int s) noexcept;
+
+  template<std::unsigned_integral T>
+  [[nodiscard]]
+  constexpr T rotr(T x, int s) noexcept;
+}
+```
+
+　
+
+```cpp
 #include <bit>
 
 void out(std::unsigned_integral auto n) {
@@ -2561,9 +2609,9 @@ void out(std::unsigned_integral auto n) {
 
 int main() {
   // 右に3ビットシフト
-  out(std::rotr(std::uint8_t(0b0000'0101u), 3));
+  out(std::rotr(std::uint8_t(0b00000101u), 3));
   // 左に3ビットシフト
-  out(std::rotl(std::uint8_t(0b1010'0000u), 3));
+  out(std::rotl(std::uint8_t(0b10100000u), 3));
 }
 ```
 ```{style=planetext}
@@ -2571,16 +2619,20 @@ int main() {
 00000101
 ```
 
+`std::uint8_t`でキャストしているのは、結果と入力を8ビットの数値で表示するためです。キャストしないと整数リテラルは`unsigned int`になってしまい、例示するのに32桁必要になってしまいます。
+
 `std::rotl()/std::rotr()`は2引数関数で、1つ目の引数に入力整数値、2つ目の引数にシフト量を指定します。この時、シフト量には負の値を指定して逆回転させることもできます。
+
+\clearpage
 
 ```cpp
 #include <bit>
 
 int main() {
   // 右に-3ビット（左に3ビット）シフト
-  out(std::rotr(std::uint8_t(0b1100'0000u), -3));
+  out(std::rotr(std::uint8_t(0b11000000u), -3));
   // 左に-3ビット（右に3ビット）シフト
-  out(std::rotl(std::uint8_t(0b0000'0011u), -3));
+  out(std::rotl(std::uint8_t(0b00000011u), -3));
 }
 ```
 ```{style=planetext}
@@ -2592,16 +2644,94 @@ int main() {
 
 ## ビットカウント
 
-ビットカウントとは、あるビット列の立っている（1になっている）ビットの数を数えることです。このための関数が`std::popcount()`で、名前にあるようにこの操作は*popcount*（ポップカウント）と呼ばれます。
+ビットカウントとは、あるビット列内の特定のビットの数を数えることです。
+
+### 連続した0をカウントする
+
+最上位ビット（MSB）から連続した0の個数を数える関数が`std::countl_zero()`で、最下位ビット（LSB）から連続した0の個数を数える関数が`std::countr_zero()`です。
+
+```cpp
+// countl_zero()/countr_zero()の宣言例
+namespace std {
+  template<std::unsigned_integral T>
+  constexpr int countl_zero(T x) noexcept;
+
+  template<std::unsigned_integral T>
+  constexpr int countr_zero(T x) noexcept;
+}
+```
+
+なお、これらの関数に`0`を入力するとその整数型のビット数を返します。
 
 ```cpp
 #include <bit>
 
 int main() {
-  std::cout << std::popcount(0b0000'0001u) << "\n";
-  std::cout << std::popcount(0b0000'0101u) << "\n";
-  std::cout << std::popcount(0b0100'0101u) << "\n";
-  std::cout << std::popcount(0b1111'1111u) << "\n";
+  std::cout << std::countl_zero(std::uint8_t(0b00001001)) << "\n";
+  std::cout << std::countr_zero(std::uint8_t(0b10010000)) << "\n";
+}
+```
+```{style=planetext}
+4
+4
+```
+
+`std::uint8_t`でキャストしているのは、`std::rotl()/std::rotr()`の時と同様の理由によります。名前にあるl/rの方向についても`std::rotl()/std::rotr()`と一貫しています。
+
+`std::countr_zero()`はLSB位置を0とした時の、最も下位桁で1になっているビット位置のインデックスを求めているとみることもできます。これはBinary GCDという高速に最大公約数を求めるアルゴリズムの実装に使用されるようです。
+
+### 連続した1をカウントする
+
+前項とは逆に、MSBあるいはLSBから連続した1の数をカウントする関数が`std::countl_one()`と`std::countr_one()`です。
+
+```cpp
+// countl_one()/countr_one()の宣言例
+namespace std {
+  template<std::unsigned_integral T>
+  constexpr int countl_one(T x) noexcept;
+
+  template<std::unsigned_integral T>
+  constexpr int countr_one(T x) noexcept;
+}
+```
+
+これらの関数に整数型における最大値（全ビット1）を入力すると、その整数型のビット数を返します。
+
+```cpp
+#include <bit>
+
+int main() {
+  std::cout << std::countl_one(std::uint8_t(0b11110101)) << "\n";
+  std::cout << std::countr_one(std::uint8_t(0b10101111)) << "\n";
+}
+```
+```{style=planetext}
+4
+4
+```
+
+### 1をカウントする
+
+ビット列中で立っている（1になっている）ビットの数を数えるための関数が`std::popcount()`です。名前にあるようにこの操作は*popcount*（ポップカウント）と呼ばれます。
+
+```cpp
+namespace std {
+  // popcount()の宣言例
+  template<std::unsigned_integral T>
+  constexpr int popcount(T x) noexcept;
+}
+```
+
+　
+
+```cpp
+#include <bit>
+
+int main() {
+  std::cout << std::popcount(0b00000001u) << "\n";
+  std::cout << std::popcount(0b00000101u) << "\n";
+  std::cout << std::popcount(0b01000101u) << "\n";
+  std::cout << std::popcount(0b11111111u) << "\n";
 }
 ```
 ```{style=planetext}
@@ -2646,6 +2776,16 @@ int main() {
 C++20からはそのために、`std::byteswap()`が用意されます。この`std::byteswap()`の入力は、符号付きも含めた整数型を使用可能です。
 
 ```cpp
+namespace std {
+  // byteswap()の宣言例
+  template<std::integral T>
+  constexpr T byteswap(T value) noexcept;
+}
+```
+
+\clearpage
+
+```cpp
 #include <bit>
 
 void out(std::integral auto n) {
@@ -2674,7 +2814,7 @@ int main() {
 
 ![](./img/byteswap.png)
 
-ややこしい点として、このサンプルコードはx86 CPU等リトルエンディアンのCPUで動かしたとき、想定（コメントの記述）とメモリ上の実際の配置は逆になります。例えば、最初の`n`はメモリ上ではリトルエンディアンで格納されており、それを`byteswap()`するとメモリ上の配置としてはビッグエンディアンに見えるようになりますが、CPUはいつもリトルエンディアンとして読み出すため、その値（のバイト表現）はまた実際のメモリ上の配置とは逆になります。
+ややこしい点として、先ほどのサンプルコードはx86 CPU等リトルエンディアンのCPUで動かしたとき、想定（コメントの記述）とメモリ上の実際の配置は逆になります。例えば、最初の`n`はメモリ上ではリトルエンディアンで格納されており、それを`byteswap()`するとメモリ上の配置としてはビッグエンディアンに見えるようになりますが、CPUはいつもリトルエンディアンとして読み出すため、その値（のバイト表現）はまた実際のメモリ上の配置とは逆になります。
 
 ```cpp
 #include <bit>
@@ -6047,7 +6187,7 @@ int main() {
 |`%z`|UTCからのオフセット|`+0900`|
 |`%Ez`, `%OZ`|`%z`の改良コマンド|`-04:30`|
 
-単なる`timepoint`の値にはタイムゾーンの情報が含まれていないため、タイムゾーン情報は現在のシステムのもの、すなわちローカルタイムゾーン（`current_zone()`のもの）が使用されます。
+単なる`timepoint`の値にはタイムゾーンの情報が含まれていないため、タイムゾーン情報はUTC+0000がデフォルトとして出力されます。
 
 ```cpp
 #include <chrono>
@@ -6079,6 +6219,7 @@ int main() {
 }
 ```
 ```{style=planetext}
+2022-07-20 12:17:40.0841790 GMT-4 -0400 (-04:00)
 ```
 
 ### ロケール依存フォーマット指定
