@@ -567,6 +567,7 @@ $if(color_cmyk)$
 %\definecolor{listing-identifier}{cmyk}{100.0, 45.0, 0.0, 0.0}
 \definecolor{listing-keyword}{cmyk}{1.0, 0.45, 0.0, 0.0}   % キーワードの色、識別子と同じ
 \definecolor{listing-identifier}{cmyk}{1.0, 0.45, 0.0, 0.0}
+\definecolor{listing-plane-color}{cmyk}{0.0, 0.0, 0.0, 1.0}
 $else$
 %\definecolor{listing-keyword}{HTML}{9A0079}   % キーワードの色、識別子と同じ
 \definecolor{listing-keyword}{HTML}{FF8082}   % キーワードの色、識別子と同じ
@@ -574,11 +575,76 @@ $else$
 %\definecolor{listing-identifier}{HTML}{435489}
 \definecolor{listing-identifier}{HTML}{005AFF}
 %\definecolor{listing-identifier}{HTML}{66CCFF}
+\definecolor{listing-plane-color}{HTML}{000000}
 $endif$
 
 $endif$
 
 % 基本スタイル
+\lstdefinestyle{planetext}{
+  language         =,
+$if(listings-disable-line-numbers)$
+  xleftmargin      = 0.6em,
+  framexleftmargin = 0.4em,
+$else$
+  numbers          = left,
+  xleftmargin      = 2.7em,
+  framexleftmargin = 2.5em,
+$endif$
+  backgroundcolor  = \color{listing-background},
+  basicstyle       = \color{listing-text-color}\linespread{1.0}$if(code-block-font-size)$$code-block-font-size$$else$\small$endif$\ttfamily{},
+  breaklines       = true,   % はみ出したときに自動改行するかどうか
+  frame            = single,  % 枠線の種類
+  framesep         = 0.19em,  % 枠線太さ
+  rulecolor        = \color{listing-rule},
+  frameround       = ffff,
+  tabsize          = 4,
+  numberstyle      = \color{listing-numbers},
+  aboveskip        = 1.0em,
+  belowskip        = 0.1em,
+  abovecaptionskip = 0em,
+  belowcaptionskip = 1.0em,
+  keywordstyle     = {\color{listing-plane-color}\bfseries},
+  keywordstyle     = [1]{\color{listing-plane-color}\bfseries},
+  keywordstyle     = [2]{\color{listing-plane-color}\bfseries},
+  keywordstyle     = [3]{\color{listing-plane-color}\bfseries\itshape},
+  sensitive        = false,  % 大文字小文字の区別
+  identifierstyle  = \color{listing-plane-color},
+  commentstyle     = \color{listing-plane-color},
+  stringstyle      = \color{listing-plane-color},
+  showstringspaces = false,
+  escapeinside     = {/*@}{@*/} % コードブロック中でLatexコマンドを使うためのエスケープ文字列
+}
+
+% C++固有指定
+\lstdefinelanguage{C++}{
+  morekeywords=[1]{
+    % 予約語
+    break,case,catch,class,continue,default,virtual,
+    do,else,enum,export,for,if,new,private,auto,register,
+    protected,public,requires,return,static,switch,
+    this,throw,try,volatile,while,concept,template,typename,
+    co_await,co_return,co_yield,static_cast,reinterpret_cast,dynamic_cast,
+    % コンテキスト依存のキーワード
+    override,final,import,module
+  },
+  % データ型
+  morekeywords=[2]{
+    bool,char,char8_t,chra16_t,char32_t,double,float,int,long,short,unsigned,void
+  },
+  % 組み込みリテラル
+  morekeywords=[3]{
+    nullptr,true,false
+  },
+  sensitive = true,
+  morecomment  = [l]//,
+  morecomment  = [s]{/*}{*/},
+  morecomment  = [s]{/**}{*/},
+  morestring   = [b]",
+  morestring   = [b]',
+}
+
+% C++カスタムスタイル
 \lstdefinestyle{custom_cpp_style}{
   language         = C++,
 $if(listings-disable-line-numbers)$
@@ -613,35 +679,7 @@ $endif$
   showstringspaces = false,
   escapeinside     = {/*@}{@*/} % コードブロック中でLatexコマンドを使うためのエスケープ文字列
 }
-\lstset{style=custom_cpp_style}
-
-% C++固有指定
-\lstdefinelanguage{C++}{
-  morekeywords=[1]{
-    % 予約語
-    break,case,catch,class,continue,default,virtual,
-    do,else,enum,export,for,if,new,private,auto,register,
-    protected,public,requires,return,static,switch,
-    this,throw,try,volatile,while,concept,template,typename,
-    co_await,co_return,co_yield,static_cast,reinterpret_cast,dynamic_cast,
-    % コンテキスト依存のキーワード
-    override,final,import,module
-  },
-  % データ型
-  morekeywords=[2]{
-    bool,char,char8_t,chra16_t,char32_t,double,float,int,long,short,unsigned,void
-  },
-  % 組み込みリテラル
-  morekeywords=[3]{
-    nullptr,true,false
-  },
-  sensitive = true,
-  morecomment  = [l]//,
-  morecomment  = [s]{/*}{*/},
-  morecomment  = [s]{/**}{*/},
-  morestring   = [b]",
-  morestring   = [b]',
-}
+\lstset{language=C++, style=custom_cpp_style}
 
 $endif$
 %%%
