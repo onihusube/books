@@ -29,3 +29,5 @@
 - C++20 Modules : `./cpp20_modules`
 - C++ 集成体 : `./cpp_aggregate`
 - C++20 ranges : `./cpp20_ranges`
+- C++20 コア言語機能 : `./cpp20_lang`
+- C++20 ライブラリ機能 1 : `./cpp20_lib`
