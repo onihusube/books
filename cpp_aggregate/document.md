@@ -262,7 +262,7 @@ public:
     return n;
   }
 
-  void set_n(int an) const {
+  void set_n(int an) {
     n = an;
   }
 
