@@ -1813,7 +1813,7 @@ int main() {
 }
 ```
 
-また、NTTPはC++17から`auto`による簡易構文が利用可能で、クラス型ではCTADを利用する事ができます。
+また、NTTPはC++17から`auto`による簡易構文が利用可能で、クラス型ではクラステンプレートのテンプレート引数推論（CTAD）を利用する事ができます。
 
 ```cpp
 // autoパラメータの制約
@@ -1871,7 +1871,7 @@ int main() {
 
   std::pair p = {1, 1.0}; // ok、std::pair<int, double>
 
-  vec3 = {1, 2, 3}; // ng
+  vec3 v = {1, 2, 3}; // ng
 }
 ```
 
@@ -1888,7 +1888,7 @@ template<typename T>
 vec3(T, T, T) -> vec3<T>;
 
 int main() {
-  vec3 = {1, 2, 3}; // ok
+  vec3 v = {1, 2, 3}; // ok
 }
 ```
 
@@ -1901,7 +1901,7 @@ struct vec3 {
 };
 
 int main() {
-  vec3 = {1, 2, 3}; // ok
+  vec3 v = {1, 2, 3}; // ok
 }
 ```
 
