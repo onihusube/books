@@ -291,6 +291,38 @@ concept indirectly-readable-impl =
 等しさの保持とは、式の実行に伴って副作用を及ぼしたり内部状態に依存して結果が変わらないことを言います。つまりは、`*i`が副作用や内部状態の更新を持たないことを言っています。
 
 ### `indirectly_writable`
+
+`std::indirectly_writable`は間接参照先に値を書き込む事ができることを表すコンセプトです。
+
+```cpp
+namespace std {
+  template<class Out, class T>
+  concept indirectly_writable = 
+    requires(Out&& o, T&& t) {
+      *o = std::forward<T>(t);
+      *std::forward<Out>(o) = std::forward<T>(t);
+      const_cast<const iter_reference_t<Out>&&>(*o) = std::forward<T>(t);
+      const_cast<const iter_reference_t<Out>&&>(*std::forward<Out>(o)) = std::forward<T>(t);
+    };
+}
+```
+
+`std::indirectly_writable<Out>`は、`Out`のオブジェクトが間接参照演算子（`operator*`）によって型`T`の値を書き込む事ができる場合に`true`となります。これもまた、イテレータ型だけではなくポインタ型やスマートポインタ型でも満たす事ができます。
+
+このコンセプトを構成する4つの制約式は全て、等しさを保持することを要求されません。つまりは、`*o`が内部状態を更新することを認めています。
+
+このコンセプトには意味論要件が指定されています
+
+型`T`の値`e`と間接参照可能な型`Out`のオブジェクト`o`について
+
+- 型`Out, T`が`indirectly_readable<Out> && same_as<iter_value_t<Out>, decay_t<T>>`のモデルとなる場合、`e`を4つの制約式のいずれかによって出力した後で`*o`と`e`は等値となる
+
+これはイテレータを介した出力操作に当然要求される事でしょう。これを満たさないようなものは出力とは言えません。前提条件の`Out, T`へのコンセプト要求は、出力だけが可能で読み取りできない場合や出力時に変換される場合を除くための条件です。
+
+定義中の`const_cast`を用いる制約式は、間接参照が*pravlue*を返すようなイテレータを受け入れるためのものです。例えば、プロクシイテレータと呼ばれるイテレータは要素へのプロクシオブジェクトを`operator*`から返し、その戻り値型は参照型ではなくプロクシオブジェクトの型そのものになります。その場合でも、プロクシオブジェクトは`operator*`によって参照先へ書き込むことができるため、プロクシイテレータは`indirectly_writable`となる必要があります。一方で、`std::string`など、*prvalue*への出力（`std::string() = std::string()`）ができてしまうけれど明らかにプロクシオブジェクトではないようなものが考えられ、そのような場合には`indirectly_writable`とならないようにしなければなりません。
+
+`const_cast`を用いる2つの制約式は、`Out`のオブジェクト`o`の`*o`が*prvalue*を返す場合にのみその上にある2つの制約式と異なった振る舞いをし、`*o`を`const T&&`にキャストした後でも出力が可能かどうかを調べることでプロクシイテレータとそうでないものを判別しています。
+
 ### `weakly_incrementable`
 ### `incrementable`
 ### `input_or_output_iterator`
