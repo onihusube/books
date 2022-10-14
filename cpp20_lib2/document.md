@@ -472,8 +472,122 @@ concept sized_sentinel_for =
 `std::disable_sized_sentinel_for<S, I>`は変数テンプレートで、`std::sized_sentinel_for<S, I> == true`となる時でも上記意味論要件を満たすことができない場合に`std::sized_sentinel_for`を無効化するためのものです。利用する場合は、`S, I`について`true`となるように明示的特殊化を定義します。
 
 ### `input_iterator`
+
+`std::input_iterator`は入力イテレータであることを表すコンセプトです。
+
+```cpp
+template<class I>
+concept input_iterator =
+  input_or_output_iterator<I> &&
+  indirectly_readable<I> &&
+  requires { typename ITER_CONCEPT(I); } &&
+  derived_from<ITER_CONCEPT(I), input_iterator_tag>;
+```
+
+`std::input_iterator<I>`は、`I`が入力イテレータである場合に`true`となります。
+
+このコンセプトはC++20イテレータにおける入力イテレータの定義でもあります。ここで求められているのは`I`が`input_or_output_iterator`であることと`indirectly_readable`であること、すなわち`operator*`による読み込みとインクリメントによる進行とムーブ可能であることです。
+
+このコンセプトは`incrementable`を要求しないので、入力イテレータにはマルチパス保証がありません。
+
+単に`input_iterator`であるイテレータには例えば、`std::istream_iterator`があります。
+
+#### `ITER_CONCEPT(I)`
+
+`std::input_iterator`を構成する制約式のうち後2つはイテレータ型からイテレータタグ型を引き出しチェックするためのもので、イテレータの要件そのものに直接関与しているものではありません。そこで使用されている`ITER_CONCEPT(I)`はイテレータから取得したイテレータタグ型を表すエイリアステンプレートのようなものです。
+
+まず、型`IT`を次のように定義して
+
+- `std::iterator_traits<I>`の明示的特殊化がない場合
+    - `using IT = I;`
+- `std::iterator_traits<I>`が特殊化されている場合
+    - `using IT = std::iterator_traits<I>;`
+
+`ITER_CONCEPT(I)`は次の順番でタグ型を取得しようとします
+
+1. `IT::iterator_concept`
+2. `IT::iterator_category`
+3. `IT = I`（`std::iterator_traits<I>`の明示的特殊化がない）の場合
+    - `std::random_access_iterator_tag`
+
+3番目までに当てはまらない場合、`ITER_CONCEPT(I)`は型名を示しません。
+
+3番目のケースはフォールバックのためのもので、イテレータタグ型が取得できない場合はとりあえずランダムアクセスイテレータと思っておいて、実際のインターフェースからイテレータの性質を決定します。
+
+```cpp
+template<class I>
+concept input_iterator =
+  ...
+  requires { typename ITER_CONCEPT(I); } &&
+  derived_from<ITER_CONCEPT(I), input_iterator_tag>;
+```
+
+この2つの制約式のうち、上は`ITER_CONCEPT(I)`が何らかの型名となることをチェックしていて、タグ型が取得できない場合はこの制約式を満たすことができず、コンセプト全体は`false`となります。
+
+下の制約式は取得したタグ型がイテレータコンセプトに応じたタグ型（ここでは`std::input_iterator_tag`）に合っているかをチェックしています。`std::derived_from`で継承関係をチェックしているのは、より強いイテレータタグを扱えるようにするため（例えば、ランダムアクセスイテレータは入力イテレータでもある）と、将来的にイテレータカテゴリが追加された時に受け入れられるようにするためです。後者については、実際C++17で*contiguous iterator*と言う新しいイテレータがカテゴリが追加されています。
+
+他のイテレータコンセプトもこの部分は同じような定義になっています。
+
 ### `output_iterator`
+
+`std::output_iterator`は出力イテレータであることを表すコンセプトです。
+
+```cpp
+template<class I, class T>
+concept output_iterator =
+  input_or_output_iterator<I> &&
+  indirectly_writable<I, T> &&
+  requires(I i, T&& t) {
+    *i++ = std::forward<T>(t);  // 等しさを保持することを要求しない
+  };
+```
+
+`std::output_iterator<I, T>`は、型`I`が`T`の値を出力可能である場合に`true`となります。
+
+最後の制約式は、後置インクリメントの戻り値型が`I`を返し、右辺値イテレータからも出力可能であることを制約しています。後置インクリメントの戻り値型がイテレータ型であることの要求は`std::incrementable`で行われていますがこのコンセプトはそれを包摂しておらず、マルチパス保証もありません。
+
+このコンセプトには意味論要件が指定されています
+
+型`T`の値`t`と`I`の値`i`について
+
+- `*i++ = t`は次の式と等価
+
+```cpp
+*i = t;
+++i;
+```
+
+この要件によって、後置`++`が自身の型のオブジェクト以外のものを返すことや返したイテレータが別の範囲を参照しているなどを禁止しています。インクリメント操作は後置と前置で（戻り値を除いて）意味が変わってはいけません。
+
+単に`output_iterator`であるイテレータには例えば`std::ostream_iterator`があり、`*i`が左辺値参照を返す殆どのイテレータは同時に`output_iterator`でもあります。
+
 ### `forward_iterator`
+
+`std::forward_iterator`は前方向イテレータであることを表すコンセプトです。
+
+```cpp
+template<class I>
+concept forward_iterator =
+  input_iterator<I> &&
+  derived_from<ITER_CONCEPT(I), forward_iterator_tag> &&
+  incrementable<I> &&
+  sentinel_for<I, I>;
+```
+
+`std::forward_iterator<I>`は、`I`が前方向イテレータである場合に`true`となります。
+
+`std::input_iterator`を包摂していることで、`std::forward_iterator`は`input_iterator`でもありかつ`std::input_iterator`よりも強い制約となります。また、`std::incrementable`を包摂していることでマルチパス保証をもち、`std::sentinel_for<I, I>`を包摂していることで自身がそのまま番兵型となることができます。なお、この場合でも別に番兵型を持つことはできます。
+
+このコンセプトには意味論要件が指定されています
+
+- `==`の定義域は同じ範囲を参照するイテレータの全体
+    - デフォルト構築されたイテレータ同士の比較は常に`true`となる（デフォルト構築されたイテレータは空の範囲の終端を指しているかのように振る舞う）
+- 範囲`[i, s)`を参照するイテレータから取得された参照やポインタは、`[i, s)`が有効である限り有効
+
+マルチパス保証やこれらの要件によって、`forward_iterator`であるイテレータが参照する範囲はかなりしっかりとしたものである必要があり、イテレータの操作によって範囲の状態が変更されることはありません。1つ目の要件は異なる範囲を参照するイテレータ間の比較はこのコンセプトによって保証されないことを言っています。
+
+例えば、標準ライブラリの全てのコンテナのイテレータは少なくとも`forward_iterator`であり、単に`forward_iterator`であるイテレータに`std::forward_list`のイテレータがあります。
+
 ### `bidirectional_iterator`
 ### `random_access_iterator`
 ### `contiguous_iterator`
