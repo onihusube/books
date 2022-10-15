@@ -589,8 +589,124 @@ concept forward_iterator =
 例えば、標準ライブラリの全てのコンテナのイテレータは少なくとも`forward_iterator`であり、単に`forward_iterator`であるイテレータに`std::forward_list`のイテレータがあります。
 
 ### `bidirectional_iterator`
+
+`std::bidirectional_iterator`は双方向イテレータであることを表すコンセプトです。
+
+```cpp
+template<class I>
+concept bidirectional_iterator =
+  forward_iterator<I> &&
+  derived_from<ITER_CONCEPT(I), bidirectional_iterator_tag> &&
+  requires(I i) {
+    { --i } -> same_as<I&>;
+    { i-- } -> same_as<I>;
+  };
+```
+
+`std::bidirectional_iterator<I>`は、`I`が`forward_iterator`でありデクリメント操作（`--`）による後進が可能である場合に`true`となります。
+
+このコンセプトには意味論要件が指定されています
+
+まず
+
+- 双方向イテレータ`r`は`++q == r`となるようなイテレータ`q`が存在する場合にのみデクリメント可能である。
+    - デクリメント可能なイテレータはデクリメント操作（`--`）の定義域に含まれる
+
+次に、`I`の等しいオブジェクト`a, b`（同じ要素を指すイテレータ）について
+
+- `a, b`がデクリメント可能ならば、次の全ては`true`となる
+    - `addressof(--a) == addressof(a)`
+    - `bool(a-- == b)`
+    - `a--, --b`の評価の後でも、`bool(a == b)`は`true`
+    - `bool(++(--a) == b)`
+- `a, b`がデクリメント可能ならば、`bool(--(++a) == b)`
+
+ここでのデクリメント操作には等しさを保持することが求められていることとこれらの要件によって、ここでのデクリメント操作に対する要求は`std::weakly_incrementable`ではなく`std::incrementable`の`++`を`--`に置き換えたようなものになっています。
+
+単に`bidirectional_iterator`であるイテレータには例えば、`std::list`や`std::set, std::map`等のイテレータがあります。
+
 ### `random_access_iterator`
+
+`std::random_access_iterator`はランダムアクセスイテレータであることを表すコンセプトです。
+
+```cpp
+template<class I>
+concept random_access_iterator =
+  bidirectional_iterator<I> &&
+  derived_from<ITER_CONCEPT(I), random_access_iterator_tag> &&
+  totally_ordered<I> &&
+  sized_sentinel_for<I, I> &&
+  requires(I i, const I j, const iter_difference_t<I> n) {
+    { i += n } -> same_as<I&>;
+    { j +  n } -> same_as<I>;
+    { n +  j } -> same_as<I>;
+    { i -= n } -> same_as<I&>;
+    { j -  n } -> same_as<I>;
+    {  j[n]  } -> same_as<iter_reference_t<I>>;
+  };
+```
+
+`std::random_access_iterator<I>`は、`I`が`bidirectional_iterator`かつ`totally_ordered`かつ`sized_sentinel_for`であり、整数との`+ - += -=`および添え字演算子`[]`が提供されている場合に`true`となります。
+
+このコンセプトには意味論要件が指定されています
+
+`std::iter_difference_t<I>`を`D`、`D`の値を`n`、`I`の有効なイテレータを`a, b`、`b`は`++a`を`n`回適用すると到達するとして
+
+- `(a += n)`は`b`と等値
+- `addressof(a += n)`は`addressof(a)`と等値
+    - `+=`は`*this`を返す
+- `(a + n)`は`(a += n)`と等値
+- `D`の2つの正の値`x, y`について`(a + D(x + y))`が有効ならば、`(a + D(x + y))`は`((a + x) + y)`と等値
+    - 結合則
+- `(a + D(0))`は`a`と等値
+- `(a + D(n - 1))`が有効ならば、`(a + n) `は`[](I c){ return ++c; }(a + D(n - 1))`と等値
+- `(b += D(-n))`は`a`と等値
+- `(b -= n)`は`a`と等値
+- `addressof(b -= n)`は`addressof(b)`と等値
+    - `-=`は`*this`を返す
+- `(b - n)`は`(b -= n)`と等値
+- `b`が間接参照可能ならば、`a[n]`は有効であり`*b`と等値
+- `bool(a <= b) == true`
+
+大量かつ複雑な要件ですが、ほぼ整数値`n`との演算がイテレータの進行を表すものであることを言っています。最後の要件は、イテレータ間の順序とは指している要素の相対的な位置関係によることを言っています。
+
+配列や`std::vector`等のイテレータが`random_access_iterator`ですが、単に`random_access_iterator`であるイテレータには`std::deque`があります。
+
 ### `contiguous_iterator`
+
+`std::contiguous_iterator`は隣接イテレータであることを表すコンセプトです。
+
+```cpp
+template<class I>
+concept contiguous_iterator =
+  random_access_iterator<I> &&
+  derived_from<ITER_CONCEPT(I), contiguous_iterator_tag> &&
+  is_lvalue_reference_v<iter_reference_t<I>> &&
+  same_as<iter_value_t<I>, remove_cvref_t<iter_reference_t<I>>> &&
+  requires(const I& i) {
+    { to_address(i) } -> same_as<add_pointer_t<iter_reference_t<I>>>;
+  };
+```
+
+`std::contiguous_iterator<I>`は`I`が`random_access_iterator`であり参照する範囲の要素同士がメモリ上で連続している場合に`true`となります。
+
+`contiguous_iterator`の参照する範囲はメモリ上で固まって存在しているはずのものであるため、間接参照結果は常に左辺値参照が得られるはずです。
+
+`std::to_address()`はポインタ型からは`std::ponter_traits::to_address()`を用いて、それ以外の型からは`operator->`を用いてそのアドレスを取得するものです。他のイテレータでは`->`は要求されていませんでしたが、`contiguous_iterator`では実質的に`->`が求められます。
+
+このコンセプトには意味論要件が指定されています
+
+`a, b`を間接参照可能な型`I`のイテレータ、`c`を間接参照不可能な型`I`のイテレータとして`b`は`a`から、`C`は`b`から到達可能であり、`std::iter_difference_t<I>`を`D`として
+
+- `std::to_­address(a) == std::addressof(*a)`
+- `std::to_­address(b) == std::to_­address(a) + D(b - a)`
+- `std::to_­address(c) == std::to_­address(a) + D(c - a)`
+- `std::ranges::iter_move(a)`は`std::move(*a)`と同じ型と値カテゴリを持ち同じ効果となる
+- `std::ranges::iter_swap(a, b)`が利用可能である場合、その効果は`std::ranges::swap(a, b)`と同じになる
+
+イテレータの進行がメモリ上の位置の同距離の移動と一致することを言っています。すなわち、`contiguous_iterator`の参照する要素はメモリ上で連続していることを要求しています。
+
+`contiguous_iterator`であるイテレータには生配列のポインタや`std::vector, std::string`のイテレータがあります。
 
 ## `iterator_traits`の役割の変化
 
