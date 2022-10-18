@@ -507,7 +507,7 @@ concept input_iterator =
 
 1. `IT::iterator_concept`
 2. `IT::iterator_category`
-3. `IT = I`（`std::iterator_traits<I>`の明示的特殊化がない）の場合
+3. `std::iterator_traits<I>`の明示的特殊化がない場合
     - `std::random_access_iterator_tag`
 
 3番目までに当てはまらない場合、`ITER_CONCEPT(I)`は型名を示しません。
@@ -522,7 +522,7 @@ concept input_iterator =
   derived_from<ITER_CONCEPT(I), input_iterator_tag>;
 ```
 
-この2つの制約式のうち、上は`ITER_CONCEPT(I)`が何らかの型名となることをチェックしていて、タグ型が取得できない場合はこの制約式を満たすことができず、コンセプト全体は`false`となります。
+この2つの制約式のうち、上は`ITER_CONCEPT(I)`が何らかの型名となることをチェックしていて、タグ型が取得できない場合はこの制約式を満たすことができずコンセプト全体は`false`となります。
 
 下の制約式は取得したタグ型がイテレータコンセプトに応じたタグ型（ここでは`std::input_iterator_tag`）に合っているかをチェックしています。`std::derived_from`で継承関係をチェックしているのは、より強いイテレータタグを扱えるようにするため（例えば、ランダムアクセスイテレータは入力イテレータでもある）と、将来的にイテレータカテゴリが追加された時に受け入れられるようにするためです。後者については、実際C++17で*contiguous iterator*と言う新しいイテレータがカテゴリが追加されています。
 
@@ -692,7 +692,9 @@ concept contiguous_iterator =
 
 `contiguous_iterator`の参照する範囲はメモリ上で固まって存在しているはずのものであるため、間接参照結果は常に左辺値参照が得られるはずです。
 
-`std::to_address()`はポインタ型からは`std::ponter_traits::to_address()`を用いて、それ以外の型からは`operator->`を用いてそのアドレスを取得するものです。他のイテレータでは`->`は要求されていませんでしたが、`contiguous_iterator`では実質的に`->`が求められます。
+`std::to_address()`はポインタ型からは`std::ponter_traits::to_address()`を用いて、それ以外の型からは`operator->`を用いてそのアドレスを取得するものです。他のイテレータでは`->`は要求されていませんでしたが、`contiguous_iterator`では実質的に`->`が要求されます。
+
+対応するタグ型の`std::contiguous_iterator_tag`はC++20で追加されたものです。
 
 このコンセプトには意味論要件が指定されています
 
@@ -706,7 +708,7 @@ concept contiguous_iterator =
 
 イテレータの進行がメモリ上の位置の同距離の移動と一致することを言っています。すなわち、`contiguous_iterator`の参照する要素はメモリ上で連続していることを要求しています。
 
-`contiguous_iterator`であるイテレータには生配列のポインタや`std::vector, std::string`のイテレータがあります。
+`contiguous_iterator`であるイテレータには生配列のポインタや`std::vector, std::string`のイテレータがあります。これらのイテレータとは実質的にポインタであり、ポインタ以外の`contiguous_iterator`はピンとこないものがあるかもしれません。非ポインタの`contiguous_iterator`の例としては、C++20からの`std::counted_iterator`にポインタ型を指定した特殊化（`std::counted_iterator<T*>`）があります。
 
 ## `iterator_traits`の役割の変化
 
@@ -742,7 +744,7 @@ C++20のコード（`new_iter_alg()`）からはイテレータの性質は主�
 
 この2つの関数にC++20イテレータ（イテレータコンセプトに準拠したイテレータ）とC++17イテレータ（C++17以前に書かれたイテレータ、イテレータコンセプトへの準拠は不明）を入力してみた時のことを考えてみましょう。
 
-`new_iter_alg()`はC++20の`forward_iterator`を受け入れます。C++20イテレータは当然問題なく使用できますが、C++17イテレータは定義のされ方によっては`forward_iterator`コンセプトを満たせずにエラーになるかもしれません。コンセプトのないC++17以前はイテレータの定義をしっかりと調べ固定化するのは簡単ではなかったため、これは仕方ないことです。ただし、C++17イテレータが`forward_iterator`コンセプトを満たしているならば`new_iter_alg()`はエラーを起こしません。C++17イテレータに対しての`std::iter_value_t`や`std::iter_difference_t`等のものもC++17以前にイテレータとして使用できていたものに対してはきちんと動作するためです。
+`new_iter_alg()`はC++20の`forward_iterator`を受け入れます。C++20イテレータは当然問題なく使用できますが、C++17イテレータは定義のされ方によっては`forward_iterator`コンセプトを満たせずにエラーになるかもしれません。コンセプトのないC++17以前はイテレータの定義をしっかりと調べ固定化するのは簡単ではなかったため、これは仕方ないことです。ただし、C++17イテレータが`forward_iterator`コンセプトを満たしているならば`new_iter_alg()`はエラーを起こしません。C++17イテレータに対しての`std::iter_value_t`や`std::iter_difference_t`等のものは、C++17以前にイテレータとして使用できていたものに対してはきちんと動作するためです。
 
 `old_iter_alg()`はC++17の*forward iterator*を受け入れます。C++17イテレータは問題なく使用できているはずで、C++20イテレータもC++17*forward iterator*要件を満たしているならば問題なく使用できます。その場合の`std::iterator_traits`の各種メンバ型は`std::iter_reference_t`などを用いて自動で取得されます。
 
@@ -802,6 +804,7 @@ namespace std::ranges {
     using iterator_category = input_iterator_tag;
 
     ...
+  };
 }
 ```
 
@@ -809,9 +812,7 @@ namespace std::ranges {
 
 ### `iterator_traits`の特殊化
 
-`iterator_traits`がイテレータ型について明示的に特殊化されている場合、イテレータコンセプトも`std::iterator_traits`もその特殊化を優先して見に行きます。その後の流れは同じなのですが、この振る舞いによって、`std::iterator_traits`の特殊化はイテレータ型に対する非侵入的なカスタマイゼーションポイントとしての役割が与えられます。
-
-特に、`std::iterator_traits`経由でC++20イテレータの問い合わせが行われる場合にはC++17コードから利用されていることがわかっているため、`std::iterator_traits`を特殊化しておくことで`reference`や`value_type`などを適切に（自動取得よりも正確に）提供することができます。`std::iter_value_t`と`std::iter_difference_t`も`std::iterator_traits`が特殊化されている場合はそちらから取得するようになります（これらの説明の中で「基本的には」と言っていたのはこの点です）。
+`std::iterator_traits`がイテレータ型について明示的に特殊化されている場合、イテレータコンセプトも`std::iterator_traits`もその特殊化を優先して見に行きます。`std::iter_value_t`と`std::iter_difference_t`も`std::iterator_traits`が特殊化されている場合はそちらから取得するようになります（これらの説明の中で「基本的には」と言っていたのはこの点です）。その後の流れは同じなのですが、この振る舞いによって、`std::iterator_traits`の特殊化はイテレータ型に対する非侵入的なカスタマイゼーションポイントとしての役割が与えられます。
 
 例えば、C++20で追加されたイテレータラッパである`std::counted_iterator<I>`では、これを利用してラップするイテレータ型が`contiguous_iterator`である場合にC++17以前のコードに向けて`pointer`型を提供するようにしています。
 
@@ -830,6 +831,93 @@ namespace std {
 これは主にポインタをラップした`std::counted_iterator`がC++17コードから利用された時にもきちんと*random access iterator*として利用されるためのものです。直接見えていませんが、`iterator_traits<I>`を継承していることで他の型も適切に提供されます。
 
 変則的な使用法としては、`std::iterator_traits`の特殊化に`iterator_concept`を定義しておくことで、元のイテレータ型に変更を加えずにC++20イテレータであることを表明することもできます。例えばマクロによって言語バージョンでその存在を切り替えたり、あるいは`std::common_iterator`（これもC++20で追加）のようにそもそもC++17コードから利用されることを意図しているイテレータでは`std::iterator_traits`の特殊化によって`iterator_concept`も含めた各種イテレータ情報を提供するようになっています。
+
+## イテレータ経由の関数呼び出しに関するコンセプト
+
+比較関数や`swap`など、イテレータを用いたアルゴリズムではイテレータをデリファレンスして関数を呼び出す、ということがよく行われます。それを制約するためのコンセプトも用意されます。
+
+### `indirectly_unary_invocable`
+
+`std::indirectly_unary_invocable`はイテレータの要素型による単項（1引数）呼び出しが可能であることを表すコンセプトです。
+
+```cpp
+template<class F, class I>
+concept indirectly_unary_invocable =
+  indirectly_readable<I> &&
+  copy_constructible<F> &&
+  invocable<F&, iter_value_t<I>&> &&
+  invocable<F&, iter_reference_t<I>> &&
+  invocable<F&, iter_common_reference_t<I>> &&
+  common_reference_with<
+    invoke_result_t<F&, iter_value_t<I>&>,
+    invoke_result_t<F&, iter_reference_t<I>>>;
+```
+
+`std::indirectly_unary_invocable<F, I>`は、`I`の要素型によって`F`が呼び出し可能（`invocable`）である場合に`true`となります。`F, I`のオブジェクトを`f, i`とすると、`std::invoke(f, *i)`の呼び出しが可能であることを表しており、これは簡単には`f(*i)`のような呼び出しです。
+
+ただし、`*i`の直接の結果だけでなく、その値型及び共通の参照型（`common_reference`）によっても呼び出し可能である必要があります。
+
+```cpp
+template<std::forward_iterator I, std::indirectly_unary_invocable<I> F>
+void f(F&& f, I i) {
+  f(*i);  // 参照型による呼び出し
+
+  auto e = *i;
+  f(e);   // 値型による呼び出し
+
+  using CI = std::iter_common_reference_t<I>;
+  CI b1 = *i;
+  CI b2 = e;
+
+  // 共通の参照型による呼び出し
+  f(b1);
+  f(b2);
+}
+```
+
+`indirectly_unary_invocable`な`F, I`では上記の全ての呼び出しが可能です。
+
+さらには、呼び出し方法の違いによって戻り値型が大きく変わらないこと（`common_reference`を持つこと）も求められています。
+
+このような要件を必要とするイテレータアルゴリズムには`std::for_each()`があり、そのRange版ではこのコンセプトが使用されます。
+
+```cpp
+namespace std::ranges {
+  // ranges::for_each()の宣言
+  template<input_range R, 
+           class Proj = identity,
+           indirectly_unary_invocable<projected<iterator_t<R>, Proj>> Fun>
+  constexpr
+    for_each_result<borrowed_iterator_t<R>, Fun>
+      for_each(R&& r, Fun f, Proj proj = {});
+}
+```
+
+### `indirectly_regular_unary_invocable`
+
+`std::indirectly_regular_unary_invocable`はイテレータの要素型による単項呼び出しが可能であり、それが副作用を持たないことを表すコンセプトです。
+
+```cpp
+template<class F, class I>
+concept indirectly_regular_unary_invocable =
+  indirectly_readable<I> &&
+  copy_constructible<F> &&
+  regular_invocable<F&, iter_value_t<I>&> &&
+  regular_invocable<F&, iter_reference_t<I>> &&
+  regular_invocable<F&, iter_common_reference_t<I>> &&
+  common_reference_with<
+    invoke_result_t<F&, iter_value_t<I>&>,
+    invoke_result_t<F&, iter_reference_t<I>>>;
+```
+
+`std::indirectly_regular_unary_invocable<F, I>`は`I`の要素型によって`F`が副作用なく呼び出し可能（`invocable`）である場合に`true`となります。
+
+このコンセプトは`std::indirectly_unary_invocable`の副作用を禁止する（ことを表明する）バージョンであり、違いは意味論要件のみです。それは、コンセプト定義中の`invocable`が`regular_invocable`に置き換えられていることによって要求されています。それ以外の部分は同一です。
+
+### `indirect_unary_predicate`
+### `indirect_binary_predicate`
+### `indirect_equivalence_relation`
+### `indirect_strict_weak_order`
 
 ## 射影操作の結果型
 
