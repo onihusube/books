@@ -910,14 +910,126 @@ concept indirectly_regular_unary_invocable =
     invoke_result_t<F&, iter_reference_t<I>>>;
 ```
 
-`std::indirectly_regular_unary_invocable<F, I>`は`I`の要素型によって`F`が副作用なく呼び出し可能（`invocable`）である場合に`true`となります。
+`std::indirectly_regular_unary_invocable<F, I>`は`I`の要素型によって`F`が`regular_invocable`である場合に`true`となります。
 
 このコンセプトは`std::indirectly_unary_invocable`の副作用を禁止する（ことを表明する）バージョンであり、違いは意味論要件のみです。それは、コンセプト定義中の`invocable`が`regular_invocable`に置き換えられていることによって要求されています。それ以外の部分は同一です。
 
 ### `indirect_unary_predicate`
+
+`std::indirect_unary_predicate`は、イテレータの要素型による単項述語（*unary predicate*）であることを表すコンセプトです。
+
+```cpp
+template<class F, class I>
+concept indirect_unary_predicate =
+  indirectly_readable<I> &&
+  copy_constructible<F> &&
+  predicate<F&, iter_value_t<I>&> &&
+  predicate<F&, iter_reference_t<I>> &&
+  predicate<F&, iter_common_reference_t<I>>;
+```
+
+`std::indirect_unary_predicate<F, I>`は、`I`の要素型によって`F`が単項述語となる場合に`true`となります。`F, I`のオブジェクトを`f, i`とすると、`bool b = f(*i)`のような呼び出しと変換が可能であることを表します。
+
+`std::predicate`コンセプトは述語を定義するもので、その呼出に伴う副作用がなく、結果は`bool`に変換可能である必要があるので、このコンセプトにおいても呼び出しが副作用を持ってはならないわけです。
+
+このような要件を必要とするイテレータアルゴリズムには`std::find_if()`があり、そのRange版ではこのコンセプトが使用されます。
+
+```cpp
+namespace std::ranges {
+  template<input_range R, 
+           class Proj = identity,
+           indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+  constexpr
+    borrowed_iterator_t<R>
+      find_if(R&& r, Pred pred, Proj proj = {});
+}
+```
+
 ### `indirect_binary_predicate`
+
+`std::indirect_binary_predicate`は、イテレータの要素型による2項述語（*binary predicate*）であることを表すコンセプトです。
+
+```cpp
+template<class F, class I1, class I2>
+concept indirect_binary_predicate =
+  indirectly_readable<I1> && indirectly_readable<I2> &&
+  copy_constructible<F> &&
+  predicate<F&, iter_value_t<I1>&, iter_value_t<I2>&> &&
+  predicate<F&, iter_value_t<I1>&, iter_reference_t<I2>> &&
+  predicate<F&, iter_reference_t<I1>, iter_value_t<I2>&> &&
+  predicate<F&, iter_reference_t<I1>, iter_reference_t<I2>> &&
+  predicate<F&, iter_common_reference_t<I1>, iter_common_reference_t<I2>>;
+```
+
+`std::indirect_binary_predicate<F, I1, I2>`は、`I1, I2`の要素型によって`F`が2項述語となる場合に`true`となります。`F, I1, I2`のオブジェクトを`f, i1, i2`とすると、`bool b = f(*i1, *i2)`のような呼び出しと変換が可能であることを表します。
+
+このような要件を必要とするイテレータアルゴリズムには`std::find()`があり、そのRange版ではこのコンセプトが使用されます。
+
+```cpp
+namespace std::ranges {
+  template<input_range R,
+           class T,
+           class Proj = identity>
+    requires indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
+  constexpr
+    borrowed_iterator_t<R>
+      find(R&& r, const T& value, Proj proj = {});
+}
+```
+
 ### `indirect_equivalence_relation`
+
+`std::indirect_equivalence_relation`は、イテレータの要素型による同値関係を表すコンセプトです。
+
+```cpp
+template<class F, class I1, class I2 = I1>
+concept indirect_equivalence_relation =
+  indirectly_readable<I1> && indirectly_readable<I2> &&
+  copy_constructible<F> &&
+  equivalence_relation<F&, iter_value_t<I1>&, iter_value_t<I2>&> &&
+  equivalence_relation<F&, iter_value_t<I1>&, iter_reference_t<I2>> &&
+  equivalence_relation<F&, iter_reference_t<I1>, iter_value_t<I2>&> &&
+  equivalence_relation<F&, iter_reference_t<I1>, iter_reference_t<I2>> &&
+  equivalence_relation<F&, iter_common_reference_t<I1>, iter_common_reference_t<I2>>;
+```
+
+`std::indirect_equivalence_relation<F, I1, I2>`は、`F`が`I1, I2`の要素型の同値関係となる場合に`true`となります。`F, I1, I2`のオブジェクトを`f, i1, i2`とすると、`bool b = f(*i1, *i2)`のような呼び出しと変換が可能であり、結果が同値関係を示すことを表します。
+
+`std::equivalence_relation`と同様に、同値関係になっていることについては意味論要件として要求されます。
+
 ### `indirect_strict_weak_order`
+
+`std::indirect_strict_weak_order`は、イテレータの要素型による狭義弱順序関係を表すコンセプトです。
+
+```cpp
+template<class F, class I1, class I2 = I1>
+concept indirect_strict_weak_order =
+  indirectly_readable<I1> && indirectly_readable<I2> &&
+  copy_constructible<F> &&
+  strict_weak_order<F&, iter_value_t<I1>&, iter_value_t<I2>&> &&
+  strict_weak_order<F&, iter_value_t<I1>&, iter_reference_t<I2>> &&
+  strict_weak_order<F&, iter_reference_t<I1>, iter_value_t<I2>&> &&
+  strict_weak_order<F&, iter_reference_t<I1>, iter_reference_t<I2>> &&
+  strict_weak_order<F&, iter_common_reference_t<I1>, iter_common_reference_t<I2>>;
+```
+
+`std::indirect_strict_weak_order<F, I1, I2>`は、`F`が`I1, I2`の要素型の狭義弱順序関係となる場合に`true`となります。`F, I1, I2`のオブジェクトを`f, i1, i2`とすると、`bool b = f(*i1, *i2)`のような呼び出しと変換が可能であり、結果が狭義弱順序関係を示すことを表します。
+
+`std::strict_weak_order`と同様に、同値関係になっていることについては意味論要件として要求されます。
+
+狭義弱順序関係とは、`<`による順序関係であって、比較不可能な値同士を同値として扱って順序付けするような順序関係です。これは、`std::sort`など標準ライブラリ内で並べ替えを行う際に仮定される順序関係として要求されます。
+
+## イテレータアルゴリズムに関するコンセプト
+
+### `indirectly_movable`
+### `indirectly_movable_storable`
+### `indirectly_copyable`
+### `indirectly_copyable_storable`
+### `indirectly_swappable`
+### `indirectly_comparable`
+### `permutable`
+### `mergeable`
+### `sortabl`
 
 ## 射影操作の結果型
 
