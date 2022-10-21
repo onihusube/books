@@ -834,7 +834,7 @@ namespace std {
 
 ## イテレータ経由の関数呼び出しに関するコンセプト
 
-比較関数や`swap`など、イテレータを用いたアルゴリズムではイテレータをデリファレンスして関数を呼び出す、ということがよく行われます。それを制約するためのコンセプトも用意されます。
+比較関数や`swap`など、イテレータを用いたアルゴリズムではイテレータをデリファレンスして関数を呼び出す、ということがよく行われます。それを制約するためのコンセプトが用意されます。
 
 ### `indirectly_unary_invocable`
 
@@ -1019,10 +1019,163 @@ concept indirect_strict_weak_order =
 
 狭義弱順序関係とは、`<`による順序関係であって、比較不可能な値同士を同値として扱って順序付けするような順序関係です。これは、`std::sort`など標準ライブラリ内で並べ替えを行う際に仮定される順序関係として要求されます。
 
+## カスタマイゼーションオブジェクト
+
+イテレータを介した操作を効率化するためのCPOが用意されます。
+
+### `ranges::iter_move`
+
+`std::ranges::iter_move`は、イテレータから要素をムーブ抽出するCPOです。
+
+```cpp
+auto example(std::input_iterator auto i) {
+  // イテレータから要素をムーブし抽出する
+  auto v = std::ranges::iter_move(i);
+
+}
+```
+
+デフォルトの振る舞いは、`decltype(*i)`が左辺値参照型の場合は`std::move(*i)`と等しく、*prvalue*の場合は`*i`と等しくなります。
+
+また、カスタマイゼーションポイントを備えており、ユーザー定義非メンバ`iter_move()`を呼び出すこともできます。
+
+```cpp
+struct I {
+  int n = 0;
+
+  // (1)
+  int& operator*();
+
+
+  // (2) HIdden friendsとして定義
+  friend auto iter_move(I& self) -> int {
+    return std::move(self).n;
+  }
+};
+
+int main() {
+  I i{20};
+
+  auto n = std::ranges::iter_move(i); // (2)を呼び出す
+}
+```
+
+このカスタマイゼーションポイントは主に、イテレータラッパを作成するときにラップ対象のイテレータがカスタマイズしている`iter_move()`を正しく呼び出すために利用します（そのままだと、`operator*`と`std::move()`が使用される）。
+
+ではそもそもこの`ranges::iter_move`を使用する意味は何かというと、`decltype(*i)`が*prvalue*の場合にムーブを効率化するため（あるいは非効率化しないため）です。
+
+`auto v = std::move(*i)`だと、`decltype(*i)`（この型を`V`とします）が*prvalue*の場合に一瞬`V&&`にキャストしてから`v`を初期化することになり、*prvalue*の実体化が発生します。これの何が問題なのかというと、*prvalue*が実体化してしまうと値のコピー省略保証の対象外になってしまいます。コピー省略が効く場合、`*i`の定義内`return`での`V`の構築が`v`で直接行われたかのようになり、不要なムーブコンストラクタの呼び出しを抑制することができます。
+
+普通の関数で2つの構築方法の違いを見てみると次のようになります
+
+```cpp
+// 戻り値型がprvalueの関数
+auto f() -> T;
+
+int main() {
+  // 一瞬prvalueが実体化してしまう
+  T&& t1 = f();
+  T t2 = std::move(t1); // コピー省略が妨げられる
+
+  // prvalueを実体化させない
+  T t3 = f(); // コピー省略により直接構築
+}
+```
+
+`ranges::iter_move`のデフォルト動作の振る舞いの違いは、普通の関数で例示すると次のような感じです
+
+```cpp
+auto f() -> T;
+auto g() -> T&; // ダングリングしないとする
+
+void pseudo_iter_move(std::invocable auto&& func) {
+  if constexpr (/*func()の戻り値型がprvalue？*/) {
+    T t = func(); // コピー省略が期待できる
+  } else {
+    // 戻り値型が左辺値の場合
+    T t = std::move(func());
+  }
+}
+
+int main() {
+  pseudo_iter_move(f);
+  pseudo_iter_move(g);
+}
+```
+
+この`f(), g()`がイテレータの`operator*()`に相当するわけです。このように、`ranges::iter_move`は`*i`の戻り値型の値カテゴリに応じてその振る舞いを切り替えることで、イテレータのデリファレンスとムーブの複合操作を自動的に効率化するものです。
+
+### `ranges::iter_swap`
+
+`ranges::iter_swap`は、2つのイテレータの参照先の値を`swap`するCPOです。
+
+```cpp
+template<std::forward_iterator I>
+auto example(I i1, I i2) {
+  // i1とi2の参照先をswapする
+  std::ranges::iter_move(i1, i2);
+}
+```
+
+このCPOにもカスタマイゼーションポイントがあり、ユーザー定義非メンバ`iter_swap()`を探してくれます（`ranges::iter_move`とほぼ同じ感じなのでサンプルコードは省略）。`ranges::iter_move`同様に、これはイテレータラッパにおいてラップ対象イテレータがもつ`iter_swap()`を適切に呼び出すために使用します。
+
+これは単純には`std::ranges::swap(*i1, *i2)`の簡易構文でもあります。長さ的にもそう変わらないのにこれを使用する意味は何かというと、関節参照`*`を経由して`swap`するのが必ずしも正しくない場合があるためです。それはイテレータラッパにおいて起きうることで、`*i`が追加のことをしていたり*prvalue*を返したりする場合には`std::ranges::swap(*i1, *i2)`では元の範囲の上での`swap`を行うことが非効率となるかできなくなります。その場合にこのCPOを通じて`iter_swap()`経由で、元のイテレータを用いて直接`swap`することで元の範囲の上での`swap`を行います。これは最終的には非ラッパイテレータに対して`std::ranges::swap(*i1, *i2)`のような`swap`を行うことになるでしょう。重要なのはイテレータラッパで`swap`する時に`*`を使用しないところです。
+
+そのようなイテレータには例えばムーブイテレータがあり、C++23では`zip_view`のイテレータも該当します。
+
 ## イテレータアルゴリズムに関するコンセプト
 
+ここまでに出てきたコンセプトなどを用いて、イテレータアルゴリズムで頻出する操作を制約するためのコンセプトが用意されます。ここのコンセプトは主に、イテレータを介して入力範囲を変更する（並び替える）場合の操作に関するものです。
+
 ### `indirectly_movable`
+
+`std::indirectly_movable`は、イテレータの要素型を別のイテレータへムーブしつつ出力することができることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+concept indirectly_movable =
+  indirectly_readable<In> &&
+  indirectly_writable<Out, iter_rvalue_reference_t<In>>;
+```
+
+`std::indirectly_movable<In, Out>`は、`indirectly_readable`な`In`から`indirectly_writable`な`Out`へムーブで出力できる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、`*out = std::move(*in)`のような出力が可能であることを表しています。
+
 ### `indirectly_movable_storable`
+
+`std::indirectly_movable_storable`は、`indirectly_movable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+  concept indirectly_movable_storable =
+    indirectly_movable<In, Out> &&
+    indirectly_writable<Out, iter_value_t<In>> &&
+    movable<iter_value_t<In>> &&
+    constructible_from<iter_value_t<In>, iter_rvalue_reference_t<In>> &&
+    assignable_from<iter_value_t<In>&, iter_rvalue_reference_t<In>>;
+```
+
+`std::indirectly_movable_storable<In, Out>`は、`indirectly_movable<In, Out>`であり`std::iter_value_t<In>`型の中間オブジェクトに`In`から一旦ストアしたあとでそこから`Out`へムーブ出力することができる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、次のような操作が可能であることを表しています
+
+```cpp
+auto tmp = *in;
+...
+*out = std::move(tmp);
+```
+
+このコンセプトには意味論要件が指定されています
+
+関節参照可能な`In`のオブジェクト`i`について
+
+- 次のように初期化された`obj`はこの直前の`*i`の値と等しい
+
+```cpp
+std::iter_value_t<In> obj(std::ranges::iter_move(i));
+```
+
+- この時、`std::iter_rvalue_reference_t<In>`が右辺値参照型を示す場合、この後の`*i`の値は有効だが未規定
+
+ムーブという操作がその意味通りの振る舞いをすることを言っています。「有効だが未規定」というのは標準ライブラリ型オブジェクトがムーブされた後の状態を指定する常套句であり、別の値を代入しない限りその操作は未定義となります。
+
 ### `indirectly_copyable`
 ### `indirectly_copyable_storable`
 ### `indirectly_swappable`
@@ -1053,9 +1206,6 @@ namespace std {
 
 ## `common_iterator`
 
-## カスタマイゼーションオブジェクト
-### `ranges::iter_move`
-### `ranges::iter_swap`
 
 ## 番兵型
 
