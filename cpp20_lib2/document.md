@@ -1125,6 +1125,78 @@ auto example(I i1, I i2) {
 
 また、非常に稀ではありますが、イテレータとその参照する範囲の種類・実装によっては、実際の値の交換よりも効率的にイテレータの指す要素の`swap`を行うことができる可能性があります。`iter_swap()`をカスタムすることでそのような最適化を有効にすることができる場合があるかもしれません。
 
+## 射影関連のユーティリティ
+
+### 射影操作の結果型
+
+`std::projected<I, P>`はイテレータ型`I`と射影操作`P`を渡して、イテレータに対して射影を適用した結果を`indirectly_readable`な型として扱うためのクラステンプレートです。
+
+```cpp
+namespace std {
+
+  template<indirectly_readable I, indirectly_regular_unary_invocable<I> Proj>
+  struct projected {
+    using value_type = remove_cvref_t<indirect_result_t<Proj&, I>>;
+
+    indirect_result_t<Proj&, I> operator*() const;  // 宣言のみ
+  };
+}
+```
+
+射影（*projection*）とは、イテレータの要素を引き当てる際にその方法を指定する関数の事です。例えば、`pair<T, U>`の範囲から`T`だけに注目したい場合に`pair<T, U> -> T&`のような関数を渡すことで利用できます。これは、Rangeアルゴリズムにおいて活用でき、Rangeアルゴリズムでは引数列の最後の方で使用する範囲のための射影を受け取るようになっています。
+
+`std::projected<I, P>`は、射影`P`をイテレータ`I`に適用した結果を`::value_type`に持つとともに、`std::projected<I, P>`自体が`std::indirectly_readable`コンセプトを満たす型です。`std::projected<I, P>`が`indirectly_readable`となることで、イテレータ関連コンセプト（主に`indirectly_`から始まる系のコンセプト）を再利用することができます。
+
+そのような利用はRangeアルゴリズムにおいて頻出します。
+
+```cpp
+namespace std::ranges {
+  template<input_iterator I, 
+           sentinel_for<I> S,
+           class Proj = identity,
+           indirect_unary_predicate<projected<I, Proj>> Pred>
+  constexpr I find_if(I first, S last, Pred pred, Proj proj = {});
+}
+```
+
+例えばこの`std::ranges::find_if()`は述語（`pred`）を満たす最初の要素を`[first, last)`から見つけるものですが、要素を引き当てるのに射影操作を利用することができます（例えば`std::pair<T, U>`による範囲から`T`のみに注目して`find_if`する場合など）。その場合、`pred`に渡されるのは射影の結果型ですが、それを求めて`unary_predicate`のようなコンセプトに入力するのは面倒です。`std::projected`を用いることで`std::indirect_unary_predicate`の第二引数（`indirectly_readable`な型を要求）にそのまま入れることができ、制約を単純化することができます。
+
+ただし、この性質上使用するのはコンセプトの文脈においてのみであり、実際にそのオブジェクトを作って間接参照することはできません。おそらくコンパイルエラーとなるはずです。
+
+### `identity`
+
+`std::identity`は引数をそのまま返す関数オブジェクトのクラス型です。
+
+```cpp
+// <functional>内で定義される
+namespace std {
+  struct identity {
+    template<class T>
+    constexpr T&& operator()(T&& t) const noexcept {
+      return std::forward<T>(t);
+    }
+
+    using is_transparent = unspecified;
+  };
+}
+```
+
+これは主に、Rangeアルゴリズムにおける射影操作のデフォルトとして利用されています。
+
+```cpp
+namespace std::ranges {
+  template<input_iterator I, 
+           sentinel_for<I> S,
+           class Proj = identity, // デフォルト射影
+           indirect_unary_predicate<projected<I, Proj>> Pred>
+  constexpr I find_if(I first, S last, Pred pred, Proj proj = {});
+}
+```
+
+射影操作は便利ではありますが多くの場合は要素型そのまま利用すると思われるため、デフォルトでは省略することができるようになっています。デフォルトの振る舞いは範囲の要素をそのまま引き当てるものであり、デフォルト射影として`std::identity`が指定されます。
+
+イテレータの文脈でよく使用されるものであるためここで紹介していますが、`std::identity`は`<functional>`に配置されています。
+
 ## イテレータアルゴリズムに関するコンセプト
 
 ここまでに出てきたコンセプトなどを用いて、イテレータアルゴリズムで頻出する操作を制約するためのコンセプトが用意されます。ここのコンセプトは主に、イテレータを介して入力範囲を変更する（並び替える）場合の操作に関するものです。
@@ -1140,7 +1212,7 @@ concept indirectly_movable =
   indirectly_writable<Out, iter_rvalue_reference_t<In>>;
 ```
 
-`std::indirectly_movable<In, Out>`は、`indirectly_readable`な`In`から`indirectly_writable`な`Out`へムーブで出力できる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、`*out = std::move(*in)`のような出力が可能であることを表しています。
+`std::indirectly_movable<In, Out>`は、`indirectly_readable`な`In`から`indirectly_writable`な`Out`へムーブで出力できる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、`*out = std::move(*in)`のような操作が可能であることを表しています。
 
 ### `indirectly_movable_storable`
 
@@ -1179,28 +1251,94 @@ std::iter_value_t<In> obj(std::ranges::iter_move(i));
 ムーブという操作がその意味通りの振る舞いをすることを言っています。「有効だが未規定」というのは標準ライブラリ型オブジェクトがムーブされた後の状態を指定する常套句であり、別の値を代入しない限りその操作は未定義となります。
 
 ### `indirectly_copyable`
+
+`std::indirectly_copyable`は、イテレータの要素型を別のイテレータへコピーしつつ出力することができることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+concept indirectly_copyable =
+  indirectly_readable<In> &&
+  indirectly_writable<Out, iter_reference_t<In>>;
+```
+
+`std::indirectly_copyable<In, Out>`は、`indirectly_readable`な`In`から`indirectly_writable`な`Out`へコピーして出力できる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、`*out = *in`のような操作が可能であることを表しています。
+
 ### `indirectly_copyable_storable`
+
+`std::indirectly_copyable_storable`は、`indirectly_copyable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+concept indirectly_copyable_storable =
+  indirectly_copyable<In, Out> &&
+  indirectly_writable<Out, iter_value_t<In>&> &&
+  indirectly_writable<Out, const iter_value_t<In>&> &&
+  indirectly_writable<Out, iter_value_t<In>&&> &&
+  indirectly_writable<Out, const iter_value_t<In>&&> &&
+  copyable<iter_value_t<In>> &&
+  constructible_from<iter_value_t<In>, iter_reference_t<In>> &&
+  assignable_from<iter_value_t<In>&, iter_reference_t<In>>;
+```
+
+`std::indirectly_copyable_storable<In, Out>`は、`indirectly_copyable<In, Out>`であり`std::iter_value_t<In>`型の中間オブジェクトに`In`から一旦ストアしたあとでそこから`Out`へコピー出力することができる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、次のような操作が可能であることを表しています
+
+```cpp
+const auto tmp = *in;
+...
+*out = tmp;
+```
+
+このコンセプトには意味論要件が指定されています
+
+関節参照可能な`In`のオブジェクト`i`について
+
+- 次のように初期化された`obj`はこの直前の`*i`の値と等しい
+
+```cpp
+std::iter_value_t<In> obj(std::ranges::iter_move(i));
+```
+
+- この時、`std::iter_reference_t<In>`が右辺値参照型を示す場合、この後の`*i`の値は有効だが未規定
+
+これも、コピーがその意味通りの結果を持つことを言っています。
+
 ### `indirectly_swappable`
+
+`std::indirectly_swappable`は、2つのイテレータの間でその要素の`swap`が行えることを表すコンセプトです。
+
+```cpp
+template<class I1, class I2 = I1>
+concept indirectly_swappable =
+  indirectly_readable<I1> && indirectly_readable<I2> &&
+  requires(const I1 i1, const I2 i2) {
+    ranges::iter_swap(i1, i1);
+    ranges::iter_swap(i2, i2);
+    ranges::iter_swap(i1, i2);
+    ranges::iter_swap(i2, i1);
+  };
+```
+
+`std::indirectly_swappable<I1, I2>`は、`indirectly_readable`な型`I1`と`I2`の要素型が`swap`可能である場合に`true`となります。その意味合いについては制約式が雄弁に物語っているかと思います。
+
+制約式にあるように、このコンセプトを用いて制約したコンテキストにおいてのイテレータ要素の`swap`には`ranges::iter_swap`を用いた方がより適切です。
+
 ### `indirectly_comparable`
+
+`std::indirectly_comparable`は、2つのイテレータの間でその要素の比較が行えることを表すコンセプトです。
+
+```cpp
+template<class I1, class I2, class R, class P1 = identity, class P2 = identity>
+concept indirectly_comparable =
+  indirect_binary_predicate<R, projected<I1, P1>, projected<I2, P2>>;
+```
+
+`std::indirectly_comparable<I1, I2, R>`は、`indirectly_readable`な型`I1`と`I2`の要素型が二項関係`R`によって比較可能である場合に`true`となります。型`I1, I2, R`のオブジェクトを`i1, i2, r`とすると`bool b = r(*i1, *i2)`の様な呼び出しが可能出ることを表しており、この時に要素の引き当てに射影を使用することもできます。
+
+`R`に相当する型としては`std::less<>`や`std::equal<>`があり、標準ではその`range`版が利用されます。
+
 ### `permutable`
 ### `mergeable`
 ### `sortabl`
-
-## 射影操作の結果型
-
-`std::projected<I, P>`はイテレータ型`I`と射影操作`F`を渡して、イテレータに対して射影を適用した結果を
-
-```cpp
-namespace std {
-
-  template<indirectly_readable I, indirectly_regular_unary_invocable<I> Proj>
-  struct projected {
-    using value_type = remove_cvref_t<indirect_result_t<Proj&, I>>;
-
-    indirect_result_t<Proj&, I> operator*() const;  // 宣言のみ
-  };
-}
-```
 
 ## 進行と距離
 
@@ -1244,8 +1382,6 @@ namespace std {
 ## `unwrap_reference`
 
 ## `bind_front`
-
-## `identity`
 
 # 文字列
 
