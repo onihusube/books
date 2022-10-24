@@ -834,7 +834,7 @@ namespace std {
 
 ## イテレータ経由の関数呼び出しに関するコンセプト
 
-比較関数や`swap`など、イテレータを用いたアルゴリズムではイテレータをデリファレンスして関数を呼び出す、ということがよく行われます。それを制約するためのコンセプトも用意されます。
+比較関数や`swap`など、イテレータを用いたアルゴリズムではイテレータをデリファレンスして関数を呼び出す、ということがよく行われます。それを制約するためのコンセプトが用意されます。
 
 ### `indirectly_unary_invocable`
 
@@ -1019,21 +1019,121 @@ concept indirect_strict_weak_order =
 
 狭義弱順序関係とは、`<`による順序関係であって、比較不可能な値同士を同値として扱って順序付けするような順序関係です。これは、`std::sort`など標準ライブラリ内で並べ替えを行う際に仮定される順序関係として要求されます。
 
-## イテレータアルゴリズムに関するコンセプト
+## カスタマイゼーションオブジェクト
 
-### `indirectly_movable`
-### `indirectly_movable_storable`
-### `indirectly_copyable`
-### `indirectly_copyable_storable`
-### `indirectly_swappable`
-### `indirectly_comparable`
-### `permutable`
-### `mergeable`
-### `sortabl`
+イテレータを介した操作を効率化するためのCPOが用意されます。
 
-## 射影操作の結果型
+### `ranges::iter_move`
 
-`std::projected<I, P>`はイテレータ型`I`と射影操作`F`を渡して、イテレータに対して射影を適用した結果を
+`std::ranges::iter_move`は、イテレータから要素をムーブ抽出するCPOです。
+
+```cpp
+auto example(std::input_iterator auto i) {
+  // イテレータから要素をムーブし抽出する
+  auto v = std::ranges::iter_move(i);
+
+}
+```
+
+デフォルトの振る舞いは、`decltype(*i)`が左辺値参照型の場合は`std::move(*i)`と等しく、*prvalue*の場合は`*i`と等しくなります。
+
+また、カスタマイゼーションポイントを備えており、ユーザー定義非メンバ`iter_move()`を呼び出すこともできます。
+
+```cpp
+struct I {
+  int n = 0;
+
+  // (1)
+  int& operator*();
+
+
+  // (2) HIdden friendsとして定義
+  friend auto iter_move(I& self) -> int {
+    return std::move(self).n;
+  }
+};
+
+int main() {
+  I i{20};
+
+  auto n = std::ranges::iter_move(i); // (2)を呼び出す
+}
+```
+
+このカスタマイゼーションポイントは主に、イテレータラッパを作成するときにラップ対象のイテレータがカスタマイズしている`iter_move()`を正しく呼び出すために利用します（そのままだと、`operator*`と`std::move()`が使用される）。
+
+ではそもそもこの`ranges::iter_move`を使用する意味は何かというと、`decltype(*i)`が*prvalue*の場合にムーブを効率化するため（あるいは非効率化しないため）です。
+
+`auto v = std::move(*i)`だと、`decltype(*i)`（この型を`V`とします）が*prvalue*の場合に一瞬`V&&`にキャストしてから`v`を初期化することになり、*prvalue*の実体化が発生します。これの何が問題なのかというと、*prvalue*が実体化してしまうと値のコピー省略保証の対象外になってしまいます。コピー省略が効く場合、`*i`の定義内`return`での`V`の構築が`v`で直接行われたかのようになり、不要なムーブコンストラクタの呼び出しを抑制することができます。
+
+普通の関数で2つの構築方法の違いを見てみると次のようになります
+
+```cpp
+// 戻り値型がprvalueの関数
+auto f() -> T;
+
+int main() {
+  // 一瞬prvalueが実体化してしまう
+  T&& t1 = f();
+  T t2 = std::move(t1); // コピー省略が妨げられる
+
+  // prvalueを実体化させない
+  T t3 = f(); // コピー省略により直接構築
+}
+```
+
+`ranges::iter_move`のデフォルト動作の振る舞いの違いは、普通の関数で例示すると次のような感じです
+
+```cpp
+auto f() -> T;
+auto g() -> T&; // ダングリングしないとする
+
+void pseudo_iter_move(std::invocable auto&& func) {
+  if constexpr (/*func()の戻り値型がprvalue？*/) {
+    T t = func(); // コピー省略が期待できる
+  } else {
+    // 戻り値型が左辺値の場合
+    T t = std::move(func());
+  }
+}
+
+int main() {
+  pseudo_iter_move(f);
+  pseudo_iter_move(g);
+}
+```
+
+この`f(), g()`がイテレータの`operator*()`に相当するわけです。このように、`ranges::iter_move`は`*i`の戻り値型の値カテゴリに応じてその振る舞いを切り替えることで、イテレータのデリファレンスとムーブの複合操作を自動的に効率化するものです。
+
+### `ranges::iter_swap`
+
+`ranges::iter_swap`は、2つのイテレータの参照先の値を`swap`するCPOです。
+
+```cpp
+template<std::forward_iterator I>
+auto example(I i1, I i2) {
+  // i1とi2の参照先をswapする
+  std::ranges::iter_move(i1, i2);
+}
+```
+
+このCPOにもカスタマイゼーションポイントがあり、ユーザー定義非メンバ`iter_swap()`を探してくれます（`ranges::iter_move`とほぼ同じ感じなのでサンプルコードは省略）。`ranges::iter_move`同様に、これはイテレータラッパにおいてラップ対象イテレータがもつ`iter_swap()`を適切に呼び出すために使用します。
+
+これは単純には`std::ranges::swap(*i1, *i2)`の簡易構文でもあります。長さ的にもそう変わらないのにこれを使用する意味は何かというと、関節参照`*`を経由して`swap`するのが必ずしも正しくない場合があるためです。それはイテレータラッパにおいて起きうることで、`*i`が追加のことをしていたり*prvalue*を返したりする場合には`std::ranges::swap(*i1, *i2)`では元の範囲の上での`swap`を行うことが非効率となるかできなくなります。その場合にこのCPOを通じて`iter_swap()`経由で、元のイテレータを用いて直接`swap`することで元の範囲の上での`swap`を行います。これは最終的には非ラッパイテレータに対して`std::ranges::swap(*i1, *i2)`のような`swap`を行うことになるでしょう。重要なのはイテレータラッパで`swap`する時に`*`を使用しないところです。
+
+そのようなイテレータには例えばムーブイテレータがあり、C++23では`zip_view`のイテレータも該当します。
+
+また、非常に稀ではありますが、イテレータとその参照する範囲の種類・実装によっては、実際の値の交換よりも効率的にイテレータの指す要素の`swap`を行うことができる可能性があります。`iter_swap()`をカスタムすることでそのような最適化を有効にすることができる場合があるかもしれません。
+
+## 射影関連のユーティリティ
+
+射影（*projection*）とは、イテレータの要素を引き当てる際にその方法を指定する関数の事です。例えば、`pair<T, U>`を要素とする範囲から`T`だけに注目したい場合に`pair<T, U> -> T&`のような関数を渡すことで要素の参照をカスタマイズします。これは、Rangeアルゴリズムにおいて活用されており、Rangeアルゴリズムでは引数列の最後の方で入力として使用する範囲のための射影を受け取るようになっています。
+
+射影に関する制約やデフォルトの提供のために関連するユーティリティが用意されます。
+
+### 射影操作の結果型
+
+`std::projected<I, P>`はイテレータ型`I`と射影操作`P`を渡して、イテレータに対して射影を適用した結果を`indirectly_readable`な型として扱うためのクラステンプレートです。
 
 ```cpp
 namespace std {
@@ -1044,6 +1144,273 @@ namespace std {
 
     indirect_result_t<Proj&, I> operator*() const;  // 宣言のみ
   };
+}
+```
+
+`std::projected<I, P>`は、射影`P`をイテレータ`I`に適用した結果を`::value_type`に持つとともに、`std::projected<I, P>`自体が`std::indirectly_readable`コンセプトを満たす型です。`std::projected<I, P>`が`indirectly_readable`となることで、イテレータ関連コンセプト（主に`indirectly_`から始まる系のコンセプト）を再利用することができます。
+
+そのような利用はRangeアルゴリズムにおいて頻出します。
+
+```cpp
+namespace std::ranges {
+  template<input_iterator I, 
+           sentinel_for<I> S,
+           class Proj = identity,
+           indirect_unary_predicate<projected<I, Proj>> Pred>
+  constexpr I find_if(I first, S last, Pred pred, Proj proj = {});
+}
+```
+
+例えばこの`std::ranges::find_if()`は述語（`pred`）を満たす最初の要素を`[first, last)`から見つけるものですが、要素を引き当てるのに射影操作を利用することができます（例えば`std::pair<T, U>`による範囲から`T`のみに注目して`find_if`する場合など）。その場合、`pred`に渡されるのは射影の結果型ですが、それを求めて`unary_predicate`のようなコンセプトに入力するのは面倒です。`std::projected`を用いることで`std::indirect_unary_predicate`の第二引数（`indirectly_readable`な型を要求）にそのまま入れることができ、制約を単純化することができます。
+
+ただし、この性質上使用するのはコンセプトの文脈においてのみであり、実際にそのオブジェクトを作って間接参照することはできません。おそらくコンパイルエラーとなるはずです。
+
+### `identity`
+
+`std::identity`は引数をそのまま返す関数オブジェクトのクラス型です。
+
+```cpp
+// <functional>内で定義される
+namespace std {
+  struct identity {
+    template<class T>
+    constexpr T&& operator()(T&& t) const noexcept {
+      return std::forward<T>(t);
+    }
+
+    using is_transparent = unspecified;
+  };
+}
+```
+
+これは主に、Rangeアルゴリズムにおける射影操作のデフォルトとして利用されています。
+
+```cpp
+namespace std::ranges {
+  template<input_iterator I, 
+           sentinel_for<I> S,
+           class Proj = identity, // デフォルト射影
+           indirect_unary_predicate<projected<I, Proj>> Pred>
+  constexpr I find_if(I first, S last, Pred pred, Proj proj = {});
+}
+```
+
+射影操作は便利ではありますが多くの場合は要素型をそのまま利用することになるため、デフォルトでは省略することができるようになっています。デフォルトの振る舞いは範囲の要素をそのまま引き当てるものであり、そのために`std::identity`が指定されます。
+
+イテレータの文脈でよく使用されるものであるためここで紹介していますが、`std::identity`は`<functional>`に配置されています。
+
+## イテレータアルゴリズムに関するコンセプト
+
+ここまでに出てきたコンセプトなどを用いて、イテレータアルゴリズムで頻出する操作を制約するためのコンセプトが用意されます。ここのコンセプトは主に、イテレータを介して入力範囲を変更する（並び替える）場合の操作に関するものです。
+
+### `indirectly_movable`
+
+`std::indirectly_movable`は、イテレータの要素型を別のイテレータへムーブしつつ出力することができることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+concept indirectly_movable =
+  indirectly_readable<In> &&
+  indirectly_writable<Out, iter_rvalue_reference_t<In>>;
+```
+
+`std::indirectly_movable<In, Out>`は、`indirectly_readable`な`In`から`indirectly_writable`な`Out`へムーブで出力できる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、`*out = std::move(*in)`のような操作が可能であることを表しています。
+
+### `indirectly_movable_storable`
+
+`std::indirectly_movable_storable`は、`indirectly_movable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+  concept indirectly_movable_storable =
+    indirectly_movable<In, Out> &&
+    indirectly_writable<Out, iter_value_t<In>> &&
+    movable<iter_value_t<In>> &&
+    constructible_from<iter_value_t<In>, iter_rvalue_reference_t<In>> &&
+    assignable_from<iter_value_t<In>&, iter_rvalue_reference_t<In>>;
+```
+
+`std::indirectly_movable_storable<In, Out>`は、`indirectly_movable<In, Out>`であり`std::iter_value_t<In>`型の中間オブジェクトに`In`から一旦ストアしたあとでそこから`Out`へムーブ出力することができる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、次のような操作が可能であることを表しています
+
+```cpp
+auto tmp = *in;
+...
+*out = std::move(tmp);
+```
+
+このコンセプトには意味論要件が指定されています
+
+関節参照可能な`In`のオブジェクト`i`について
+
+- 次のように初期化された`obj`はこの直前の`*i`の値と等しい
+
+```cpp
+std::iter_value_t<In> obj(std::ranges::iter_move(i));
+```
+
+- この時、`std::iter_rvalue_reference_t<In>`が右辺値参照型を示す場合、この後の`*i`の値は有効だが未規定
+
+ムーブという操作がその意味通りの振る舞いをすることを言っています。「有効だが未規定」というのは標準ライブラリ型オブジェクトがムーブされた後の状態を指定する常套句であり、別の値を代入しない限りその操作は未定義となります。
+
+### `indirectly_copyable`
+
+`std::indirectly_copyable`は、イテレータの要素型を別のイテレータへコピーしつつ出力することができることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+concept indirectly_copyable =
+  indirectly_readable<In> &&
+  indirectly_writable<Out, iter_reference_t<In>>;
+```
+
+`std::indirectly_copyable<In, Out>`は、`indirectly_readable`な`In`から`indirectly_writable`な`Out`へコピーして出力できる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、`*out = *in`のような操作が可能であることを表しています。
+
+### `indirectly_copyable_storable`
+
+`std::indirectly_copyable_storable`は、`indirectly_copyable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
+
+```cpp
+template<class In, class Out>
+concept indirectly_copyable_storable =
+  indirectly_copyable<In, Out> &&
+  indirectly_writable<Out, iter_value_t<In>&> &&
+  indirectly_writable<Out, const iter_value_t<In>&> &&
+  indirectly_writable<Out, iter_value_t<In>&&> &&
+  indirectly_writable<Out, const iter_value_t<In>&&> &&
+  copyable<iter_value_t<In>> &&
+  constructible_from<iter_value_t<In>, iter_reference_t<In>> &&
+  assignable_from<iter_value_t<In>&, iter_reference_t<In>>;
+```
+
+`std::indirectly_copyable_storable<In, Out>`は、`indirectly_copyable<In, Out>`であり`std::iter_value_t<In>`型の中間オブジェクトに`In`から一旦ストアしたあとでそこから`Out`へコピー出力することができる場合に`true`となります。`In, Out`のオブジェクトを`in, out`とすると、次のような操作が可能であることを表しています
+
+```cpp
+const auto tmp = *in;
+...
+*out = tmp;
+```
+
+このコンセプトには意味論要件が指定されています
+
+関節参照可能な`In`のオブジェクト`i`について
+
+- 次のように初期化された`obj`はこの直前の`*i`の値と等しい
+
+```cpp
+std::iter_value_t<In> obj(std::ranges::iter_move(i));
+```
+
+- この時、`std::iter_reference_t<In>`が右辺値参照型を示す場合、この後の`*i`の値は有効だが未規定
+
+これも、コピーがその意味通りの結果を持つことを言っています。
+
+### `indirectly_swappable`
+
+`std::indirectly_swappable`は、2つのイテレータの間でその要素の`swap`が行えることを表すコンセプトです。
+
+```cpp
+template<class I1, class I2 = I1>
+concept indirectly_swappable =
+  indirectly_readable<I1> && indirectly_readable<I2> &&
+  requires(const I1 i1, const I2 i2) {
+    ranges::iter_swap(i1, i1);
+    ranges::iter_swap(i2, i2);
+    ranges::iter_swap(i1, i2);
+    ranges::iter_swap(i2, i1);
+  };
+```
+
+`std::indirectly_swappable<I1, I2>`は、`indirectly_readable`な型`I1`と`I2`の要素型が`swap`可能である場合に`true`となります。その意味合いについては制約式が雄弁に物語っているかと思います。
+
+制約式にあるように、このコンセプトを用いて制約したコンテキストにおいてのイテレータ要素の`swap`には`ranges::iter_swap`を用いた方がより適切です。
+
+### `indirectly_comparable`
+
+`std::indirectly_comparable`は、2つのイテレータの間でその要素の比較が行えることを表すコンセプトです。
+
+```cpp
+template<class I1, class I2, class R, class P1 = identity, class P2 = identity>
+concept indirectly_comparable =
+  indirect_binary_predicate<R, projected<I1, P1>, projected<I2, P2>>;
+```
+
+`std::indirectly_comparable<I1, I2, R>`は、`indirectly_readable`な型`I1`と`I2`の要素型が二項関係`R`によって比較可能である場合に`true`となります。型`I1, I2, R`のオブジェクトを`i1, i2, r`とすると`bool b = r(*i1, *i2)`の様な呼び出しが可能出ることを表しており、この時に要素の引き当てに射影を使用することもできます。
+
+`R`に相当する型としては`std::less<>`や`std::equal_to<>`があり、標準ライブラリでは主にその`range`版が利用されます。
+
+### `permutable`
+
+`std::permutable`は、イテレータ範囲の要素をムーブや`swap`によってin-placeで並べ替えできることを表すコンセプトです
+
+```cpp
+template<class I>
+concept permutable =
+  forward_iterator<I> &&
+  indirectly_movable_storable<I, I> &&
+  indirectly_swappable<I, I>;
+```
+
+`std::permutable<I>`は、`I`が`forward_iterator`かつ`indirectly_movable_storable`かつ`indirectly_swappable`である場合に`true`となります。
+
+ここでのin-placeで並べ替えとは、長さ`N`の範囲に対して1要素分程度の追加領域の使用によって並べ替えることができるという意味合いです。
+
+### `mergeable`
+
+`std::mergeable`は、2つのソート済みイテレータ範囲をマージしつつコピーして別のイテレータに出力可能であることを表すコンセプトです。
+
+```cpp
+template<class I1, class I2,
+         class Out, class R = ranges::less,
+         class P1 = identity, class P2 = identity>
+concept mergeable =
+  input_iterator<I1> &&
+  input_iterator<I2> &&
+  weakly_incrementable<Out> &&
+  indirectly_copyable<I1, Out> &&
+  indirectly_copyable<I2, Out> &&
+  indirect_strict_weak_order<R, projected<I1, P1>, projected<I2, P2>>;
+```
+
+`std::mergeable<I1, I2, Out, R, P1, P2>`は、`input_iterator`である`I1, I2`の範囲を`R`の比較によってマージし、結果要素を`Out`へコピーして出力することができる場合に`true`となります。また、その際に射影`P1, P2`を使用します。
+
+非常に複雑ですが、`std::merge()`が可能であるための最小の要求を表しており、実際に`std::ranges::merge`で使用されています。
+
+```cpp
+namespace std::ranges {
+  template<input_iterator I1, sentinel_for<I1> S1, 
+           input_iterator I2, sentinel_for<I2> S2,
+           weakly_incrementable O, class Comp = ranges::less,
+           class Proj1 = identity, class Proj2 = identity>
+    requires mergeable<I1, I2, O, Comp, Proj1, Proj2>   // ここ
+  constexpr
+    merge_result<I1, I2, O>
+      merge(I1 first1, S1 last1, I2 first2, S2 last2, O result, Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {});
+}
+```
+
+### `sortable`
+
+`std::sortable`はイテレータ範囲がソート可能であることを表すコンセプトです。
+
+```cpp
+template<class I, class R = ranges::less, class P = identity>
+concept sortable =
+  permutable<I> &&
+  indirect_strict_weak_order<R, projected<I, P>>;
+```
+
+`std::sortable<I, R, P>`は、`I`が`permutable`であり`R`が`I`の要素型について狭義弱順序関係を示す場合に`true`となります。また、その際に射影`P`を使用します。
+
+これは標準ライブラリにおけるソート可能という要件をコンセプトに表したものです。ソートに伴う操作のためには`permutable`が必要であり、比較は狭義の弱順序によっていなければなりません。
+
+これは`std::sort()`を行うための最小の要求であり、実際に`std::ranges::sort`で使用されています。
+
+```cpp
+namespace std::ranges {
+  template<random_access_iterator I, sentinel_for<I> S, 
+           class Comp = ranges::less, class Proj = identity>
+    requires sortable<I, Comp, Proj>  // ここ
+  constexpr I sort(I first, S last, Comp comp = {}, Proj proj = {});
 }
 ```
 
@@ -1178,9 +1545,6 @@ int main() {
 
 ## `common_iterator`
 
-## カスタマイゼーションオブジェクト
-### `ranges::iter_move`
-### `ranges::iter_swap`
 
 ## 番兵型
 
@@ -1217,8 +1581,6 @@ int main() {
 ## `unwrap_reference`
 
 ## `bind_front`
-
-## `identity`
 
 # 文字列
 
