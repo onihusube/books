@@ -1049,6 +1049,131 @@ namespace std {
 
 ## 進行と距離
 
+`std::advance()`等のイテレータを進行させる関数とイテレータ間の距離を求める`std::distance()`はイテレータコンセプトの導入とイテレータ定義の若干の変更に伴って新しいバージョンが追加されます。これらはすべて、`std::ranges`名前空間の下に配置されます。
+
+### `std::ranges::advance`
+
+`std::ranges::advance()`は`std::advance()`のC++20バージョンです。基本的には渡されたイテレータを指定されただけ進める処理であるところは変わっていません。また、`std::ranges::advance()`はすべてのオーバーロードにおいて渡されたイテレータを直接書き換えます。
+
+この関数にはオーバーロードが3つあります。
+
+```cpp
+// ranges::advance() 1
+template<input_or_output_iterator I>
+constexpr void advance(I& i, iter_difference_t<I> n);
+```
+
+1つ目は、イテレータ`i`を`n`進めるものです。これはほぼ従来の`std::advance()`そのままです。
+
+`I`が`bidirectional_iterator`であるならば、`n`には負の数を指定することができます。
+
+```cpp
+#include <iterator>
+
+using namespace std::ranges::bidiricetional_range;
+
+int main() {
+  // 何かしらの範囲オブジェクトとする
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::bidirectional_iterator auto it = seq.begin();
+
+  std::ranges::advance(it);     // itを1進める
+  // *it == 2
+
+  std::ranges::advance(it, 2);  // itを2進める
+  // *it == 4
+
+  std::ranges::advance(it, -3); // itを3戻す
+  // *it == 1
+}
+```
+
+この処理は入力イテレータのカテゴリによって変化します。
+
+- `std::random_access_iterator` : `i += n`
+- それ以外 : `n`回のインクリメント/デクリメント
+
+このように、コンセプトによってそのイテレータに最適な方法で入力イテレータを進めます。
+
+```cpp
+// ranges::advance() 2
+template<input_or_output_iterator I, sentinel_for<I> S>
+constexpr void advance(I& i, S bound);
+```
+
+2つ目は、イテレータ`i`を番兵`bound`の位置まで進めるものです。
+
+```cpp
+#include <iterator>
+
+int main() {
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::bidirectional_iterator auto it = seq.begin();
+  auto bound = std::ranges::advance(it, 2);
+
+  std::ranges::advance(it, bound);
+  // *it == 3
+
+  boud = seq.begin();
+  
+  std::ranges::advance(it, bound);
+  // *it == 1
+}
+```
+
+これも入力イテレータのカテゴリによってやることが変化します。
+
+- `I, S`が`std::assignable_from<I&, S>`のモデルとなる : `i = std::move(bound)`
+- `S, I`が`std::sized_sentinel_for<S, I>`のモデルとなる : `std::ranges::advance(i, bound - i)`
+- それ以外 : `i == bound`となるまで`i`をインクリメント/デクリメント
+
+`std::sentinel_for`の意味論要件によって、`i = bound`のような代入が可能かどうかを`std::assignable_from<I&, S>`を調べることによってチェックすることができます（できない場合はこれを満たさないようにしなければならない）。`std::assignable_from<I&, S>`を満たしていなければ番兵のイテレータへの直接代入はできないので、他の方法によって`bound`の位置までイテレータを進めます。
+
+```cpp
+// ranges::advance() 3
+template<input_or_output_iterator I, sentinel_for<I> S>
+constexpr iter_difference_t<I>
+  advance(I& i, iter_difference_t<I> n, S bound); 
+```
+
+3つめは、イテレータ`i`を`bound`までの間で`n`進めるものです。
+
+```cpp
+#include <iterator>
+
+int main() {
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::bidirectional_iterator auto it = seq.begin();
+  auto bound = std::ranges::advance(it, 2);
+
+  auto m = std::ranges::advance(it, 1, bound);
+  // *it == 2、 m == 0
+
+  auto m = std::ranges::advance(it, 10, bound);
+  // *it == 3、 m == 9
+}
+```
+
+このオーバロードにだけ戻り値があり、指定した`n`に対して進めなかった距離を返します。
+
+これも入力イテレータのカテゴリによってやることが変化します。
+
+- `S, I`が`std::sized_sentinel_for<S, I>`のモデルであり
+    - $|n| \geq |bound - i|$の場合 : `std::ranges::advance(i, bound)`
+    - $|n| < |bound - i|$の場合 : `std::ranges::advance(i, n)`
+- それ以外の場合 : `i != bound`の間、最大$|n|$回のインクリメント/デクリメント
+
+イテレータと番兵の間で距離が求められる（`std::sized_sentinel_for<S, I>`）ならば、そのサイズ情報を用いて前2つの`std::ranges::advance()`に処理を委ねますが、そうでないならば愚直に一歩づつ進行させます。
+
+### `std::ranges::next`
+### `std::ranges::prev`
+### `std::ranges::distance`
+
+### ADLを無効化する関数定義
+
 ## `counted_iterator`
 
 ## `common_iterator`
