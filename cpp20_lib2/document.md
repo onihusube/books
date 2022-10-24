@@ -1127,6 +1127,10 @@ auto example(I i1, I i2) {
 
 ## 射影関連のユーティリティ
 
+射影（*projection*）とは、イテレータの要素を引き当てる際にその方法を指定する関数の事です。例えば、`pair<T, U>`を要素とする範囲から`T`だけに注目したい場合に`pair<T, U> -> T&`のような関数を渡すことで要素の参照をカスタマイズします。これは、Rangeアルゴリズムにおいて活用されており、Rangeアルゴリズムでは引数列の最後の方で入力として使用する範囲のための射影を受け取るようになっています。
+
+射影に関する制約やデフォルトの提供のために関連するユーティリティが用意されます。
+
 ### 射影操作の結果型
 
 `std::projected<I, P>`はイテレータ型`I`と射影操作`P`を渡して、イテレータに対して射影を適用した結果を`indirectly_readable`な型として扱うためのクラステンプレートです。
@@ -1142,8 +1146,6 @@ namespace std {
   };
 }
 ```
-
-射影（*projection*）とは、イテレータの要素を引き当てる際にその方法を指定する関数の事です。例えば、`pair<T, U>`の範囲から`T`だけに注目したい場合に`pair<T, U> -> T&`のような関数を渡すことで利用できます。これは、Rangeアルゴリズムにおいて活用でき、Rangeアルゴリズムでは引数列の最後の方で使用する範囲のための射影を受け取るようになっています。
 
 `std::projected<I, P>`は、射影`P`をイテレータ`I`に適用した結果を`::value_type`に持つとともに、`std::projected<I, P>`自体が`std::indirectly_readable`コンセプトを満たす型です。`std::projected<I, P>`が`indirectly_readable`となることで、イテレータ関連コンセプト（主に`indirectly_`から始まる系のコンセプト）を再利用することができます。
 
@@ -1193,7 +1195,7 @@ namespace std::ranges {
 }
 ```
 
-射影操作は便利ではありますが多くの場合は要素型そのまま利用すると思われるため、デフォルトでは省略することができるようになっています。デフォルトの振る舞いは範囲の要素をそのまま引き当てるものであり、デフォルト射影として`std::identity`が指定されます。
+射影操作は便利ではありますが多くの場合は要素型をそのまま利用することになるため、デフォルトでは省略することができるようになっています。デフォルトの振る舞いは範囲の要素をそのまま引き当てるものであり、そのために`std::identity`が指定されます。
 
 イテレータの文脈でよく使用されるものであるためここで紹介していますが、`std::identity`は`<functional>`に配置されています。
 
@@ -1334,11 +1336,83 @@ concept indirectly_comparable =
 
 `std::indirectly_comparable<I1, I2, R>`は、`indirectly_readable`な型`I1`と`I2`の要素型が二項関係`R`によって比較可能である場合に`true`となります。型`I1, I2, R`のオブジェクトを`i1, i2, r`とすると`bool b = r(*i1, *i2)`の様な呼び出しが可能出ることを表しており、この時に要素の引き当てに射影を使用することもできます。
 
-`R`に相当する型としては`std::less<>`や`std::equal<>`があり、標準ではその`range`版が利用されます。
+`R`に相当する型としては`std::less<>`や`std::equal_to<>`があり、標準ライブラリでは主にその`range`版が利用されます。
 
 ### `permutable`
+
+`std::permutable`は、イテレータ範囲の要素をムーブや`swap`によってin-placeで並べ替えできることを表すコンセプトです
+
+```cpp
+template<class I>
+concept permutable =
+  forward_iterator<I> &&
+  indirectly_movable_storable<I, I> &&
+  indirectly_swappable<I, I>;
+```
+
+`std::permutable<I>`は、`I`が`forward_iterator`かつ`indirectly_movable_storable`かつ`indirectly_swappable`である場合に`true`となります。
+
+ここでのin-placeで並べ替えとは、長さ`N`の範囲に対して1要素分程度の追加領域の使用によって並べ替えることができるという意味合いです。
+
 ### `mergeable`
-### `sortabl`
+
+`std::mergeable`は、2つのソート済みイテレータ範囲をマージしつつコピーして別のイテレータに出力可能であることを表すコンセプトです。
+
+```cpp
+template<class I1, class I2,
+         class Out, class R = ranges::less,
+         class P1 = identity, class P2 = identity>
+concept mergeable =
+  input_iterator<I1> &&
+  input_iterator<I2> &&
+  weakly_incrementable<Out> &&
+  indirectly_copyable<I1, Out> &&
+  indirectly_copyable<I2, Out> &&
+  indirect_strict_weak_order<R, projected<I1, P1>, projected<I2, P2>>;
+```
+
+`std::mergeable<I1, I2, Out, R, P1, P2>`は、`input_iterator`である`I1, I2`の範囲を`R`の比較によってマージし、結果要素を`Out`へコピーして出力することができる場合に`true`となります。また、その際に射影`P1, P2`を使用します。
+
+非常に複雑ですが、`std::merge()`が可能であるための最小の要求を表しており、実際に`std::ranges::merge`で使用されています。
+
+```cpp
+namespace std::ranges {
+  template<input_iterator I1, sentinel_for<I1> S1, 
+           input_iterator I2, sentinel_for<I2> S2,
+           weakly_incrementable O, class Comp = ranges::less,
+           class Proj1 = identity, class Proj2 = identity>
+    requires mergeable<I1, I2, O, Comp, Proj1, Proj2>   // ここ
+  constexpr
+    merge_result<I1, I2, O>
+      merge(I1 first1, S1 last1, I2 first2, S2 last2, O result, Comp comp = {}, Proj1 proj1 = {}, Proj2 proj2 = {});
+}
+```
+
+### `sortable`
+
+`std::sortable`はイテレータ範囲がソート可能であることを表すコンセプトです。
+
+```cpp
+template<class I, class R = ranges::less, class P = identity>
+concept sortable =
+  permutable<I> &&
+  indirect_strict_weak_order<R, projected<I, P>>;
+```
+
+`std::sortable<I, R, P>`は、`I`が`permutable`であり`R`が`I`の要素型について狭義弱順序関係を示す場合に`true`となります。また、その際に射影`P`を使用します。
+
+これは標準ライブラリにおけるソート可能という要件をコンセプトに表したものです。ソートに伴う操作のためには`permutable`が必要であり、比較は狭義の弱順序によっていなければなりません。
+
+これは`std::sort()`を行うための最小の要求であり、実際に`std::ranges::sort`で使用されています。
+
+```cpp
+namespace std::ranges {
+  template<random_access_iterator I, sentinel_for<I> S, 
+           class Comp = ranges::less, class Proj = identity>
+    requires sortable<I, Comp, Proj>  // ここ
+  constexpr I sort(I first, S last, Comp comp = {}, Proj proj = {});
+}
+```
 
 ## 進行と距離
 
