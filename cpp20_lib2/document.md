@@ -700,9 +700,9 @@ concept contiguous_iterator =
 
 `a, b`を間接参照可能な型`I`のイテレータ、`c`を間接参照不可能な型`I`のイテレータとして`b`は`a`から、`C`は`b`から到達可能であり、`std::iter_difference_t<I>`を`D`として
 
-- `std::to_­address(a) == std::addressof(*a)`
-- `std::to_­address(b) == std::to_­address(a) + D(b - a)`
-- `std::to_­address(c) == std::to_­address(a) + D(c - a)`
+- `std::to_address(a) == std::addressof(*a)`
+- `std::to_address(b) == std::to_address(a) + D(b - a)`
+- `std::to_address(c) == std::to_address(a) + D(c - a)`
 - `std::ranges::iter_move(a)`は`std::move(*a)`と同じ型と値カテゴリを持ち同じ効果となる
 - `std::ranges::iter_swap(a, b)`が利用可能である場合、その効果は`std::ranges::swap(a, b)`と同じになる
 
@@ -1699,6 +1699,84 @@ int main() {
 ```
 
 ### `std::ranges::distance`
+
+`std::ranges::distance()`は`std::distance()`のC++20バージョンです。基本的な役割も変化はなく、渡されたイテレータ間の距離を求めるものです。
+
+この関数にはオーバーロードが3つあります。
+
+```cpp
+namespace std::ranges {
+  template<input_or_output_iterator I, sentinel_for<I> S>
+    requires (!sized_sentinel_for<S, I>)
+  constexpr iter_difference_t<I> distance(I first, S last);
+
+  template<input_or_output_iterator I, sized_sentinel_for<I> S>
+  constexpr iter_difference_t<I> distance(const I& first, const S& last);
+}
+```
+
+まず2つは、イテレータ間距離を求めるものです。
+
+```cpp
+#include <iterator>
+
+int main() {
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::forward_iterator auto it = seq.begin();
+  std::sized_sentinel_for<decltype(it)> auto end = seq.end();
+  
+  auto d1 = std::ranges::distance(it, end);
+  // d1 == 4
+
+  auto it2 = std::ranges::next(seq.begin(), 2);
+  
+  auto d2 = std::ranges::distance(it, it2);
+  // d2 == 2
+
+  auto d3 = std::ranges::distance(it2, it);
+  // d3 == -2
+}
+```
+
+1つ目のオーバーロードは`sized_sentinel_for`ではないイテレータと番兵のペアを受け取るためのもので、次のような結果を返します
+
+- `first`から`last`に到達するのに必要なインクリメントの回数
+
+2つ目のオーバーロードは`sized_sentinel_for`であるイテレータと番兵のペアを受け取るためのもので、差分操作によって効率的に距離を求めます
+
+- `last - first`
+
+2つ目のオーバーロードがイテレータと番兵の`const`参照を取っているのは、ムーブオンリーかつ`sized_sentinel_for`なイテレータを受けるためのものです。1つ目のオーバーロードがイテレータと番兵を値で受けているのは、そこで行う距離の計算の都合上ムーブオンリーイテレータを渡す意味がないためです。このため、ムーブオンリーかつ`sized_sentinel_for`ではないイテレータと番兵のペアの間では`std::ranges::distance()`を使用できません。
+
+`std::ranges::distance()`にはもう一つオーバーロードがあり、`range`オブジェクトを直接渡してその長さを得ることができます。
+
+```cpp
+namespace std::ranges {
+  template<range R>
+  constexpr range_difference_t<R> distance(R&& r);
+}
+```
+
+使用例
+
+```cpp
+#include <iterator>
+
+int main() {
+  std::ranges::range auto seq = {1, 2, 3, 4};
+  
+  auto d = std::ranges::distance(seq);
+  // d == 4
+}
+```
+
+こちらのオーバーロードの処理では、`range`型`R`の満たす性質によって最適な操作が選択されます
+
+- `R`が`sized_range`である : `static_cast<range_difference_t<R>>(ranges::size(r))`
+- それ以外の場合 : `ranges::distance(ranges::begin(r), ranges::end(r));`
+
+`R`が`sized_range`である、すなわち`ranges::size()`が利用可能である場合はその結果を返し、そうでない場合は先頭と終端のイテレータ/番兵のペアを`ranges::distance()`に渡して距離を求めます。
 
 ### ADLを無効化する関数定義
 
