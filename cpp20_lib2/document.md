@@ -1437,8 +1437,6 @@ constexpr void advance(I& i, iter_difference_t<I> n);
 ```cpp
 #include <iterator>
 
-using namespace std::ranges::bidiricetional_range;
-
 int main() {
   // 何かしらの範囲オブジェクトとする
   std::ranges::range auto seq = {1, 2, 3, 4};
@@ -1494,9 +1492,11 @@ int main() {
 
 - `I, S`が`std::assignable_from<I&, S>`のモデルとなる : `i = std::move(bound)`
 - `S, I`が`std::sized_sentinel_for<S, I>`のモデルとなる : `std::ranges::advance(i, bound - i)`
-- それ以外 : `i == bound`となるまで`i`をインクリメント/デクリメント
+- それ以外 : `i == bound`となるまで`i`をインクリメント
 
-`std::sentinel_for`の意味論要件によって、`i = bound`のような代入が可能かどうかを`std::assignable_from<I&, S>`を調べることによってチェックすることができます（できない場合はこれを満たさないようにしなければならない）。`std::assignable_from<I&, S>`を満たしていなければ番兵のイテレータへの直接代入はできないので、他の方法によって`bound`の位置までイテレータを進めます。
+`std::sentinel_for`の意味論要件によって、`i = bound`のような代入が可能（意味がある）かどうかを`std::assignable_from<I&, S>`を調べることによってチェックすることができます（できない場合はこれを満たさないようにしなければならないため）。`std::assignable_from<I&, S>`を満たしていなければ番兵のイテレータへの直接代入はできないので、他の方法によって`bound`の位置までイテレータを進めます。
+
+注意としては、3つ目の処理が行われる場合は`bound`まで戻るのようなことはできない点で、したがってジェネリックな文脈でこのオーバーロードを後退のために使用するのは不適切です。これは、上2つの処理に該当しない場合は`bound`が`i`の前後どちらにあるかを判定することができないためで、この場合は後ろにあるものとみなして進行させています。
 
 ```cpp
 // ranges::advance() 3
@@ -1535,8 +1535,169 @@ int main() {
 
 イテレータと番兵の間で距離が求められる（`std::sized_sentinel_for<S, I>`）ならば、そのサイズ情報を用いて前2つの`std::ranges::advance()`に処理を委ねますが、そうでないならば愚直に一歩づつ進行させます。
 
+このように、`std::ranges::advance()`は`std::advance()`に比べるとコンセプトを用いて要件や効果を適切に定義していますが、その最も大きな違いは番兵という概念を考慮した進行ができるかどうかにあります。
+
 ### `std::ranges::next`
+
+`std::ranges::next()`は`std::next()`のC++20バージョンです。基本的には渡されたイテレータを指定された分進めて返すものであることに変化はありません。
+
+この関数にはオーバーロードが4つあります。
+
+```cpp
+namespace std::ranges {
+  // iを1つ進める
+  template<input_or_output_iterator I>
+  constexpr I next(I i) {
+    ++i;
+    return i;
+  }
+
+  // iをn進める
+  template<input_or_output_iterator I>
+  constexpr I next(I i, iter_difference_t<I> n) {
+    std::ranges::advance(i, n);
+    return i;
+  }
+}
+```
+
+まず最初の2つはイテレータ`i`を`n`進めるものです。1つ目のイテレータのみを取るオーバーロードはイテレータを1つだけ進めます。
+
+```cpp
+#include <iterator>
+
+int main() {
+  // 何かしらの範囲オブジェクトとする
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::forward_iterator auto it = seq.begin();
+
+  auto it2 = std::ranges::next(it);     // itを1進める
+  // *it2 == 2
+  // *it  == 1
+
+  auto it3 = std::ranges::next(it, 2);  // itを2進める
+  // *it3 == 4
+  // *it  == 1
+}
+```
+
+この2つはこれまでの`std::next()`とほぼ同様の振る舞いをします。`n`には負数を渡しても意図通りになりますが、この関数の意味的には常に正の値を渡すべきで、イテレータの後退をしたい場合は次の`std::ranges::prev()`を使用した方が良いでしょう。
+
+```cpp
+namespace std::ranges {
+  // iをboundまで進める
+  template<input_or_output_iterator I, sentinel_for<I> S>
+  constexpr I next(I i, S bound) {
+    std::ranges::advance(i, bound);
+    return i;
+  }
+
+  // iをboundまでの間でn進める
+  template<input_or_output_iterator I, sentinel_for<I> S>
+  constexpr I next(I i, iter_difference_t<I> n, S bound) {
+    std::ranges::advance(i, n, bound);
+    return i;
+  }
+}
+```
+
+残り2つのオーバーロードは番兵`bound`を取るもので、実際の進行の処理はどちらも`ranges::advance()`に委ねます。したがって、`ranges::advance()`で行われていたイテレータの性質に応じた最適な処理の選択はここでも行われます。
+
+```cpp
+#include <iterator>
+
+int main() {
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::bidirectional_iterator auto it = seq.begin();
+  auto bound = std::ranges::advance(it, 2);
+
+  auto it2 = std::ranges::next(it, bound);
+  // *it2 == 3
+  // *it  == 1
+
+  auto it3 = std::ranges::next(it, 10, bound);
+  // *it3 == 3
+  // *it  == 1
+}
+```
+
 ### `std::ranges::prev`
+
+`std::ranges::prev()`は`std::prev()`のC++20バージョンです。基本的には渡されたイテレータを指定された分戻して返すものであることに変化はありません。
+
+この関数にはオーバーロードが3つあります。
+
+```cpp
+namespace std::ranges {
+  // iを1つ戻す
+  template<bidirectional_iterator I>
+  constexpr I prev(I i) {
+    --i;
+    return i;
+  }
+
+  // iをn戻す
+  template<bidirectional_iterator I>
+  constexpr I prev(I i, iter_difference_t<I> n) {
+    std::ranges::advance(i, -n);
+    return i;
+  }
+}
+```
+
+まず最初の2つはイテレータ`i`を`n`戻すものです。1つ目のイテレータのみを取るオーバーロードはイテレータを1つだけ戻します。
+
+```cpp
+#include <iterator>
+
+int main() {
+  // 何かしらの範囲オブジェクトとする
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::bidirectional_iterator auto it = std::ranges::advance(seq.begin(), 3);
+
+  auto it2 = std::ranges::prev(it);     // itを1戻す
+  // *it2 == 3
+  // *it  == 4
+
+  auto it3 = std::ranges::prev(it, 2);  // itを2戻す
+  // *it3 == 2
+  // *it  == 4
+}
+```
+
+この2つはこれまでの`std::prev()`とほぼ同様の振る舞いをします。`std::prev()`同様に、戻す距離`n`は戻したい数を指定するもので、負の値を指定すると戻るのではなく進むことになります。
+
+```cpp
+namespace std::ranges {
+  // iをboundまでの間でn戻す
+  template<input_or_output_iterator I, sentinel_for<I> S>
+  constexpr I prev(I i, iter_difference_t<I> n, S bound) {
+    std::ranges::advance(i, -n, bound);
+    return i;
+  }
+}
+```
+
+残りのオーバーロードは番兵`bound`を取るもので、`ranges::next()`同様に処理は`ranges::advance()`に委ねます。こちらには`bound`まで戻すオーバーロードは提供されません。なぜなら、`ranges::advance(i, bound)`が`bound`までの進行しか扱っていないためです。
+
+```cpp
+#include <iterator>
+
+int main() {
+  std::ranges::range auto seq = {1, 2, 3, 4};
+
+  std::bidirectional_iterator auto it = std::ranges::advance(seq.begin(), 3);
+  auto bound = seq.begin();
+  
+  auto it2 = std::ranges::prev(it, 10, bound);
+  // *it2 == 1
+  // *it  == 4
+}
+```
+
 ### `std::ranges::distance`
 
 ### ADLを無効化する関数定義
