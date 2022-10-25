@@ -5,8 +5,8 @@ date: 2022/08/14
 geometry:
   width: 188mm
   height: 263mm
-#coverimage: cover.jpg
-#backcoverimage: backcover.jpg
+coverimage: cover.jpg
+backcoverimage: backcover.jpg
 titlecolor:
   color1:
     r: 0.7882
