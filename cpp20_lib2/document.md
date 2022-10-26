@@ -1780,12 +1780,205 @@ int main() {
 
 ### ADLを無効化する関数定義
 
-## `counted_iterator`
+`advance(), next(), prev(), distance()`の4つの`ranges`関数には追加で特別な性質が規定されています。それは、あるコンテキストからこれらの関数名が見えているときに、ADLを無効化するという効果です。
+
+```cpp
+void foo() {
+  // std::ranges名前空間を取り込む
+  using namespace std::ranges;
+
+  std::vector<int> vec{1,2,3};
+  distance(begin(vec), end(vec)); // ranges::distance()が使用される
+}
+```
+
+このような`distance()`の呼び出しは、従来ならばADL経由で`std::distance()`を発見し、そちらの方がより特殊化されている（テンプレートパラメータ1つで2引数受けている）ため`std::distance()`が選択されていたはずです。しかし、`ranges::distance()`はそれが見えているコンテキストで同名に対するADLを無効化するため、`std::distance()`は一切考慮されることなく`ranges::distance()`が呼ばれます。この効果は見えていなければ働かないため、最初の`using namespace std::ranges`をコメントアウトすると`std::distance()`がADL経由で呼ばれます。
+
+これは、`std::ranges`にあるリファインされた関数を呼び出すつもりのところで意図せずに古い同名関数を呼び出さないようにするための仕組みです。
+
+この性質は通常の関数定義では実現不可能であり、通常これらの関数は関数オブジェクトとして実装されます。
+
+## 番兵型
+
+C++20では終端イテレータが番兵としてイテレータとは別に扱われるようになっています。それに伴って、汎用的な2つの番兵型が標準に用意されます。
+
+### `default_sentinel`
+
+`std::default_sentinel`は、汎用的に使用可能な番兵です。
+
+```cpp
+namespace std {
+  struct default_sentinel_t {};
+
+  inline constexpr default_sentinel_t default_sentinel{};
+}
+```
+
+これは主に、`std::default_sentinel_t`をイテレータや範囲を定義する際の番兵型として使用します。
+
+```cpp
+// 自作のイテレータ型とする
+struct my_iterator {
+  ...
+
+  using difference_type = std::ptrdiff_t;
+
+
+  // default_sentinel_tとの比較によって終端判定
+  friend bool operator==(const my_iterator& lhs, std::default_sentinel_t rhs) {
+    // 終端判定の処理
+    ...
+  }
+
+  // 2項-によって距離を求める
+  friend auto operator-(std::default_sentinel_t lhs, const my_iterator& rhs) -> difference_type {
+    // 距離計算の処理
+    ...
+  }
+  friend auto operator-(const my_iterator& lhs, std::default_sentinel_t rhs) -> difference_type {
+    return -(rhs - lhs);
+  }
+
+};
+```
+
+イテレータ型`I`に対して、`std::default_sentinel_t`との比較を定義することで`std::sentinel_for<I>`となり、`std::default_sentinel_t`との間で差分操作（`operator-`）を定義することで`std::sized_sentinel_for<I>`となります。
+
+なお、`operator==`はC++20一貫比較仕様によって逆順の`==`と対応する`!=`が導出されますが`operator-`にはそのような仕組みがなく、`std::sized_sentinel_for`は`-`に対して引数順を入れ替えたものも要求するため、番兵-イテレータとイテレータ-番兵の2パターンの定義が必要です。とはいえ、例にあるように一方はもう片方を利用することで簡単に実装できるはずです。
+
+`std::default_sentinel`はこのように定義したイテレータと番兵の比較や差分が必要な時の値として使用します。
+
+```cpp
+// 上記my_iteratorを使う処理
+auto use_myiter(my_iterator it) {
+  // default_sentinelとの比較
+  while (it != std::default_sentinel) {
+    ...
+
+    // 終端との間の距離の計算
+    auto d = std::default_sentinel - it;
+
+    ...
+  }
+}
+```
+
+標準ライブラリ内でも、後述する`std::counted_iterator`などで使用されています。
+
+### `unreachable_sentinel`
+
+`std::unreachable_sentinel`は、イテレータの終端チェックをスキップするために使用できる特殊な番兵型です。
+
+使用可能なところは非常に限られおり、イテレータを用いた検索など範囲を操作する際に、終端チェックとは別の条件によって、終端に到達する前に範囲の走査が終了することが確実にわかっている場合に使用できます。
+
+```cpp
+#include <iterator>
+
+// 文字範囲から'a'の位置を検索
+template<std::forward_iterator I>
+  requires std::same_as<std::iter_value_t<I>, char>
+auto search_a(I i) {
+  // 終端チェックがスキップされることで高速な検索が可能となりうる
+  // もし入力範囲に'a'が含まれていないと未定義動作
+  return std::ranges::find(i, std::unreachable_sentinel, 'a');
+}
+
+int main() {
+  // 'a'を必ず含む入力
+  std::string str = "unreachable_sentinel";
+
+  auto pos = search_a(str.begin());
+}
+```
+
+`std::unreachable_sentinel`の`operator==`は任意のイテレータとの比較が可能になっており、それは常に`false`を返します。
+
+```cpp
+namespace std {
+  struct unreachable_sentinel_t {
+    
+    // 任意のイテレータとの比較を可能とする
+    template<weakly_incrementable I>
+    friend constexpr bool operator==(unreachable_sentinel_t, const I&) noexcept { 
+      return false; // 終端チェックはいつも終端に到達しない
+    }
+  };
+
+  inline constexpr unreachable_sentinel_t unreachable_sentinel{};
+}
+```
+
+これによって、範囲`for`やアルゴリズムに隠れているものも含めたイテレータの終端チェック処理では常に`false`（`!=`を使用する場合`true`）が帰るため、最適化によってその比較を除去することが可能となります。
+
+ただし、実際の終端に到達してもイテレータの進行は止まらないため、事前条件（範囲の操作はその終端に到達する前に終了する）が満たされない場合は容易に未定義動作を引き起こすことになります。利用する際は慎重な検討が必要です。
+
+あるいは、イテレータから番兵を分離することでこういうことが可能になるという例の一つとして見るのが良いかもしれません・・・
 
 ## `common_iterator`
 
+`std::common_iterator`はイテレータ型と番兵型が異なる場合にそれらをラッピングすることで型を共通化するイテレータラッパです。これは主に、C++17以前の番兵型を考慮していないコードにイテレータ型と番兵型が異なるイテレータ範囲を入力するのに使用します。
 
-## 番兵型
+例えば、先ほどの`std::unreachable_sentinel`をC++17までのアルゴリズム関数で使用したいとします。
+
+```cpp
+#include <iterator>
+
+int main() {
+  // 'a'を必ず含む入力
+  std::string str = "unreachable_sentinel";
+
+  // そのままだと使用できない
+  auto pos = std::find(str.begin(), std::unreachable_sentinel, 'a');  // ng
+
+  using CI = std::common_iterator<std::string::iterator, std::unreachable_sentinel_t>;
+
+  // common_iteratorでラップする
+  CI it = str.begin();
+  CI end = std::unreachable_sentinel;
+
+  auto pos = std::find(it, end, 'a');  // ok
+}
+```
+
+そのまま渡すと、`std::find`のテンプレートパラメータは1つのパラメータでイテレータ範囲の先頭と終端を受けていることから、イテレータ型（`std::string::iterator`）と番兵型（`std::unreachable_sentinel_t`）が異なるためコンパイルエラーとなります。そこで、`std::common_iterator`を用いてそれらを包むことでイテレータ型を共通化することができ、このようなエラーを回避することができます。
+
+`std::common_iterator<I, S>`は`I`にイテレータ型、`S`に番兵型を指定し、`I, S`のオブジェクトどちらからも構築でき、どちらのオブジェクトも保持することができます。
+
+```cpp
+namespace std {
+  // common_iteratorの定義例
+  template<input_or_output_iterator I, sentinel_for<I> S>
+    requires (!same_as<I, S> && copyable<I>)
+  class common_iterator {
+    ...
+
+    constexpr common_iterator(I i); // イテレータを受ける
+
+    constexpr common_iterator(S s); // 番兵を受ける
+
+    ...
+
+  private:
+    variant<I, S> v_; // 説明専用メンバ
+  };
+}
+```
+
+`std::common_iterator`は専ら後方互換のためにあるものなので、イテレータ型`I`の性質をそのまま受け継ぐことはせず、最も強くても`forward_iterator`にしかなりません。`I`に`random_access_iterator`を指定した時でも`+ -`や比較は利用できず、`--`などで後退することもできなくなります。これは、`std::common_iterator<I, S>`をC++20イテレータとして扱ったときとも++17イテレータとして扱ったときも同じです。
+
+|利用可能な操作|意味|
+|---|---|
+|`*`|間接参照|
+|`->`|メンバアクセス|
+|`++`|インクリメント（進行）|
+|`==/!=`|終端チェック|
+|`-`|距離を求める|
+|`iter_move`|`I`の`iter_move`呼び出し|
+|`iter_swap`|`I`の`iter_swap`呼び出し|
+
+これらの操作のうち`->`と`-`は`I`（と`S`）で利用可能な場合にのみ有効化されます。
+
+## `counted_iterator`
 
 # コンテナ
 
