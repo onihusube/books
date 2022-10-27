@@ -1980,6 +1980,58 @@ namespace std {
 
 ## `counted_iterator`
 
+`std::counted_iterator`はイテレータを指定されたカウント数の範囲を指すものへと変換するイテレータラッパです。元の範囲の部分範囲を簡易に得る時に使用できます。
+
+```cpp
+#include <iterator>
+
+bool is_prime(int n) {
+  return /* 素数判定処理 */
+}
+
+int main() {
+  // 何かしらの範囲オブジェクトとする
+  std::ranges::range auto seq = {1, 3, 5, 7, 9, 11, 13, 15};
+
+  // seqの先頭から4要素を参照するイテレータを得る
+  std::counted_iterator it{std::ranges::begin(seq), 4};
+
+  // 範囲内の数値が全て素数かを調べる
+  bool b = std::ranges::all_of(it, std::default_sentinel, is_prime);
+  // b == true
+}
+```
+
+`std::counted_iterator`に対する番兵は`std::default_sentinel`であるため、終端イテレータを計算したり取得する必要がありません。元の範囲から部分範囲を得たい場合に、イテレータを取得してコピーして足して・・・のようなことをやるよりも簡易に同じことを達成できます。
+
+動作イメージは、コンストラクタに渡されたカウント値を内部で持っていて、進行（`++`）の度にカウントを1減らしていきます。カウントが`0`になったときに終端に到達し、`std::default_sentinel`との比較（`==`）が`true`を返すようになります。すなわち、コンストラクタに渡すカウント値は同時に渡すイテレータの参照する要素を含めた範囲の要素数（生成する部分範囲の長さ）を表しています。
+
+```cpp
+#include <iterator>
+
+int main() {
+  // 何かしらの範囲オブジェクトとする
+  std::ranges::range auto seq = {1, 3, 5, 7, 9, 11, 13, 15};
+
+  std::counted_iterator it{std::ranges::begin(seq), 3};
+  // 内部カウント : 3
+  
+  ++it;
+  // 内部カウント : 2
+  
+  it++;
+  // 内部カウント : 1
+  bool b1 = it == std::default_sentinel;
+  // b1 == false
+  
+  ++it;
+  // 内部カウント : 0
+
+  bool b2 = it == std::default_sentinel;
+  // b2 == true
+}
+```
+
 # コンテナ
 
 ## 連想コンテナ関連
