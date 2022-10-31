@@ -2143,6 +2143,56 @@ int main() {
 }
 ```
 
+非順序連想コンテナでも比較は同様ですが、ハッシュクラスを別に用意しなければなりません。ハッシュクラスの場合、異なる型の間での一貫したハッシュ計算を実装するのが困難そうですが、`std::string`を始めとする文字列の場合は入り口さえ用意すれば共通の処理によって計算可能です。
+
+```cpp
+struct string_hash {
+  using hash_type = std::hash<std::string_view>;
+
+  // 型はなんでもいいものの必須
+  using is_transparent = void;
+
+  // string_viewを介して文字列をハッシュ化
+  std::size_t operator()(std::string_view str) const {
+    return hash_type{}(str);
+  }
+};
+
+
+// ハッシュクラスと比較関数型を入れ替えたunordered_map
+template<typename Key, typename Value>
+using hetero_umap = std::map<Key, Value, string_hash, std::ranges::equal_to>;
+
+int main() {
+  hetero_umap<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3} };
+
+  // どちらも、直接比較によって検索される
+  bool b1 = map.find("1"sv) != map.end(); // ok
+  bool b2 = map.find("4") != map.end();   // ok
+}
+```
+
+このようにすることで、全ての連想コンテナにおいて用意されている透過的検索関数を有効化できます。
+
+このような透過的な検索を行う関数群のことを、*Heterogeneous (comparison) lookup*や*Heterogeneous Overload*と呼んだりもします。
+
+これらの*Heterogeneous Overload*はC++14以降徐々に連想コンテナ全体に対して波及しています。
+
+|関数|連想コンテナ|非順序連想コンテナ|備考|
+|---|---|---|---|
+|`find()`|C++14|C++20||
+|`count()`|C++14|C++20||
+|`lower_bound()`|C++14|C++20||
+|`upper_bound()`|C++14|C++20||
+|`equal_range()`|C++14|C++20||
+|`erase()`|C++23|C++23||
+|`extract()`|C++23|C++23||
+|`insert()`|C++26|C++26|非`multi`の`set`系のみ|
+|`insert_or_assign()`|C++26|C++26|非`multi`の`map`系のみ|
+|`try_emplace()`|C++26|C++26|非`multi`の`map`系のみ|
+|`operator[]`|C++26|C++26|非`multi`の`map`系のみ|
+|`bucket()`|-|C++26|非順序のみ|
+
 ### 比較の調整
 
 ## `erase/erase_if`
