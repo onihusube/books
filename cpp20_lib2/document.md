@@ -63,7 +63,7 @@ hello world!
 
 # イテレータ
 
-C++20では、コンセプトと`<ranges>`の導入に伴って、イテレータライブララリ（`<iterator>`）周りも大幅に改修されています。
+C++20では、コンセプトと`<ranges>`の導入に伴って、イテレータライブララリ周りも大幅に改修されています。特に明記しない場合、この章で紹介している機能は`<iterator>`ヘッダに配置されます。
 
 ## イテレータへの問合せ
 
@@ -1127,9 +1127,9 @@ auto example(I i1, I i2) {
 
 ## 射影関連のユーティリティ
 
-射影（*projection*）とは、イテレータの要素を引き当てる際にその方法を指定する関数の事です。例えば、`pair<T, U>`を要素とする範囲から`T`だけに注目したい場合に`pair<T, U> -> T&`のような関数を渡すことで要素の参照をカスタマイズします。これは、Rangeアルゴリズムにおいて活用されており、Rangeアルゴリズムでは引数列の最後の方で入力として使用する範囲のための射影を受け取るようになっています。
+射影（*projection*）とは、イテレータの要素を引き当てる際にその方法を指定する関数の事です。例えば、`pair<T, U>`を要素とする範囲から`T`だけに注目したい場合に`pair<T, U>& -> T&`のような関数を渡すことで要素の参照をカスタマイズします。これは、Rangeアルゴリズムにおいて活用されており、Rangeアルゴリズムでは引数列の最後の方で入力として使用する範囲のための射影を受け取るようになっています。
 
-射影に関する制約やデフォルトの提供のために関連するユーティリティが用意されます。
+そのため、射影に関する制約やデフォルトの提供のために関連するユーティリティが用意されます。
 
 ### 射影操作の結果型
 
@@ -1814,7 +1814,7 @@ namespace std {
 }
 ```
 
-これは主に、`std::default_sentinel_t`をイテレータや範囲を定義する際の番兵型として使用します。
+これは主に、`std::default_sentinel_t`をイテレータや範囲を定義する際の番兵型として使用し、実際の番兵値として`std::default_sentinel`を使用します。
 
 ```cpp
 // 自作のイテレータ型とする
@@ -1851,7 +1851,7 @@ struct my_iterator {
 ```cpp
 // 上記my_iteratorを使う処理
 auto use_myiter(my_iterator it) {
-  // default_sentinelとの比較
+  // default_sentinelとの比較による終端チェック
   while (it != std::default_sentinel) {
     ...
 
@@ -1874,20 +1874,15 @@ auto use_myiter(my_iterator it) {
 ```cpp
 #include <iterator>
 
-// 文字範囲から'a'の位置を検索
-template<std::forward_iterator I>
-  requires std::same_as<std::iter_value_t<I>, char>
-auto search_a(I i) {
-  // 終端チェックがスキップされることで高速な検索が可能となりうる
-  // もし入力範囲に'a'が含まれていないと未定義動作
-  return std::ranges::find(i, std::unreachable_sentinel, 'a');
-}
-
+// 文字範囲から'a'の位置を検索する例
 int main() {
   // 'a'を必ず含む入力
   std::string str = "unreachable_sentinel";
-
-  auto pos = search_a(str.begin());
+  
+  // 終端チェックがスキップされることで高速な検索が可能となりうる
+  // もし入力範囲に'a'が含まれていないと未定義動作
+  auto pos = std::ranges::find(i, std::unreachable_sentinel, 'a');
+  // *pos == 'a' （5文字目）
 }
 ```
 
@@ -1927,7 +1922,7 @@ int main() {
   // 'a'を必ず含む入力
   std::string str = "unreachable_sentinel";
 
-  // そのままだと使用できない
+  // 引数型が一致しないため、そのままだと使用できない
   auto pos = std::find(str.begin(), std::unreachable_sentinel, 'a');  // ng
 
   using CI = std::common_iterator<std::string::iterator, std::unreachable_sentinel_t>;
@@ -1940,7 +1935,7 @@ int main() {
 }
 ```
 
-そのまま渡すと、`std::find`のテンプレートパラメータは1つのパラメータでイテレータ範囲の先頭と終端を受けていることから、イテレータ型（`std::string::iterator`）と番兵型（`std::unreachable_sentinel_t`）が異なるためコンパイルエラーとなります。そこで、`std::common_iterator`を用いてそれらを包むことでイテレータ型を共通化することができ、このようなエラーを回避することができます。
+そのまま渡すと、`std::find`のテンプレートパラメータは1つのパラメータでイテレータ範囲の先頭と終端を受けていることから、イテレータ型（第1引数 `std::string::iterator`）と番兵型（第2引数 `std::unreachable_sentinel_t`）が異なるためコンパイルエラーとなります。そこで、`std::common_iterator`を用いてそれらを包むことでイテレータ型を共通化することができ、このようなエラーを回避することができます。
 
 `std::common_iterator<I, S>`は`I`にイテレータ型、`S`に番兵型を指定し、`I, S`のオブジェクトどちらからも構築でき、どちらのオブジェクトも保持することができます。
 
@@ -1964,7 +1959,9 @@ namespace std {
 }
 ```
 
-`std::common_iterator`は専ら後方互換のためにあるものなので、イテレータ型`I`の性質をそのまま受け継ぐことはせず、最も強くても`forward_iterator`にしかなりません。`I`に`random_access_iterator`を指定した時でも`+ -`や比較は利用できず、`--`などで後退することもできなくなります。これは、`std::common_iterator<I, S>`をC++20イテレータとして扱ったときとも++17イテレータとして扱ったときも同じです。
+`std::common_iterator`は専ら後方互換のためにあるものなので、イテレータ型`I`の性質をそのまま受け継ぐことはせず、最も強くても`forward_iterator`にしかなりません。`I`に`random_access_iterator`を指定した時でも`+ -`や比較は利用できず、`--`などで後退することもできなくなります。これは、`std::common_iterator<I, S>`をC++20イテレータとして扱ったときでも++17イテレータとして扱ったときでも変わりません。
+
+したがって、`std::common_iterator<I, S>`では基本的なイテレータ操作しか利用できません。
 
 |利用可能な操作|意味|
 |---|---|
@@ -2004,7 +2001,24 @@ int main() {
 
 `std::counted_iterator`に対する番兵は`std::default_sentinel`であるため、終端イテレータを計算したり取得する必要がありません。元の範囲から部分範囲を得たい場合に、イテレータを取得してコピーして足して・・・のようなことをやるよりも簡易に同じことを達成できます。
 
-動作イメージは、コンストラクタに渡されたカウント値を内部で持っていて、進行（`++`）の度にカウントを1減らしていきます。カウントが`0`になったときに終端に到達し、`std::default_sentinel`との比較（`==`）が`true`を返すようになります。すなわち、コンストラクタに渡すカウント値は同時に渡すイテレータの参照する要素を含めた範囲の要素数（生成する部分範囲の長さ）を表しています。
+```cpp
+namespace std {
+  // counted_iteratorの宣言例
+  template<input_or_output_iterator I>
+  class counted_iterator {
+    ...
+
+    // イテレータとカウントを受け取るコンストラクタ
+    constexpr counted_iterator(I x, iter_difference_t<I> n); 
+
+    ...
+  };
+}
+```
+
+`std::counted_iterator`はイテレータ型`I`をテンプレートパラメータとして指定しますが、コンストラクタ引数からのクラステンプレート実引数推定（C++17 CTAD）によって基本的にはテンプレートパラメータの指定を省略することができます。
+
+動作イメージは、コンストラクタに渡されたカウント値を出発点として、進行（`++`）の度にカウントを1減らしていきます。カウントが`0`になったときに終端に到達し、`std::default_sentinel`との比較（`==`）が`true`を返すようになります。すなわち、コンストラクタに渡すカウント値には、同時に渡すイテレータの位置も含めた範囲の要素数（生成する部分範囲の長さ）を渡すようにします。
 
 ```cpp
 #include <iterator>
@@ -2013,6 +2027,7 @@ int main() {
   // 何かしらの範囲オブジェクトとする
   std::ranges::range auto seq = {1, 3, 5, 7, 9, 11, 13, 15};
 
+  // seqの先頭から3要素を参照するイテレータ
   std::counted_iterator it{std::ranges::begin(seq), 3};
   // 内部カウント : 3
   
@@ -2031,6 +2046,12 @@ int main() {
   // b2 == true
 }
 ```
+
+ただし、`std::counted_iterator`は終端を通り越した場合のケアを特にしてくれません。終端チェックを省略して進行していると元の範囲の終端すら飛び越える危険性があります。
+
+`std::counted_iterator<I>`はイテレータ型`I`の性質を可能な限り継承しようとし、`std::counted_iterator<I>`のイテレータカテゴリは`I`のカテゴリと同じになります。例えば、`I`が`contiguous_iterator`の時でも`std::counted_iterator<I>`は`contiguous_iterator`となります。これによって、後退（`--`）や和による進行（`+ +=`）や添字（`[]`）などが`I`のカテゴリ次第で利用可能となります。
+
+ただし、`std::counted_iterator<I>`は、C++20イテレータとしてみた時は`I`のC++20イテレータとしての性質を、C++17イテレータとしてみた時はC++17イテレータとしての性質をそれぞれ継承します。もし`I`についてのそれらが異なる場合は`std::counted_iterator<I>`のそれら性質も異なることになります。
 
 # コンテナ
 
