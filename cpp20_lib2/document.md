@@ -2059,7 +2059,7 @@ int main() {
 
 ## 連想コンテナ関連
 
-ここでの連想コンテナとは次のものです
+連想コンテナとは次のものです
 
 - `std::set`
 - `std::map`
@@ -2104,7 +2104,7 @@ C++23では、この関数を任意の`range`に対して一般化した`std::ra
 
 透過的な検索とは、連想コンテナの要素検索（引き当て）時に、その`key_type`と異なる型のオブジェクトを渡して検索する機能です。
 
-C++14では、通常の連想コンテナ（`unordered`でないもの）の検索系関数に対してこの透過的検索サポートが追加されました。C++20では、非順序連想コンテナに対しても拡大されます。
+C++14では、順序付連想コンテナ（`unordered`でないもの）の検索系関数に対してこの透過的検索サポートが追加されました。C++20では、非順序連想コンテナ（`unordered`なもの）に対しても拡大されます。
 
 検索系関数とは次のものです
 
@@ -2148,7 +2148,7 @@ int main() {
 
 透過的な検索は、連想コンテナの比較関数型に`is_transparent`メンバ型が定義され、`key_type`と異なる型との比較をサポートしている必要があり、非順序連想コンテナではそれに加えてハッシュクラスに`is_transparent`メンバ型と`key_type`と異なる型のオブジェクトからの一貫したハッシュ生成をサポートしている必要があります。
 
-`unordered`ではない連想コンテナについては、`std::less<>`もしくは`std::ranges::less`などの比較関数を用いることで有効化できます。この2つ（及びその同種）は比較がテンプレートで定義されていてメンバ型に`is_transparent`を持っています。
+順序付連想コンテナについては、`std::less<>`もしくは`std::ranges::less`などの比較関数を用いることで有効化できます。この2つ（及びその同種）は比較がテンプレートで定義されていてメンバ型に`is_transparent`を持っています。
 
 ```cpp
 // 比較関数型にranges::lessを使用
@@ -2182,7 +2182,7 @@ struct string_hash {
 
 // ハッシュクラスと比較関数型を入れ替えたunordered_map
 template<typename Key, typename Value>
-using hetero_umap = std::map<Key, Value, string_hash, std::ranges::equal_to>;
+using hetero_umap = std::unordered_map<Key, Value, string_hash, std::ranges::equal_to>;
 
 int main() {
   hetero_umap<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3} };
@@ -2199,7 +2199,7 @@ int main() {
 
 これらの*Heterogeneous Overload*はC++14以降徐々に連想コンテナ全体に対して波及しています。
 
-|関数|連想コンテナ|非順序連想コンテナ|備考|
+|関数|順序付連想コンテナ|非順序連想コンテナ|備考|
 |---|---|---|---|
 |`find()`|C++14|C++20||
 |`count()`|C++14|C++20||
@@ -2214,7 +2214,52 @@ int main() {
 |`operator[]`|C++26|C++26|非`multi`の`map`系のみ|
 |`bucket()`|-|C++26|非順序のみ|
 
-### 比較の調整
+※ C++26予定のものはまだ確定していません。
+
+### 非順序連想コンテナの比較の調整
+
+これは非順序連想コンテナの比較演算子（`== !=`）に対する変更です。
+
+従来の非順序連想コンテナの比較演算子の規定では、2つの非順序連想コンテナ間の比較を行う際に、その比較関数型（`Pred`）とハッシュクラス（`Hash`）が同一の振る舞いをすることが求められており、そうならない場合は未定義動作とされていました。しかし、`Hash`に関しては異なるシードによってランダム化されたハッシュを用いるユースケースがあり、それは正当なものであるはずで、この規定はそのようなカスタムハッシュを排除していました。
+
+C++20からは、非順序連想コンテナの比較演算子においてハッシュクラスの振る舞いの同一性が要求されなくなり、そのようなカスタムハッシュの利用が可能となります。
+
+```cpp
+#include <unordered_map>
+// hash_combine()が使いたい
+#include <boost/unordered_map.hpp>
+
+// ハッシュをコンテナごとにランダム化
+template<typename T>
+struct randomized_hash {
+  // ランダムな攪乱用ハッシュ値
+  std::size_t seed = std::hash<unsigned int>{}(std::random_device{}());
+
+  std::size_t operator()(const T& v) const {
+    std::size_t h = 0;
+
+    // ランダムなハッシュ値と混合する
+    boost::hash_combine(h, std::hash<T>{}(v));
+    boost::hash_combine(h, seed);
+
+    return h;
+  }
+};
+
+template<typename Key, typename Value>
+using rnd_umap = std::unordered_map<Key, Value, randomized_hash<Key>>;
+
+int main() {
+  // 型は同じだが異なるハッシュを使用する
+  rnd_umap<std::string, int> map1 = { {"1", 1}, {"2", 2} };
+  rnd_umap<std::string, int> map2 = { {"1", 1}, {"2", 2} };
+
+  bool is_equal = map1 == map2; // ok
+  // is_equal == false
+}
+```
+
+これは厳密には、以前のバージョン（C++11）に対する欠陥の解決です。実際、ほとんどの処理系では当初の実装からこうなっていたようです。
 
 ## `erase/erase_if`
 
@@ -2320,5 +2365,6 @@ int main() {
 
 - cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
+- cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - C++マルチスレッド一巡り  
   (https://zenn.dev/yohhoy/books/cpp-stdlib-multithreading)
