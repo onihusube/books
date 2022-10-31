@@ -2055,11 +2055,164 @@ int main() {
 
 # コンテナ
 
+ここでは、標準ライブラリのうちコンテナ関連のC++20での追加や変更を見ていきます。
+
 ## 連想コンテナ関連
+
+ここでの連想コンテナとは次のものです
+
+- `std::set`
+- `std::map`
+- `std::multiset`
+- `std::multimap`
+- `std::unordered_set`
+- `std::unordered_map`
+- `std::unordered_multiset`
+- `std::unordered_multimap`
+
+特に記載がない場合、ここで紹介される機能はこれら全ての連想コンテナに対して追加されます。
 
 ### `.contains()`
 
+`.contains()`は、連想コンテナにある要素が含まれているかを調べる関数です。
+
+従来同じことをしようとすると`.find()`の戻り値を`.end()`と比較する、としなければならず少し手間がかかっていました。単に要素の存在チェックをしたいだけの場合は少し不便でしたが、それが解消されます。
+
+```cpp
+#include <set>
+
+int main() {
+  std::set set = {1, 3, 5, 7, 9};
+
+  // 従来の方法 
+  {
+    bool exists = set.find(5) != set.end();
+  }
+
+  // C++20から
+  {
+    bool exists = set.contains(5);
+  }
+}
+```
+
+これによって、やりたいことを簡潔に書くことができるとともに、`contains`というわかりやすい名前がついていることによってやっていることが明確になります。
+
+C++23では、この関数を任意の`range`に対して一般化した`std::ranges::contains`アルゴリズムが追加されます。
+
 ### 透過的な検索
+
+透過的な検索とは、連想コンテナの要素検索（引き当て）時に、その`key_type`と異なる型のオブジェクトを渡して検索する機能です。
+
+C++14では、通常の連想コンテナ（`unordered`でないもの）の検索系関数に対してこの透過的検索サポートが追加されました。C++20では、非順序連想コンテナに対しても拡大されます。
+
+検索系関数とは次のものです
+
+- `.find()`
+- `.count()`
+- `.lower_bound()`
+- `.upper_bound()`
+- `.equal_range()`
+
+例えば、`std::map::find()`は次の2つのオーバーロードがC++14からあります
+
+```cpp
+// 通常の検索
+iterator find(const key_type& x);
+
+// 透過的検索
+template <class K>
+iterator find(const K& x);
+```
+
+この2つ目のテンプレート`.find()`が透過的検索を行うための関数で、連想コンテナのキー型（`key_type`）と異なる型のオブジェクトをとって検索を行うことができます。これによって、そのようなことをしたい場合に`key_type`に一度変換してから渡す必要性がなくなり、利便性が増すとともに不要なオブジェクトの構築を回避することで効率化できます。
+
+おそらくこのことは、`std::string`をキーとする連想コンテナを使用する際によく出会うことになるでしょう。
+
+```cpp
+#include <map>
+
+using namespace std::literals;
+
+int main() {
+  std::map<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3}};
+
+  bool b1 = map.find("1"sv) != map.end(); // ng
+  bool b2 = map.find("4") != map.end();   // ok、ただし一時オブジェクトが作成されている
+}
+```
+
+`std::string_view`から`std::string`の変換は、暗黙的なアロケーションが伴うこともあって暗黙変換が禁止されており、それによってエラーになります。文字列リテラルを渡す方はコンパイルは通りますが、`std::string`の一時オブジェクトが作成されており、非効率になっています。
+
+これは非順序連想コンテナにおいても同様で、透過的な検索はこのような問題を回避しこの例のどちらも一時オブジェクトの作成を回避して意図通りになるようにするものですが、そのままC++20でコンパイルしても同じ結果になります。透過的な検索を有効化するには追加の手続きが必要となるためです。
+
+透過的な検索は、連想コンテナの比較関数型に`is_transparent`メンバ型が定義され、`key_type`と異なる型との比較をサポートしている必要があり、非順序連想コンテナではそれに加えてハッシュクラスに`is_transparent`メンバ型と`key_type`と異なる型のオブジェクトからの一貫したハッシュ生成をサポートしている必要があります。
+
+`unordered`ではない連想コンテナについては、`std::less<>`もしくは`std::ranges::less`などの比較関数を用いることで有効化できます。この2つ（及びその同種）は比較がテンプレートで定義されていてメンバ型に`is_transparent`を持っています。
+
+```cpp
+// 比較関数型にranges::lessを使用
+template<typename Key, typename Value>
+using hetero_map = std::map<Key, Value, std::ranges::less>;
+
+int main() {
+  hetero_map<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3}};
+
+  // どちらも、直接比較によって検索される
+  bool b1 = map.find("1"sv) != map.end(); // ok
+  bool b2 = map.find("4") != map.end();   // ok
+}
+```
+
+非順序連想コンテナでも比較は同様ですが、ハッシュクラスを別に用意しなければなりません。ハッシュクラスの場合、異なる型の間での一貫したハッシュ計算を実装するのが困難そうですが、`std::string`を始めとする文字列の場合は入り口さえ用意すれば共通の処理によって計算可能です。
+
+```cpp
+struct string_hash {
+  using hash_type = std::hash<std::string_view>;
+
+  // 型はなんでもいいものの必須
+  using is_transparent = void;
+
+  // string_viewを介して文字列をハッシュ化
+  std::size_t operator()(std::string_view str) const {
+    return hash_type{}(str);
+  }
+};
+
+
+// ハッシュクラスと比較関数型を入れ替えたunordered_map
+template<typename Key, typename Value>
+using hetero_umap = std::map<Key, Value, string_hash, std::ranges::equal_to>;
+
+int main() {
+  hetero_umap<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3} };
+
+  // どちらも、直接比較によって検索される
+  bool b1 = map.find("1"sv) != map.end(); // ok
+  bool b2 = map.find("4") != map.end();   // ok
+}
+```
+
+このようにすることで、全ての連想コンテナにおいて用意されている透過的検索関数を有効化できます。
+
+このような透過的な検索を行う関数群のことを、*Heterogeneous (comparison) lookup*や*Heterogeneous Overload*と呼んだりもします。
+
+これらの*Heterogeneous Overload*はC++14以降徐々に連想コンテナ全体に対して波及しています。
+
+|関数|連想コンテナ|非順序連想コンテナ|備考|
+|---|---|---|---|
+|`find()`|C++14|C++20||
+|`count()`|C++14|C++20||
+|`lower_bound()`|C++14|C++20||
+|`upper_bound()`|C++14|C++20||
+|`equal_range()`|C++14|C++20||
+|`erase()`|C++23|C++23||
+|`extract()`|C++23|C++23||
+|`insert()`|C++26|C++26|非`multi`の`set`系のみ|
+|`insert_or_assign()`|C++26|C++26|非`multi`の`map`系のみ|
+|`try_emplace()`|C++26|C++26|非`multi`の`map`系のみ|
+|`operator[]`|C++26|C++26|非`multi`の`map`系のみ|
+|`bucket()`|-|C++26|非順序のみ|
 
 ### 比較の調整
 
