@@ -2263,7 +2263,102 @@ int main() {
 
 ## `erase/erase_if`
 
+`std::erase()`、`std::erase_if()`は任意のコンテナから要素を削除する関数です。この関数はすべてのコンテナに対して特殊化されていて、コンテナごとに最適な削除処理を行うことができます。
+
+コンテナ型を`C`とすると、おおよそ次のように宣言されています。
+
+```cpp
+namespace std {
+  template<class T, class U>
+  constexpr typename C::size_type
+    erase(C& c, const U& v);
+    
+  template <class T, class Predicate>
+  constexpr typename C::size_type
+    erase_if(C& c, Predicate pred);
+}
+```
+
+ここでの`C`は説明のためのもので、テンプレートパラメータではありません。
+
+`std::erase(c, v)`はコンテナ`c`から値`v`と同じ要素を削除し、`std::erase_if(c, pred)`はコンテナ`c`から述語`pred`が`true`を返す要素を削除します。戻り値はどちらも、削除した要素数を返します。
+
+```cpp
+#include <vector>
+#include <list>
+
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6};
+  std::list list = {1, 2, 3, 4, 5, 6};
+
+  // 6を削除
+  auto n1 = std::erase(vec, 6);
+  auto n2 = std::erase(list, 6);
+  // n1 == n2 == 1
+
+  auto even = [](int n) { return n % 2 == 0; };
+
+  // 偶数を削除
+  auto n3 = std::erase_if(vec, even);
+  auto n4 = std::erase_if(list, even);
+  // n3 == n4 == 2
+}
+```
+
+従来コンテナの削除処理はコンテナごとに最適な方法がまちまちでした。例えば`std::vector`ではErase-Removeイディオムが使用される一方で、`std::list`ではメンバ関数`.erase()`を使用し、連想コンテナでは先頭から見ていく必要があったりしました。
+
+`std::erase()`、`std::erase_if()`は上記例のように削除処理をコンテナ型によらず統一的に書きつつ、実際の処理は各コンテナ型に合わせて最適な方法で実行してくれるものです。
+
+なお、コンテナ型に`std::string`が含まれている一方で、`std::erase()`は連想コンテナに対しては用意されません。
+
 ## `to_array()`
+
+`std::to_array()`は、生配列を`std::array`に変換するキャスト関数です。
+
+```cpp
+#include <array>
+
+int main() {
+  // CTADによって推論されるもののcharの配列にならない
+  std::array a1 = {"array"};
+  // decltype(a1) : std::array<const char*, 1>  
+
+  // charの配列として変換
+  std::array a2 = std::to_array("array");
+  // decltype(a2) : std::array<char, 6>
+
+  std::array a3 = std::to_array({1, 2, 3});
+  // decltype(a3) : std::array<int, 3>
+
+  // 要素型の変換
+  std::array a4 = std::to_array<short>({1, 2, 3});
+  // decltype(a4) : std::array<short, 3>
+  
+  // 集成体の配列の作成
+  std::array a5 = std::to_array<std::array<int, 1>>({{1}, {2}});
+  // decltype(a5) : std::array<std::array<int, 1>, 2>
+}
+```
+
+基本的には`std::to_array(arr)`のように生配列`arr`をそのまま渡して使用しますが、`std::to_array<T>(arr)`のようにして変換後の`std::array<T, N>`の要素型`T`を指定し、要素型の変換を同時に行うこともできます。
+
+この例はすべて右辺値ですが、左辺値の入力に対しては要素をコピーして`std::array`を作成します。
+
+```cpp
+#include <array>
+
+int main() {
+  int raw_arr[] = {1, 2, 3};
+  
+  // 各要素をコピーして変換
+  std::array arr = std::to_array(raw_arr);
+  // decltype(arr) : std::array<int, 3>
+}
+```
+
+文字列リテラルを`char`の配列として扱いたいときや関数から配列を返したいときなどに役立つかもしれません。`return std::to_array(arr);`とする場合は、コピー省略が働くことも期待できます。
+
+なお、`std::to_array()`は1次元配列専用で、多次元配列には非対応です。
 
 ## `ssize()`
 
