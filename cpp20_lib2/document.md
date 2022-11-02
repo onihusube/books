@@ -2226,8 +2226,11 @@ C++20からは、非順序連想コンテナの比較演算子においてハッ
 
 ```cpp
 #include <unordered_map>
-// hash_combine()が使いたい
-#include <boost/unordered_map.hpp>
+
+// ハッシュを混ぜる
+void hash_combine(std::size_t& seed, std::size_t hash) {
+  seed ^= hash + 0x9e3779b97f4a7c15llu + (seed << 12) + (seed >> 4);
+}
 
 // ハッシュをコンテナごとにランダム化
 template<typename T>
@@ -2239,8 +2242,8 @@ struct randomized_hash {
     std::size_t h = 0;
 
     // ランダムなハッシュ値と混合する
-    boost::hash_combine(h, std::hash<T>{}(v));
-    boost::hash_combine(h, seed);
+    hash_combine(h, std::hash<T>{}(v));
+    hash_combine(h, seed);
 
     return h;
   }
@@ -2362,7 +2365,88 @@ int main() {
 
 ## `ssize()`
 
-## リストの一部メンバ関数の戻り値型変更
+`std::ssize()`はコンテナの要素数を符号付き整数型で取得するものです。これは、`<iterator>`に配置されます。
+
+```cpp
+#include <iterator>
+
+int main() {
+  std::vector vec = {1, 2, 3};
+
+  // size()は符号無し整数型で取得
+  std::signed_integral   auto l1 = std::size(vec);
+  // ssize()は符号付き整数型で取得
+  std::unsigned_integral auto l2 = std::ssize(vec);
+  // l1 == l2 == 3
+}
+```
+
+これは、`std::size()`及びコンテナの`.size()`が符号無し整数型を返しているのが問題となる場合にそれを簡単に回避するためのものです。
+
+コンテナの要素のイテレーションには範囲`for`が利用されますが、インデックスを取得したいなどの事情によって通常の`for`文を使用することもあります。その場合、要素数分ループするためにコンテナの`.size()`から要素数を取得してループの終了条件を指定するコードがよく書かれます。一方で、ループのインデックスには単に`int`などの符号付き整数が使用されます。
+
+```cpp
+// 連続して同じ要素が並んでいる箇所がある場合にtrueを返す関数
+template<typename C>
+bool has_repeated_values(const C& container) {
+  // インデックスが欲しいので通常のforを使用
+  for (int i = 0; i < container.size() - 1; ++i) {
+    //                ^^^^^^^^^^^^^^^^^^^^
+    if (container[i] == container[i + 1]) return true;
+  }
+  return false;
+}
+```
+
+この場合に`container`の要素数が0だと何が起こるでしょうか？`0ull - 1`は`std::size_t`の最大値を返し、ループはコンテナ範囲を大きく超えてイテレートしようとします。つまりバッファオーバーランが起こります。
+
+仮に`.size() - 1`をしていなくても、符号付き整数（`i`）と符号無し整数（`.size()`）の比較は暗黙変換が入った結果意図通りにならなくなる場合があり危険なので、多くのコンパイラはここに警告を発します。警告を抑制しようとすると、`.size()`を`static_cast<int>()`とかしなければならず、かなり面倒になります。
+
+このような時に`std::ssize()`を使用すると、それらの問題を回避し意図通りの振る舞いを手に入れることができます。
+
+```cpp
+// 連続して同じ要素が並んでいる箇所がある場合にtrueを返す関数
+template<typename C>
+bool has_repeated_values(const C& container) {
+  // インデックスが欲しいので通常のforを使用
+  for (int i = 0; i < std::ssize(container) - 1; ++i) {
+    if (container[i] == container[i + 1]) return true;
+  }
+  return false;
+}
+```
+
+`std::ssize()`の使用によって`container`の要素数が0の時も、`0ll - 1`は`-1`になり、正の整数値`i`との比較は`false`となるため意図通りにループは終了します。
+
+## リストの削除関数の戻り値型変更
+
+リストとは`std::list`と`std::forward_list`のことで、削除関数とは次の3つのことです
+
+- `.remove()`
+    - 指定された要素を削除
+- `.remove_if()`
+    - 条件に合う要素を削除
+- `.unique()`
+    - 重複している要素を削除
+
+これらの関数はどれも要素の削除を行うものでC++17までは戻り値なしでしたが、C++20からは削除された要素数を返すようになります。
+
+```cpp
+#include <forward_list>
+
+int main() {
+  std::forward_list li = {1, 2, 2, 3};
+
+  bool removed = li.unique() != 0ull;
+  // removed == true
+}
+```
+
+これによって、これらの関数では実際に削除が行われたかどうか？を簡単に確認できるようになります。
+
+C++17までは、これら削除操作の前にコンテナの要素数（`.size()`）を保存しておいて削除後に比較、とすることでチェックすることができました。しかし、`std::forward_list`はその要素数を定数時間で求めることができないため、同様の方法だと非効率になり得ます。これらの削除操作が削除した要素数を返すようにすることで、`std::forward_list`においても効率的に、かつ単純に削除が行われたかどうかを検出できるようにされました。
+
+`std::list`にも変更が及んだのは、リストという種類のコンテナの操作について一貫性を重視したためです。
 
 # アルゴリズム
 
@@ -2385,6 +2469,8 @@ int main() {
 ## `starts_with/ends_with`
 
 ## `reserve()`の縮小機能の廃止
+
+## `char8_t/char`文字列の相互変換
 
 # `std::atomic`
 
@@ -2463,3 +2549,4 @@ int main() {
 - cppmap(https://cppmap.github.io/ : ライセンスはCC0 パブリックドメイン)
 - C++マルチスレッド一巡り  
   (https://zenn.dev/yohhoy/books/cpp-stdlib-multithreading)
+- C++の64bit版のhash_combine(https://suzulang.com/cpp-64bit-hash-combine/)
