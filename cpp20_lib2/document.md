@@ -2451,6 +2451,86 @@ C++17までは、これら削除操作の前にコンテナの要素数（`.size
 # アルゴリズム
 
 ## `shift_left/shift_right`
+
+`std::shift_left/std::shift_right`アルゴリズムは、範囲の要素を左/右に指定した数だけシフトさせる（ずらす）ものです。
+
+```cpp
+// 宣言例
+namespace std {
+  template<class ForwardIterator>
+  constexpr ForwardIterator
+    shift_left(ForwardIterator first,
+               ForwardIterator last,
+               typename iterator_traits<ForwardIterator>::difference_type n);
+
+  template<class ForwardIterator>
+  constexpr ForwardIterator
+    shift_right(ForwardIterator first,
+                ForwardIterator last,
+                typename iterator_traits<ForwardIterator>::difference_type n);
+}
+```
+
+`ForwardIterator`と指定されている通り、どちらも入力は最低でも*forward iterator*である必要があります。第3引数`n`に正の値でシフト量を指定します。
+
+```cpp
+#include <algorithm>
+
+int main() {
+  using std::ranges::subrange;
+
+  {
+    std::vector vec = {1, 2, 3, 4, 5};
+
+    // 戻り値はシフト後の終端位置
+    auto end = std::shift_left(vec.begin(), vec.end(), 2);
+
+    for (int n : subrange{vec.begin(), end}) {
+      std::cout << n << ", ";
+    }
+  }
+  std::cout << '\n';
+  {
+    std::vector vec = {1, 2, 3, 4, 5};
+
+    // 戻り値はシフト後の開始位置
+    auto begin = std::shift_right(vec.begin(), vec.end(), 2);
+
+    for (int n : subrange{begin, vec.end()}) {
+      std::cout << n << ", ";
+    }
+  }
+}
+```
+
+```{style=planetext}
+3, 4, 5, 
+1, 2, 3, 
+```
+
+このアルゴリズムは循環シフトではないため、範囲外に出た値は捨てられ、シフト後の左端/右端`n`の領域は未規定の状態（ムーブ後オブジェクト）となります。戻り値はシフト後の無効領域と有効領域の境界を指すイテレータが返され、シフト後範囲へのアクセスのために使用できます。
+
+また、`n`は符号付き整数なので負の値を指定できますが、負の値に対しては何もせず、逆向きにシフトしたりはしません。
+
+`std::shift_left/std::shift_right`の動作例（結果のみ）
+
+```{style=planetext}
+input : [1, 2, 3, 4, 5]
+
+shift_left(1)   : [2, 3, 4, 5, ?]
+shift_right(1)  : [?, 1, 2, 3, 4]
+shift_left(4)   : [5, ?, ?, ?, ?]
+shift_right(4)  : [?, ?, ?, ?, 1]
+shift_left(0)   : [1, 2, 3, 4, 5]
+shift_right(0)  : [1, 2, 3, 4, 5]
+shift_left(-1)  : [1, 2, 3, 4, 5]
+shift_right(-1) : [1, 2, 3, 4, 5]
+```
+
+?になっているところは未規定の状態です。アクセスしないようにしましょう。
+
+なお、これには対応するRangeアルゴリズム（`std::ranges`名前空間のもの）がC++20時点では提供されず、C++23から利用可能になります。導入がほぼ同時期だったので漏れてしまったようです。一方で、並列アルゴリズム（第1引数で`ExecutionPolicy`を取るもの）は利用可能です。
+
 ## `lexicographical_compare_three_way`
 ## `midpoint`
 ## `lerp`
