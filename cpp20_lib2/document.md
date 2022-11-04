@@ -2510,7 +2510,7 @@ int main() {
 
 このアルゴリズムは循環シフトではないため、範囲外に出た値は捨てられ、シフト後の左端/右端`n`の領域は未規定の状態（ムーブ後オブジェクト）となります。戻り値はシフト後の無効領域と有効領域の境界を指すイテレータが返され、シフト後範囲へのアクセスのために使用できます。
 
-また、`n`は符号付き整数なので負の値を指定できますが、負の値に対しては何もせず、逆向きにシフトしたりはしません。
+`n`は符号付き整数なので負の値を指定できますが、負の値の指定はこれらの関数の事前条件違反で未定義動作となります。`n`の型がイテレータの`difference_type`なのは、イテレータが*bidirectional*である時に`std::prev()`による最適化が可能で、その引数型に合わせるためのようです。
 
 `std::shift_left/std::shift_right`の動作例（結果のみ）
 
@@ -2523,8 +2523,6 @@ shift_left(4)   : [5, ?, ?, ?, ?]
 shift_right(4)  : [?, ?, ?, ?, 1]
 shift_left(0)   : [1, 2, 3, 4, 5]
 shift_right(0)  : [1, 2, 3, 4, 5]
-shift_left(-1)  : [1, 2, 3, 4, 5]
-shift_right(-1) : [1, 2, 3, 4, 5]
 ```
 
 ?になっているところは未規定の状態です。アクセスしないようにしましょう。
@@ -2532,6 +2530,87 @@ shift_right(-1) : [1, 2, 3, 4, 5]
 なお、これには対応するRangeアルゴリズム（`std::ranges`名前空間のもの）がC++20時点では提供されず、C++23から利用可能になります。導入がほぼ同時期だったので漏れてしまったようです。一方で、並列アルゴリズム（第1引数で`ExecutionPolicy`を取るもの）は利用可能です。
 
 ## `lexicographical_compare_three_way`
+
+`std::lexicographical_compare_three_way`は2つの範囲を辞書式順序（*lexicographical order*）によって三方比較するアルゴリズムです。
+
+```cpp
+namespace std {
+  template<class InputIterator1, class InputIterator2, class Cmp>
+  constexpr auto
+    lexicographical_compare_three_way(InputIterator1 b1, InputIterator1 e1,
+                                      InputIterator2 b2, InputIterator2 e2,
+                                      Cmp comp)
+      -> decltype(comp(*b1, *b2));
+
+  template<class InputIterator1, class InputIterator2>
+  constexpr auto
+    lexicographical_compare_three_way(InputIterator1 b1, InputIterator1 e1,
+                                      InputIterator2 b2, InputIterator2 e2);
+}
+```
+
+辞書式順序とは、2つの範囲の先頭から対応する要素を比較していき、最初に異なる要素の順序によって2つの範囲の順序付けを行う方法です。この比較は三方比較（`<=>`）によるため、戻り値は`<compare>`にある3つの比較カテゴリ型のいずれかの値として得られます（`bool`値ではありません）。
+
+そのため、一番最後の引数で比較をカスタマイズできますが、その戻り値型は`bool`ではなく比較カテゴリ型である必要があります。
+
+```cpp
+#include <algorithm>
+
+void str_cmp(std::string_view lhs, std::string_view rhs) {
+  auto comp = std::lexicographical_compare_three_way(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+
+  std::cout << "> : " << (comp > 0) << std::endl;
+  std::cout << "= : " << (comp == 0) << std::endl;
+  std::cout << "< : " << (comp < 0) << std::endl;
+}
+
+int main() {
+  std::cout << std::boolalpha;
+
+  str_cmp("abc", "abcd");
+  std::cout << "---\n";
+  str_cmp("abcd", "abc");
+  std::cout << "---\n";
+  str_cmp("abc", "abc");
+}
+```
+
+```{style=planetext}
+> : false
+= : false
+< : true
+---
+> : true
+= : false
+< : false
+---
+> : false
+= : true
+< : false
+```
+
+ただし、処理としては、2つの入力範囲のうち短い方を基準として要素の比較を行っていき、全て等しかった場合に長さの比較を行うため、長さが短い方が常に小さくなるとは限りません。
+
+```cpp
+#include <algorithm>
+
+...
+
+int main() {
+  std::cout << std::boolalpha;
+
+  str_cmp("bbc", "abcd");
+}
+```
+
+```{style=planetext}
+> : true
+= : false
+< : false
+```
+
+なお、このアルゴリズムに対応するRangeアルゴリズムおよび並列アルゴリズムは提供されません。
+
 ## `midpoint`
 ## `lerp`
 ## `std::execution::unseq`
