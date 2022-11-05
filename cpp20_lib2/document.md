@@ -2098,6 +2098,8 @@ int main() {
 
 これによって、やりたいことを簡潔に書くことができるとともに、`contains`というわかりやすい名前がついていることによってやっていることが明確になります。
 
+なお、`.contains()`の計算量は`find()`と同じ（要素数`N`として、`unordered`なら定数or最悪`O(N)`、それ以外なら`N`に対して対数）になります。
+
 C++23では、この関数を任意の`range`に対して一般化した`std::ranges::contains`アルゴリズムが追加されます。
 
 ### 透過的な検索
@@ -2213,6 +2215,7 @@ int main() {
 |`try_emplace()`|C++26|C++26|非`multi`の`map`系のみ|
 |`operator[]`|C++26|C++26|非`multi`の`map`系のみ|
 |`bucket()`|-|C++26|非順序のみ|
+|`contains()`|C++20|C++20|C++20で追加|
 
 ※ C++26予定のものはまだ確定していません。
 
@@ -2643,6 +2646,98 @@ int main() {
 ただし、これは指定されたポリシーに基づく並列化を許可するものであって、必ずその並列化が行われるわけではありません。
 
 ## `midpoint`
+
+`std::midpoint()`は2つの数値の中点を求めるものです。
+
+```cpp
+namespace std {
+  template <class T>
+  constexpr T midpoint(T a, T b) noexcept; 
+}
+```
+
+`std::midpoint(a, b)`のように使用して、`a`と`b`の間の真ん中の値を返します。`T`には数値型かポインタ型（同じ配列内のものに限る）が使用可能です。
+
+```cpp
+#include <numeric>
+
+int main() {
+  {
+    int a = 0;
+    int b = 10;
+
+    int m = std::midpoint(a, b);
+
+    std::cout << m << '\n';
+  }
+  {
+    int a = 0;
+    int b = 9;
+
+    int m = std::midpoint(a, b);
+
+    std::cout << m << '\n';
+  }
+  {
+    double a = 1.0;
+    double b = 2.0;
+
+    double m = std::midpoint(a, b);
+
+    std::cout << m << '\n';
+  }
+}
+```
+
+```{style=planetext}
+5
+4
+1.5
+```
+
+整数型で結果が実数値になる場合は、`a`の側に丸められます。
+
+このような数値の中点を求めることはそう難しい計算ではなく、`(a + b)/2`が一番すぐ思いつきます。にも関わらずこの関数が用意されているのは、オーバーフローや数値誤差、負の数、非正規化数等々、実際のプログラミングにおいて考慮しなければならないことをライブラリ側でハンドリングするためです。
+
+```cpp
+#include <numeric>
+
+// 単純midpoint実装
+template<typename T>
+T midpoint(T a, T b) {
+  return (a + b) / T(2.0);
+}
+
+int main() {
+  {
+    // 10億と15億
+    int a = 1000000000;
+    int b = 1500000000;
+
+    auto m1 = std::midpoint(a, b);
+    auto m2 = midpoint(a, b); // UB
+
+    std::cout << m1 << " : " << m2 << '\n';
+  }
+  {
+    double a = DBL_MAX - 1;
+    double b = DBL_MAX;
+
+    auto m1 = std::midpoint(a, b);
+    auto m2 = midpoint(a, b);
+
+    std::cout << m1 << " : " << m2 << '\n';
+  }
+}
+```
+
+```{style=planetext}
+1250000000 : -897483648
+1.79769e+308 : inf
+```
+
+中点を求めるという単純な処理はしかし、数値型のハードウェア実装の都合などによってかなり奥が深い処理です。CppCon2019では、`std::midpoint()`の紹介と解説で1時間費やした発表が行われています（検索するとYotubeで見つかるでしょう）。
+
 ## `lerp`
 
 # 関数オブジェクト
