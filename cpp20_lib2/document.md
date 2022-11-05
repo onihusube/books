@@ -2647,9 +2647,10 @@ int main() {
 
 ## `midpoint`
 
-`std::midpoint()`は2つの数値の中点を求めるものです。
+`std::midpoint()`は2つの数値の中点を求めるものです。これは`<numeric>`に配置されています。
 
 ```cpp
+// <numeric>内
 namespace std {
   template <class T>
   constexpr T midpoint(T a, T b) noexcept; 
@@ -2739,6 +2740,51 @@ int main() {
 中点を求めるという単純な処理はしかし、数値型のハードウェア実装の都合などによってかなり奥が深い処理です。CppCon2019では、`std::midpoint()`の紹介と解説で1時間費やした発表が行われています（検索するとYotubeで見つかるでしょう）。
 
 ## `lerp`
+
+`std::lerp()`は、2つの浮動小数点数値間の値の線形補完を行う関数です。これは、`<cmath>`に配置されています。
+
+```cpp
+namespace std {
+  constexpr double lerp(double a, double b, double t) noexcept;
+}
+```
+
+他にも`float`と`long double`のオーバーロードがありますが、これは浮動小数点数型に対するもののみが提供されます。
+
+
+`std::lerp(a, b, t)`のように使用して、`a`と`b`の間を1としたときの時刻`t`の値を求めます。
+
+```cpp
+#include <cmath>
+
+int main() {
+  double a = 1.0;
+  double b = 10.0;
+
+  std::cout << std::fixed << std::setprecision(2);
+  std::cout << std::lerp(a, b, 0.0) << '\n';
+  std::cout << std::lerp(a, b, 0.1) << '\n';
+  std::cout << std::lerp(a, b, 0.5) << '\n';
+  std::cout << std::lerp(a, b, 0.75) << '\n';
+  std::cout << std::lerp(a, b, 1.0) << '\n';
+
+  // tは1を超えていてもok
+  std::cout << std::lerp(a, b, 1.1) << '\n';
+  std::cout << std::lerp(a, b, 1.5) << '\n';
+}
+```
+
+```{style=planetext}
+1.00
+1.90
+5.50
+7.75
+10.00
+10.90
+14.50
+```
+
+このような処理は線形補完としてよく知られており、これは`a + t * (b - a)`などとして簡単に求めることができそうに思えます。しかし実際には。`std::midpoint()`のように考慮すべきこと（数値誤差やオーバーフロー、非正規化数など）が多いため、それらをハンドリングするライブラリ機能として提供されます。
 
 # 関数オブジェクト
 
