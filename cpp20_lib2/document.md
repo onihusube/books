@@ -2790,6 +2790,30 @@ int main() {
 
 ## `reference_wrapper`の不完全型対応
 
+`std::reference_wrapper<T>`は`T`の参照オブジェクトを作成するためのクラスで、C++11で追加されました。導入当初から`T`には完全型（定義が見えている型）が要求されていましたが、C++20からはそれがなくなり、不完全型を使用可能になります。
+
+```cpp
+#include <functional>
+
+// 定義はどこか別の場所にある
+struct S;
+
+// 定義はどこか別の場所にある
+auto get_S() -> S&;
+
+// Sのreference_wrapperを受け取る関数、定義はどこか
+void f(std::reference_wrapper<S>);  // ok、C++17まではng
+
+int main() {
+  std::reference_wrapper<S> rws = get_S();  // ok、C++17まではng
+  f(rws); // ok
+}
+```
+
+このように、型がライブラリ内部など別の翻訳単位内で定義されている場合や、同じ翻訳単位でも定義が後から現れる場合などに`std::reference_wrapper<T>`を使用することができるようになります。ただし、`.get()`や暗黙変換による生参照の取得までは大丈夫ですが、`operator()`を呼び出そうとすると完全型が要求されます。
+
+なお、どうやら一部の実装では最初からこれが可能な実装になっていたらしく、C++17でもエラーにならないかもしれません。
+
 ## `unwrap_reference`
 
 ## `bind_front`
