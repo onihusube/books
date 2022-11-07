@@ -2816,6 +2816,52 @@ int main() {
 
 ## `bind_front`
 
+`std::bind_front()`は関数呼び出し可能なものとその引数を前方のものから順番に受けて、部分適用した関数オブジェクトを返す関数です。
+
+```cpp
+#include <functional>
+
+// コールバック関数型
+using callback = std::function<void(int, std::error_code&)>;
+
+// ライブラリのコールバック関数登録処理
+void register_callback(callback);
+
+// コールバック処理を実装する型
+struct S {
+
+  // コールバック処理、非const関数
+  void callback_impl(std::string_view, std::string_view, int, std::error_code&) {
+    ...
+  }
+};
+
+int main() {
+  using namespace std::placeholders;
+
+  // ラムダ式による部分適用
+  register_callback([s = S{}](int n, std::error_code& ec) mutable {
+    s.callback_impl("bound", "lambda", n, ec);
+  });
+
+  // std::bindによる部分適用
+  register_callback(std::bind(&S::callback_impl, S{}, "bound", "bind()",  _1, _2));
+
+  // std::bind_frontによる部分適用
+  register_callback(std::bind_front(&S::callback_impl, S{}, "bound", "bind_front()"));
+
+  ...
+}
+```
+
+このように、ラムダ式（非`const`呼び出しのために`mutable`が必要、長い）や`std::bind`（プレースホルダが必要、値カテゴリが伝播されない）と比較するとシンプルに同じ部分適用を達成できます。渡す関数呼び出し可能なものに対する`const`性と値カテゴリの伝播を適切に自動化できるほか、この関数は引数列の前側の部分適用をするものであるため、残りの引数を気にする必要が無くなります。
+
+`std::bind_front(f, boud_args..)`の戻り値は、左辺値で呼ばれると渡された`f`を左辺値として、右辺値で呼ばれると`f`を右辺値として呼び出し、自信の`const`をその呼び出しにまで伝播します。この性質によって、`const`性と値カテゴリの伝播が自動化され適切に解決されます。
+
+呼び出しに当たっては`std::invoke()`が使用されるため、これによって呼び出せさえすればなんでも束縛させることができます。`std::bind_front(f, boud_args...)(call_args...)`の呼び出しは、`std::invoke(f, boud_args..., call_args...)`のような呼び出しと等価になります。渡された引数`boud_args...`は、参照することなくコピー/ムーブされて戻り値の関数オブジェクト内に保持されており、参照を渡したい場合は`std::ref()`や`std::cref()`を使う必要があります。
+
+なおこれの逆版（関数引数の後ろ側を部分適用）はC++23から`std::bind_back()`として利用できるようになります。
+
 # 文字列
 
 ## `starts_with/ends_with`
