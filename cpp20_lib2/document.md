@@ -2814,8 +2814,6 @@ int main() {
 
 なお、どうやら一部の実装では最初からこれが可能な実装になっていたらしく、C++17でもエラーにならないかもしれません。
 
-## `unwrap_reference`
-
 ## `bind_front`
 
 # 文字列
@@ -2875,10 +2873,46 @@ int main() {
 
 # 型特性
 
-## `std::remove_cvref`
-## `std::type_identity`
-## `std::is_nothrow_convertible`
-## `std::is_bounded_array`
+## `remove_cvref`
+## `type_identity`
+## `is_nothrow_convertible`
+## `is_bounded_array`
+
+## `unwrap_reference`
+
+`std::unwrap_reference`は`std::reference_wrapper<T>`から`T&`を取得するための型特性です。
+
+```cpp
+#include <functional>
+
+template<typename T>
+auto f(T t) {
+  using Ref = std::unwrap_reference<T>::type&;
+
+  // 常に、生の参照として取得する
+  Ref r = t;
+
+  ...
+}
+```
+
+同時に、`std::unwrap_reference` + `std::decay`（参照外しや配列からポインタへの変換など）を行う`std::unwrap_ref_decay<T>`も追加されます。
+
+```cpp
+#include <functional>
+ 
+template<typename T>
+  requires std::constructible_from<std::unwrap_ref_decay_t<T>, int>
+auto f() {
+  ...
+}
+```
+
+`std::unwrap_ref_decay_t<U>`の型は、関数テンプレートにおいて`U`あるいは`std::reference_wrapper<T>`の`T`の値を渡したときに推論される型、あるいは、`auto`による変数宣言時に初期化子に同じものを渡して推論される型と同じ型になります。
+
+これらは主に、テンプレートの文脈で`std::reference_wrapper<T>`とそれ以外の型（の参照型）を統一的に扱いたい場合に使用できるでしょう。
+
+これは、標準ライブラリ内の関数（`std::make_pair`など）の規定を簡単にするためにも使用されています。
 
 ## レイアウト/ポインタ互換性の判定
 
