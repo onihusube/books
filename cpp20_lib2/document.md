@@ -2788,6 +2788,8 @@ int main() {
 
 # 関数オブジェクト
 
+ここで紹介するものは、`<functional>`に配置されています。
+
 ## `reference_wrapper`の不完全型対応
 
 `std::reference_wrapper<T>`は`T`の参照オブジェクトを作成するためのクラスで、C++11で追加されました。導入当初から`T`には完全型（定義が見えている型）が要求されていましたが、C++20からはそれがなくなり、不完全型を使用可能になります。
@@ -2854,17 +2856,111 @@ int main() {
 }
 ```
 
-このように、ラムダ式（非`const`呼び出しのために`mutable`が必要、長い）や`std::bind`（プレースホルダが必要、値カテゴリが伝播されない）と比較するとシンプルに同じ部分適用を達成できます。渡す関数呼び出し可能なものに対する`const`性と値カテゴリの伝播を適切に自動化できるほか、この関数は引数列の前側の部分適用をするものであるため、残りの引数を気にする必要が無くなります。
+このように、ラムダ式（非`const`呼び出しのために`mutable`が必要、長い）や`std::bind`（プレースホルダが必要、値カテゴリが伝播されない）と比較するとシンプルに同じ部分適用をより正確に達成できます。渡す関数呼び出し可能なものに対する`const`性と値カテゴリの伝播を適切に自動化できるほか、この関数は引数列の前側の部分適用をするものであるため、残りの引数を気にする必要が無くなります。
 
-`std::bind_front(f, boud_args..)`の戻り値は、左辺値で呼ばれると渡された`f`を左辺値として、右辺値で呼ばれると`f`を右辺値として呼び出し、自信の`const`をその呼び出しにまで伝播します。この性質によって、`const`性と値カテゴリの伝播が自動化され適切に解決されます。
+`std::bind_front(f, boud_args...)`の戻り値は、左辺値で呼ばれると渡された`f`を左辺値として、右辺値で呼ばれると`f`を右辺値として呼び出し、自信の`const`をその呼び出しにまで伝播します。この性質によって、`const`性と値カテゴリの伝播が自動化され適切に解決されます。
 
-呼び出しに当たっては`std::invoke()`が使用されるため、これによって呼び出せさえすればなんでも束縛させることができます。`std::bind_front(f, boud_args...)(call_args...)`の呼び出しは、`std::invoke(f, boud_args..., call_args...)`のような呼び出しと等価になります。渡された引数`boud_args...`は、参照することなくコピー/ムーブされて戻り値の関数オブジェクト内に保持されており、参照を渡したい場合は`std::ref()`や`std::cref()`を使う必要があります。
+```cpp
+#include <functional>
 
-なおこれの逆版（関数引数の後ろ側を部分適用）はC++23から`std::bind_back()`として利用できるようになります。
+struct F {
+  void operator()(int n) & {
+    std::cout << n << " : F&\n";
+  }
+
+  void operator()(int n) const & {
+    std::cout << n << " : const F&\n";
+  }
+
+  void operator()(int n) && {
+    std::cout << n << " : F&&\n";
+  }
+
+  void operator()(int n) const && {
+    std::cout << n << " : const F&&\n";
+  }
+};
+
+int main() {
+  auto f = std::bind_front(F{});
+
+  // 左辺値呼び出し
+  f(1);
+
+  // const左辺値呼び出し
+  std::as_const(f)(2);
+
+  // 右辺値呼び出し
+  std::bind_front(F{})(3);
+
+  // const右辺値呼び出し
+  std::move(std::as_const(f))(4);
+}
+```
+
+```{style=planetext}
+1 : F&
+2 : const F&
+3 : F&&
+4 : const F&&
+```
+
+呼び出しに当たっては`std::invoke()`が使用されるためこれによって呼び出せさえすればなんでも（ラムダクロージャ、メンバポインタ、`std::reference_wrapper`などなど）束縛させることができ、`std::bind_front(f, boud_args...)(call_args...)`の呼び出しは、`std::invoke(f, boud_args..., call_args...)`のような呼び出しと等価になります。渡された引数`f`と`boud_args...`はコピー/ムーブされて戻り値の関数オブジェクト内に保持されており、参照を渡したい場合は`std::ref()`や`std::cref()`を使う必要があります。
+
+なおこれの逆版（関数引数の後ろ側を部分適用）はC++23から`std::bind_back()`として利用できる予定です。
 
 # 文字列
 
 ## `starts_with/ends_with`
+
+`.starts_with()`は文字列の前方が指定された文字列と一致しているかを調べる関数です。これは`std::string`と`std::string_view`（他の文字型/アロケータ型特殊化も含めて）の両方で利用可能です。`.ends_with()`はその逆に、文字列の前方が指定された文字列と一致しているかを調べます。
+
+```cpp
+namespace std {
+  template <class CharT, class Traits = char_traits<CharT>>
+  class basic_string_view {
+    ...
+  public:
+
+    bool starts_with(basic_string_view) const noexcept;
+
+    bool ends_with(basic_string_view) const noexcept;
+  }
+}
+```
+
+この他に、1文字（`CharT`型）を受け取るオーバーロードもあります。
+
+`std::string`もしくは`std::string_view`のオブジェクト`str`に対して`str.starts_with("...")`のように使用して、引数に渡した文字列が先頭にマッチすれば`true`、そうでないなら`false`が返ります。
+
+```cpp
+#include <string>
+
+int main() {
+  std::cout << std::boolalpha;
+
+  std::string str = "abcdefg";
+
+  // 文字列によるマッチング
+  std::cout << str.starts_with("abc") << '\n';
+  std::cout << str.ends_with("abc") << '\n';
+
+  // 文字によるマッチング
+  std::cout << str.starts_with('g') << '\n';
+  std::cout << str.ends_with('g') << '\n';
+}
+```
+
+```{style=planetext}
+true
+false
+false
+true
+```
+
+連想コンテナの`.contains()`と同様に、やりたいことを簡潔に書くことができるとともに、わかりやすい名前がついていることによってやっていることが明確になります。
+
+C++23では、この関数を任意の`range`と`range`に一般化した`std::ranges::starts_with`と`std::ranges::ends_with`アルゴリズムが追加されます。
 
 ## `reserve()`の縮小機能の廃止
 
