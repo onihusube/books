@@ -2909,7 +2909,9 @@ int main() {
 
 なおこれの逆版（関数引数の後ろ側を部分適用）はC++23から`std::bind_back()`として利用できる予定です。
 
-# 文字列
+# 文字列周り
+
+主に`std::string`・`std::string_view`と`char8_t`関連です。
 
 ## `starts_with/ends_with`
 
@@ -2980,7 +2982,7 @@ auto read(T& buf) {
 
   // メモリ量域を確保
   // tのキャパシティをmin_len以上にする
-  // キャパシティがすでにmin_len以上なら何もしない
+  // キャパシティがすでにmin_len以上なら何もしない（でほしい
   buf.reserve(min_len);
 
   // 何かデータの読み込み
@@ -2992,6 +2994,81 @@ auto read(T& buf) {
 ```
 
 ファイルやネットワークのI/Oなどでこのようなことを行いたいことは非常に良くあります。ある一定の量まではメモリ確保を起こさないようにするために`.reserve()`を使用しますが、この入力のバッファが使いまわされている場合など、既に確保されている可能性もあり、その場合は何もしないことが期待されます。C++20からはその期待に沿う振る舞いをするようになり、`std::string`オブジェクトの現在のキャパシティを気にせずに使用予定メモリ領域の予約を行えます。
+
+## `char8_t`文字列型
+
+言語機能としてUTF-8文字を表す`char8_t`が追加されたのに伴って、`char8_t`によって特殊化された文字列型（`std::string`, `std::string_view`）が追加されます。
+
+```cpp
+namespace std {
+  // <string>内
+  using u8string  = basic_string<char8_t>;
+
+  namespace pmr {
+    using u8string  = basic_string<char8_t>;
+  }
+
+  // <string_view>内
+  using u8string_view = basic_string_view<char8_t>;
+}
+```
+
+文字型だけを特殊化したものなので、`char8_t`の文字/文字列を扱う以外は普通の（`char`の）文字列型と同様に扱えます。
+
+```cpp
+#include <string>
+#include <string_view>
+
+int main() {
+  std::u8string u8str = u8"char8_t(UTF-8) string";
+  std::u8string_view u8sv = u8str;
+}
+```
+
+また、文字列型を生成するリテラル（`""s`、`""sv`）にも`char8_t`オーバーロードが追加されます。
+
+```cpp
+namespace std {
+  inline namespace literals {
+    // <string>内
+    inline namespace string_literals {
+      constexpr u8string operator""s(const char8_t* str, size_t len);
+    }
+
+    // <string_view>内
+    inline namespace string_view_literals {
+      constexpr std::u8string_view operator""sv(const char8_t* str, std::size_t len) noexcept;
+    }
+  }
+}
+```
+
+```cpp
+#include <string>
+#include <string_view>
+
+using namespace std::literals;
+
+int main() {
+  std::u8string u8str = u8"string literal"s;
+  std::u8string_view u8sv = u8"string view literal"sv;
+}
+```
+
+従来の`u8""`に対するこれらのリテラルは`char`の文字列型を返していたため、これはC++11/17に対する破壊的変更となります。
+
+## `char8_t`による破壊的変更
+
+`char8_t`は言語機能に破壊的に導入されると同時にライブラリ機能に対しても破壊的変更をもたらしており、次の関数の戻り値型が変更となります。
+
+|関数|C++17|C++20|
+|---|---|---|
+|`u8""s`|`std::string`|`std::u8string`|
+|`u8""sv`|`std::string_view`|`std::u8string_view`|
+|`path::u8string()`|`std::string`|`std::u8string`|
+|`path::generic_u8string()`|`std::string`|`std::u8string`|
+
+残念ながら、C++17までに書かれたコードでこの戻り値型に依存している部分はコンパイルエラーになってしまいます。言語バージョンを下げる以外に回避手段はないので、都度修正するしかありません。
 
 ## `char8_t/char`文字エンコーディングの相互変換
 
@@ -3063,22 +3140,29 @@ int main() {
 ```cpp
 #include <cuchar>
 
-auto u8str_to_str(std::string_view src) {
+// charのエンコーディング -> UTF-8 の文字列変換を行う
+auto str_to_u8str(std::string_view src) -> std::u8string {
+  const char* ptr = src.data();
   char8_t res[4]{};
-  std::mbstate_t ms{}
-  std::u8string str{};
+  std::mbstate_t ms{};
   std::size_t bytes = 0;
   std::size_t consumed = 0;
-  char* ptr = src.data();
 
-  str.reserve(src.length());
+  std::u8string u8str{};
+  u8str.reserve(src.length());
 
   while (consumed < src.length()) {
-    bytes = std::mbrtoc8(&res, cstr.data(), 4, &ms);
+    bytes = std::mbrtoc8(res, ptr, 4, &ms);
 
+    assert(0 < bytes && bytes < std::size_t(-3));
+
+    consumed += bytes;
+    ptr += bytes;
+
+    u8str.append(res, bytes);
   }
 
-  return str;
+  return u8str;
 }
 ```
 
@@ -3110,7 +3194,7 @@ int main() {
 - `size_t(-1)` : `char`のエンコーディングが`src`の文字を表現できない
 - それ以外 : 変換は正常完了。値は出力文字列（`dst`）に書き込まれたバイト数。
 
-この関数の入力`src`は`char8_t`へのポインタではなく`char8_t`の値を1つだけ取ります。UTF-8エンコーディングは最大4バイト（`char8_t`4つ分）になり、UTF-8エンコーディングで1バイトになる文字とはすなわちASCII範囲内の文字です。1バイトのUTF-8はASCIIと互換性があるため、実質的にこの関数を使用する意味はなさそうに思えます（キャストで十分です）。戻り値を見て、`char8_t`1つがASCII範囲内の文字かどうかを判定するのには使えるかもしれません。
+この関数の入力`src`は`char8_t`へのポインタではなく`char8_t`の値を1つだけ取ります。UTF-8エンコーディングは最大4バイト（`char8_t`4つ分）になり、UTF-8で1バイトになる文字とはすなわちASCII範囲内の文字です。1バイトのUTF-8はASCIIと互換性があるため変換はキャストで十分であり、実質的にこの関数を使用する意味はなさそうです。戻り値を見て、`char8_t`1つがASCII範囲内の文字かどうかを判定するのには使えるかもしれませんが。
 
 `std::c8rtomb()`がこのような残念仕様になってしまっているのは`<cuchar>`にある他の関数とインターフェースを一貫させた結果だと思われます。`<cuchar>`には他にも`char16_t`と`char32_t`に対して同様の役割の2対の関数が用意されており、確かに`char16_t`や`char32_t`から`char`の変換では`src`が1変数分でも十分に意味があります。`char16_t`と`char32_t`に対する関数はC++11（C11）から存在しているため、そちらのインターフェースに合わせざるを得なかったのだと思われます・・・
 
