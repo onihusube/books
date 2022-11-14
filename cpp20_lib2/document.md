@@ -3261,9 +3261,7 @@ void thread_func() {
 }
 ```
 
-これらの関数を使用することで、アトミックな数値演算をより直接的に書くことができるようになるとともに、一部のハードウェアではより効率的に実行される可能性があります。ただし、整数型に対する`std::atomic`特殊化が四則演算等他の数値演算をサポートしているのに対して、浮動小数点数型の特殊化ではこの4つのRMW操作しか提供されません。
-
-## 整数型のロックフリーエイリアス
+これらの関数を使用することで、浮動小数点数に対するアトミックな数値演算をより直接的に書くことができるようになるとともに、一部のハードウェアではより効率的に実行される可能性があります。ただし、整数型に対する`std::atomic`特殊化が四則演算等他の数値演算をサポートしているのに対して、浮動小数点数型の特殊化ではこの4つのRMW操作しか提供されません。
 
 ## `std::atomic_ref`
 
@@ -3271,9 +3269,61 @@ void thread_func() {
 
 ## `wait()/notify_one()/notify_all()`
 
+## 整数型のロックフリーエイリアス
+
+整数型の`std::atomic`特殊化は多くの環境で`is_always_lock_free`プロパティ（静的メンバ定数）が`true`となり、それが期待されますが、CPUによってはそれは期待できないこともあり、整数型の`std::atomic`特殊化が常にロックフリーに振る舞うかは`is_always_lock_free`プロパティを調べる必要がありました。
+
+利便性のため、整数型の`std::atomic`特殊化であって、`is_always_lock_free`プロパティが`true`となることが保証される型、のエイリアスが提供されます。
+
+```cpp
+namespace std {
+  using atomic_signed_lock_free   = std::atomic<...>;
+  using atomic_unsigned_lock_free = std::atomic<...>;
+}
+```
+
+これらのエイリアスの`std::atomic<T>`の`T`は少なくとも整数型ですが、型は実装定義です。
+
+また、追加のプロパティとして、これらの型はアトミックな待機と通知操作（`wait()/notify_one()/notify_all()`）が最も効率的に行える型であることが指定されています。
+
+環境によって該当する特殊化が存在しない場合はこのエイリアスは定義されません。その場合はコンパイルエラーによって気づくことができるはずです。
+
 ## `std::shared_ptr/std::weak_ptr`の`std::atomic`特殊化
 
 ## `std::memory_order`の定義の変更
+
+C++20から、`std::memory_order`列挙型とその値の定義が変更されます。
+
+```cpp
+namespace std {
+  // C++17までの定義
+  typedef enum memory_order {
+    memory_order_relaxed, memory_order_consume, memory_order_acquire,
+    memory_order_release, memory_order_acq_rel, memory_order_seq_cst
+  } memory_order;
+
+
+  // C++20からの定義
+  enum class memory_order : ... {
+    relaxed, consume, acquire, release, acq_rel, seq_cst
+  };
+
+  inline constexpr memory_order memory_order_relaxed = memory_order::relaxed;
+  inline constexpr memory_order memory_order_consume = memory_order::consume;
+  inline constexpr memory_order memory_order_acquire = memory_order::acquire;
+  inline constexpr memory_order memory_order_release = memory_order::release;
+  inline constexpr memory_order memory_order_acq_rel = memory_order::acq_rel;
+  inline constexpr memory_order memory_order_seq_cst = memory_order::seq_cst;
+}
+```
+
+スコープ付き列挙型になったことで整数型との暗黙変換が禁止され、意味のない演算（`|`や`~`など）が行えなくなります。
+
+C++17までの定義はCとの互換性を意識したものでしたが、Cが`_Atomic`を採用したことや`std`名前空間で定義されていることからあまり意味がなかったため修正される事になりました。
+
+`std::memory_order`列挙値の名前を変更しているのは名前中の`memory_order`の重複を避けるためで、`std`名前空間にばら撒かれた`memory_order_~`な変数はC++17以前のコードの互換性のためのものです。列挙子の型を変更するとABIを破損する事になるため、新しい`std::memory_order`の基底型は未規定（実装定義）とされています。
+
+結局、この変更はAPIもABIも破損していないため、利用する分にはあまり気にする必要はありません。
 
 ## Compare-and-exchangeとパディング
 
