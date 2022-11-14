@@ -3229,7 +3229,7 @@ namespace std {
 
 ## 浮動小数点数型に対する特殊化
 
-C++11以降、`std::atomic<T>`は`T`が浮動小数点数型の場合も利用可能であり、ほぼ期待通りの振る舞いを得られてしました。ただそれは、整数型のように特殊化されたものではなくプライマリテンプレートによる汎用的なものだったため、数値演算で一般的な`+=`や`-=`のような操作（Read-Modify-Write : RMW）が使用できませんでした。
+C++11以降、`std::atomic<T>`は`T`が浮動小数点数型の場合も利用可能であり、ほぼ期待通りの振る舞いを得られていました。ただそれは、整数型のように特殊化されたものではなくプライマリテンプレートによる汎用的なものだったため、数値演算で一般的な`+=`や`-=`のような操作（Read-Modify-Write : RMW）が使用できませんでした。
 
 C++20では、それらRMW操作を提供するために`T`が浮動小数点数型である`std::atomic<T>`について明示的特殊化が定義されるようになります。ここで提供される固有の操作は次の4つのみです
 
@@ -3263,6 +3263,89 @@ void thread_func() {
 
 これらの関数を使用することで、浮動小数点数に対するアトミックな数値演算をより直接的に書くことができるようになるとともに、一部のハードウェアではより効率的に実行される可能性があります。ただし、整数型に対する`std::atomic`特殊化が四則演算等他の数値演算をサポートしているのに対して、浮動小数点数型の特殊化ではこの4つのRMW操作しか提供されません。
 
+## `shared_ptr/weak_ptr`に対する特殊化
+
+`std::shared_ptr`には元々、そのオブジェクトそのものにアトミックにアクセスするための非メンバ関数群が用意されていました。しかし、アトミックアクセスしたい`std::shared_ptr`オブジェクトは型としてそうではないものと区別がつかず、アトミックアクセス関数を通して使用しないとアトミックアクセスは保証されません。また、`std::shared_ptr`オブジェクトを間接参照（デリファレンス）しようとするときは、別の`std::shared_ptr`オブジェクトにロードしてからそのローカル化した`std::shared_ptr`オブジェクトを間接参照する、という手間を踏まなければポインタにアトミックにアクセスできません。
+
+```cpp
+#include <memory>
+
+std::shared_ptr<int> atomic_ptr{};
+
+void thread_f() {
+  // アトミックにshared_ptrを更新
+  std::atomic_store(&atomic_ptr, std::make_shared<int>(20));
+
+  // ポインタへのアクセスがアトミックになっていない
+  auto n = *atomic_ptr;
+
+  // こうすると、ポインタへのアクセスがアトミックになる
+  auto ptr = std::atomic_load(&atomic_ptr);
+  auto m = *ptr;
+  // 一行で書いても良い
+  // auto m = *std::atomic_load(&atomic_ptr);
+}
+
+void f() {
+  // アトミック操作関数を経由しなければ非アトミックアクセス
+  atomic_ptr = std::make_shared<int>(20);
+  auto n = *atomic_ptr;
+}
+```
+
+このようなAPIは間違えやすく、意図通りに使用することが難しかったため、C++20にて`std::shared_ptr`に対する`std::atomic`の部分的特殊化を追加することによって置き換えられました。`std::weak_ptr`も所有権を必要としないだけで同様に扱うことができるため（こちらにはアトミックアクセスAPIすらなかった）、同時に`std::weak_ptr`に対する`std::atomic`の部分的特殊化も追加されます。
+
+```cpp
+// <memory>で定義
+namespace std {
+
+  template <class T>
+  struct atomic<shared_ptr<T>>;
+
+  template <class T>
+  struct atomic<weak_ptr<T>>;
+}
+```
+
+これは、`std::atomic`のポインタ型に対する特殊化のようにポインタそのもののアクセスをアトミックにするものです。例えば、ハザードポインタやあるいはもっと単純なマルチスレッドにおけるデータの共有のために使用することができます。
+
+```cpp
+#include <memory>
+
+std::atomic<std::shared_ptr<int>> atomic_ptr{};
+std::atomic<std::weak_ptr<int>> atomic_wptr{};
+
+void thread_shread() {
+  // アトミックにshared_ptrを更新
+  atomic_ptr = std::make_shared<int>(20);
+  // あるいはstore()する
+  atomic_ptr.store(std::make_shared<int>(20));
+
+  // 間接参照演算子はないので間違えようがない
+  auto n1 = *atomic_ptr; // ng
+
+  // 間接参照しようとすると必然的にアトミックアクセスになる
+  auto ptr = atomic_ptr.load();
+  auto m = *ptr;
+  // 一行で書いても良い
+  m = *atomic_ptr.load();
+}
+
+void thread_weak() {
+  // weak_ptrのアトミック更新
+  atomic_wptr = atomic_ptr.load();
+
+  // weak_ptrの間接参照
+  // load()でweak_ptrをアトミックに取得し
+  // lock()でshared_ptrを取得
+  if (auto ptr = atomic_wptr.load().lock(); ptr) {
+    auto m = *ptr;
+  }
+}
+```
+
+先ほどの非メンバ関数のAPIと比べると、ポインタへのアトミックアクセスがより明示的になっていることが分かります。特に、間接参照したい場合に間違った手順がコンパイルエラーになるようになります。
+
 ## `std::atomic_ref`
 
 ## `atomic_flag::test()`
@@ -3287,8 +3370,6 @@ namespace std {
 また、追加のプロパティとして、これらの型はアトミックな待機と通知操作（`wait()/notify_one()/notify_all()`）が最も効率的に行える型であることが指定されています。
 
 環境によって該当する特殊化が存在しない場合はこのエイリアスは定義されません。その場合はコンパイルエラーによって気づくことができるはずです。
-
-## `std::shared_ptr/std::weak_ptr`の`std::atomic`特殊化
 
 ## `std::memory_order`の定義の変更
 
