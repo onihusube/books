@@ -3529,7 +3529,71 @@ C++17までの定義はCとの互換性を意識したものでしたが、Cが`
 
 # `iostream`
 
-## 配列の出力修正
+## 配列への入力の修正
+
+ストリーム入力（`>>`）では、生配列に入力することができます。
+
+```cpp
+#include <iostream>
+
+int main() {
+  char buffer[20]{};
+
+  // 19文字を超えた入力があるとオーバーフローする
+  std::cin >> buffer; // ok、ただし危険
+}
+```
+
+ただし、これはバッファオーバーフローの危険性があります。なぜなら、ここで使用されている`>>`は次のように宣言されているポインタを受け取るもので、配列長を考慮していないからです。
+
+```cpp
+// C++17まで、配列等バッファへの入力演算子
+namespace std {
+  template<class CharT, class Traits>
+  basic_istream<CharT, Traits>& operator>>(basic_istream<CharT, Traits>& is, CharT* s);
+
+  template<class Traits>
+  basic_istream<char, Traits>& operator>>(basic_istream<CharT, Traits>& is, unsigned char* s);
+
+  template<class Traits>
+  basic_istream<char, Traits>& operator>>(basic_istream<CharT, Traits>& is, signed char* s);
+}
+```
+
+要するに、この演算子オーバーロードはCの`gets()`と同じ問題を抱えています。その使用は危険であり`gets()`と同様に削除すべきですが、上記のようにあらかじめ長さが分かっている配列バッファへの入力などは有用なユースケースであり、よく利用されていました。
+
+そこで、上記のような有用なユースケースを保護しつつ危険な使用を削除するために、これらポインタを受けるオーバーロードを配列を受けるように変更します。
+
+```cpp
+// C++20から、生配列への入力演算子
+namespace std {
+  template<class CharT, class Traits, std::size_t N>
+  basic_istream<CharT, Traits>& operator>>(basic_istream<CharT, Traits>& is, CharT (&s)[N]);
+
+  template<class Traits, std::size_t N>
+  basic_istream<char, Traits>& operator>>(basic_istream<CharT, Traits>& is, unsigned char (&s)[N]);
+
+  template<class Traits, std::size_t N>
+  basic_istream<char, Traits>& operator>>(basic_istream<CharT, Traits>& is, signed char (&s)[N]);
+}
+```
+
+この変更は以前のポインタを受けるオーバーロードを書き換える形で行われています。そのため、配列ではなくポインタを渡すコードはコンパイルエラーとなるようになります。
+
+```cpp
+#include <iostream>
+
+int main() {
+  char buffer[20]{};
+
+  std::cin >> buffer; // ok、最大19文字まで読み込む
+
+  char* ptr = buffer;
+  std::cin >> ptr;  // ng
+}
+```
+
+この変更によって、C++17以前からのコードのうち有用な使用はより安全になり、危険な使用はコンパイルエラーとなるようになります。
 
 ## ユニコード文字型の出力禁止
 
