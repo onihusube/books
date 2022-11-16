@@ -3346,8 +3346,6 @@ void thread_weak() {
 
 先ほどの非メンバ関数のAPIと比べると、ポインタへのアトミックアクセスがより明示的になっていることが分かります。特に、間接参照したい場合に間違った手順がコンパイルエラーになるようになります。
 
-## `std::atomic_ref`
-
 ## アトミック型のデフォルトコンストラクタの修正
 
 `std::atomic`のデフォルトコンストラクタはC++17まで、どのように初期化されるかは未規定とされていました。
@@ -3468,6 +3466,55 @@ void g() {
 ```
 
 `.test()`は引数としてメモリオーダーを指定でき、デフォルトでは`std::memory_order::seq_cst`が指定されています。フリー関数版でメモリオーダーを指定するには`std::atomic_flag_test_explicit()`を使用します。
+
+## `atomic_ref`
+
+`std::atomic_ref<T>`は、`std::atomic`ではない型`T`のオブジェクトに対して`std::atomic`と同等のアトミック操作を提供するものです。
+
+```cpp
+#include <atomic>
+
+int g = 0;
+
+int main() {
+  // 非アトミックアクセス
+  g = 1;
+
+  // アトミックアクセス
+  std::atomic_ref{g}.store(2);
+}
+```
+
+あるオブジェクトに対するほとんどの操作にアトミック性が必要ない場合に、一部のアトミックアクセスのために`std::atomic`オブジェクトにしてしまうと、アトミック性が不要なアクセス時にもアトミック命令や同期が入ってしまうことでパフォーマンスが低下してしまう可能性があります。かといって、非アトミックオブジェクトに対して局所的にアトミックアクセスを行おうとすると他の同期プリミティブ（`std::mutex`など）による同期が必要となり、手間がかかるばかりか`std::atomic`に比べて非効率にもなり得ます。
+
+`std::atomic_ref`は非アトミックオブジェクトを参照して保持することで、アトミックアクセスが必要な箇所で適宜非アトミックオブジェクトに対するアトミックアクセスを行うことができます。例えば、本来`std::atomic`でラップすることのできないコンテナ型の要素アクセスをアトミックに行う場合に活用できます。
+
+```cpp
+#include <atomic>
+
+// 要素数は固定で、複数スレッドからアクセスされるとする
+std::vector<int> vec(10);
+
+using std::views::transform;
+
+// あるタイミングでvecの内容を確認
+void observe() {
+  for (auto an : vec | transform([](int& e) { return std::atomic_ref{e}; })) {
+    // 要素毎にアトミックに読み込み
+    std::cout << an.load() << '\n';
+  }
+}
+
+// vecをゼロクリア
+void clear() {
+  // 要素毎にアトミックに0を書き込み
+  std::ranges::fill(vec | transform([](int& e) { return std::atomic_ref{e}; }), 0);
+}
+```
+
+（些細な注意点ですが、このようなことをする場合は`transform`引数のラムダ式の引数型が参照型になるように注意しましょう）
+
+`std::atomic_ref<T>`はその事前定義特殊化やメンバ関数など、ほとんど`std::atomic<T>`と同様に扱うことができます。ただし、`std::atomic_ref`はコンストラクタで指定されたオブジェクトを参照で保持し所有権を持たないため、参照先のオブジェクトの寿命に注意を払う必要があります。例えば上の例で、`transform`引数のラムダ式の引数型の`&`を１文字忘れるとそれに出会うことができます・・・
 
 ## `wait()/notify_one()/notify_all()`
 
@@ -3750,3 +3797,5 @@ https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2139r2.html
 - C++マルチスレッド一巡り  
   (https://zenn.dev/yohhoy/books/cpp-stdlib-multithreading)
 - C++の64bit版のhash_combine(https://suzulang.com/cpp-64bit-hash-combine/)
+- C++20 atomic_ref - Marius Bancila's Blog  
+  (https://mariusbancila.ro/blog/2020/04/21/cpp20-atomic_ref/)
