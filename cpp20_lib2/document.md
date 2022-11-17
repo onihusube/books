@@ -3265,7 +3265,7 @@ void thread_func() {
 
 ## `shared_ptr/weak_ptr`に対する特殊化
 
-`std::shared_ptr`には元々、そのオブジェクトそのものにアトミックにアクセスするための非メンバ関数群が用意されていました。しかし、アトミックアクセスしたい`std::shared_ptr`オブジェクトは型としてそうではないものと区別がつかず、アトミックアクセス関数を通して使用しないとアトミックアクセスは保証されません。また、`std::shared_ptr`オブジェクトを間接参照（デリファレンス）しようとするときは、別の`std::shared_ptr`オブジェクトにロードしてからそのローカル化した`std::shared_ptr`オブジェクトを間接参照する、という手間を踏まなければポインタにアトミックにアクセスできません。
+`std::shared_ptr`には元々、そのオブジェクト（ポインタ）そのものにアトミックにアクセスするための非メンバ関数群が用意されていました。しかし、アトミックアクセスしたい`std::shared_ptr`オブジェクトは型としてそうではないものと区別がつかず、アトミックアクセス関数を通して使用しないとアトミックアクセスは保証されません。また、`std::shared_ptr`オブジェクトを間接参照（デリファレンス）しようとするときは、別の`std::shared_ptr`オブジェクトにロードしてからそのローカル化した`std::shared_ptr`オブジェクトを間接参照する、という手間を踏まなければポインタにアトミックにアクセスできません。
 
 ```cpp
 #include <memory>
@@ -3396,6 +3396,8 @@ int main() {
 
 値初期化とは、組み込み型に対しては0（に相当する値）で初期化し、クラス型に対してはデフォルトコンストラクタを呼び出して初期化する、ようなことです。
 
+C++20以降だけを相手にするならこの挙動を仮定しても安全ですが、C++17以前とコードを共有する場合やCと相互運用する場合などは初期化結果が未規定となる可能性が出てくるため、従来の初期化方法を使用するかどこかで初期値を代入しておく必要があります。
+
 ## `atomic_flag::test()`
 
 `std::atomic_flag`は操作がアトミックなフラグ型であり、`std::atomic<bool>`と似たものです。`std::atomic<bool>`、そして全ての`std::atomic`特殊化と異なるところは、その操作が常にロックフリーであることが保証されている点です。その保証のために、操作はフラグ値の交換（`.test_and_set()`）とクリア（`.clear()`）のみと最低限なものしか提供されておらず、特にフラグ値を変更せずに読み取るということができませんでした。
@@ -3417,7 +3419,7 @@ void thread_f() {
   ...
 
   // ロックの解放
-  lock.clear();
+  bool before = lock.clear(); // この関数も以前の値を返す
 }
 
 // フラグ状態を覗きたい
@@ -3487,19 +3489,20 @@ int main() {
 
 あるオブジェクトに対するほとんどの操作にアトミック性が必要ない場合に、一部のアトミックアクセスのために`std::atomic`オブジェクトにしてしまうと、アトミック性が不要なアクセス時にもアトミック命令や同期が入ってしまうことでパフォーマンスが低下してしまう可能性があります。かといって、非アトミックオブジェクトに対して局所的にアトミックアクセスを行おうとすると他の同期プリミティブ（`std::mutex`など）による同期が必要となり、手間がかかるばかりか`std::atomic`に比べて非効率にもなり得ます。
 
-`std::atomic_ref`は非アトミックオブジェクトを参照して保持することで、アトミックアクセスが必要な箇所で適宜非アトミックオブジェクトに対するアトミックアクセスを行うことができます。例えば、本来`std::atomic`でラップすることのできないコンテナ型の要素アクセスをアトミックに行う場合に活用できます。
+`std::atomic_ref`は非アトミックオブジェクトを参照して保持することで、アトミックアクセスが必要な箇所で適宜非アトミックオブジェクトに対するアトミックアクセスを行うことができます。例えば、本来`std::atomic`でラップすることのできないコンテナ型の要素アクセスをアトミックに行うことができます。
 
 ```cpp
 #include <atomic>
 
-// 要素数は固定で、複数スレッドからアクセスされるとする
+// 複数スレッドからアクセスされるとする
 std::vector<int> vec(10);
 
-using std::views::transform;
+// 範囲をアトミックな範囲に変換するRangeアダプタ
+auto as_atomic = std::views::transform([](auto& e) { return std::atomic_ref{e}; });
 
 // あるタイミングでvecの内容を確認
 void observe() {
-  for (auto an : vec | transform([](int& e) { return std::atomic_ref{e}; })) {
+  for (auto an : vec | as_atomic) {
     // 要素毎にアトミックに読み込み
     std::cout << an.load() << '\n';
   }
@@ -3508,26 +3511,187 @@ void observe() {
 // vecをゼロクリア
 void clear() {
   // 要素毎にアトミックに0を書き込み
-  std::ranges::fill(vec | transform([](int& e) { return std::atomic_ref{e}; }), 0);
+  std::ranges::fill(vec | as_atomic, 0);
 }
 ```
 
-（些細な注意点ですが、このようなことをする場合は`transform`引数のラムダ式の引数型が参照型になるように注意しましょう）
+（些細な注意点ですが、このようなことをする場合は`transform`に渡しているラムダ式の引数型が参照型になるように注意しましょう）
 
 `std::atomic_ref<T>`はその事前定義特殊化やメンバ関数など、ほとんど`std::atomic<T>`と同様に扱うことができます。ただし、`std::atomic_ref`はコンストラクタで指定されたオブジェクトを参照で保持し所有権を持たないため、参照先のオブジェクトの寿命に注意を払う必要があります。例えば上の例で、`transform`引数のラムダ式の引数型の`&`を１文字忘れるとそれに出会うことができます・・・
 
-## `wait()/notify_one()/notify_all()`
+## アトミックオブジェクトを介した待機・通知機構
+
+`std::atomic`をはじめとするアトミック型はスピンロック等の待ち合わせ処理に簡単に使用することができます。しかし、その待機の方法はビジーループに限られており、これは無駄にCPU時間を消費するなど効率的な待機方法ではありませんでした。
+
+```cpp
+#include <atomic>
+
+// 複数スレッド立ち上げ時に、処理の開始を待ち合わせる例
+int main() {
+  using namespace std::chrono_literals;
+  
+  std::atomic<bool> start{false};
+
+  // スレッドの立ち上げ
+  std::jthread th_array[5];
+  for (auto& th : th_array) {
+    th = std::jthread{[&start]{
+      // スレッドの開始通知を待機
+      while(start.load() == false) {
+        // ビジーループをスリープさせて待機
+        std::this_thread::sleep_for(100ms);
+      }
+
+      // メイン処理
+      ...
+    }};
+  }
+
+  ...
+
+  // スレッド処理を遅延して開始
+  start.store(true);
+}
+```
+
+このような用途には`std::atomic_flag`を使った方がより正確ですが、どちらを用いても結局ビジーループを回避できません。ループ中にスリープを挿入するとビジーループの影響を低減できますが、スリープの時間設定によってはマルチスレッドパフォーマンスの低下や同期バグの原因になる可能性があります。このことは`std::atomic`を用いてよりハイレベルの同期プリミティブ（セマフォなど）を作成する際に、非効率性が静かに埋め込まれる事にもつながります。
+
+この問題の解決のために、C++20からはアトミックオブジェクトを介した効率的な待機・通知機構が整備されます。そのために、`std::atomic`のメンバ関数として待機を行う`.wait()`、通知を行う`.notify_all()`、`.notify_one()`が追加されます。
+
+```cpp
+#include <atomic>
+
+// 複数スレッド立ち上げ時に、処理の開始を待ち合わせる例
+int main() {
+  using namespace std::chrono_literals;
+  
+  std::atomic<bool> start{false};
+
+  // スレッドの立ち上げ
+  std::jthread th_array[5];
+  for (auto& th : th_array) {
+    th = std::jthread{[&start]{
+      // スレッドの開始通知を待機
+      start.wait(false);
+
+      // メイン処理
+      ...
+    }};
+  }
+
+  ...
+
+  // スレッド処理を遅延して開始
+  // 値を代入してから
+  start.store(true);
+  // 通知
+  start.notify_all();
+}
+```
+
+待機関数`.wait(old)`は、待機時点のアトミックオブジェクトの現在の値（`old`）を指定して呼び出し、アトミックオブジェクトの値が`old`と異なっているならば通知関数が呼ばれるまでそのスレッドの実行をブロックします。このブロックはビジーループによらずOSの機能を用いるなどして効率的なスレッド実行停止が行われることを期待できます。
+
+通知関数`.notify_all()`、`.notify_one()`は、引数なしで呼び出して、そのアトミックオブジェクトで`.wait()`しているスレッドのブロッキングを解除（再開）します。その際、`.notify_all()`は待機している全てのスレッドを再開し、`.notify_one()`は待機しているスレッドのうちの1つだけを再開します。
+
+これらは`std::atomic`に特化した`std::condition_variable`と見ることができます。
+
+これらの待機・通知機構は次のもので構成されています
+
+- メンバ関数 : `.wait()/.notify_one()/.notify_all()`
+    - `std::atomic`
+    - `std::atomic_flag`
+    - `std::atomic_ref`
+- `std::atomic`のためのフリー関数
+    - `std::atomic_wait()`
+    - `std::atomic_wait_explicit()`
+    - `std::atomic_notify_one()`
+    - `std::atomic_notify_all()`
+- `std::atomic_flag`のためのフリー関数
+    - `std::atomic_flag_wait()`
+    - `std::atomic_flag_wait_explicit()`
+    - `std::atomic_flag_notify_one()`
+    - `std::atomic_flag_notify_all()`
+
+フリー関数でプリフィックスに`_explicit`がつくものは、メモリオーダーを指定することができるものです。
+
+この機構を用いると、C++20で追加されたよりハイレベルな同期プリミティブ（`std::latch`、`std::barrier`、`std::counting_semaphore`）を`std::atomic`によって簡易かつ効率的に実装することができます。実際に、いくつかの標準ライブラリ実装ではこれらを`std::atomic`を用いて実装しています。
+
+```cpp
+#include <atomic>
+
+// 簡単な、std::latch実装
+class my_latch {
+  // 内部カウンタ
+  std::atomic<std::ptrdiff_t> m_counter;
+
+public:
+
+  my_latch(std::ptrdiff_t count) : m_counter(count) {}
+
+  void count_down(std::ptrdiff_t update = 1) {
+    // 事前条件1
+    assert(0 < update);
+
+    // update分減算後の値を取得
+    // アトミックアクセスを最小化するための措置
+    const auto current = m_counter.fetch_sub(update) - update;
+
+    // 事前条件2
+    assert(0 <= current);
+
+    if (current == 0) {
+      m_counter.notify_all();
+    }
+  }
+
+  void wait() const {
+    // 内部カウンタの値が更新されても0になってはいないかもしれない
+    // 0になるまで待機するためにチェックをループする
+    for(;;) {
+      const auto current = m_counter.load();
+
+      if (current == 0) return;
+
+      // オブジェクト不変条件
+      assert(0 < current);
+
+      m_counter.wait(current);
+    }
+  }
+}
+```
+
+この実装は、MSVC STLの`std::latch`実装を参考にしています（https://github.com/microsoft/STL/blob/main/stl/inc/latch ）
+
+## 整数型のロックフリーエイリアス
+
+整数型の`std::atomic`特殊化は多くの環境で`is_always_lock_free`プロパティ（静的メンバ定数）が`true`となり、それが期待されますが、CPUによってはそれは期待できないこともあり、整数型の`std::atomic`特殊化が常にロックフリーに振る舞うかは`is_always_lock_free`プロパティを調べる必要がありました。
+
+利便性のため、整数型の`std::atomic`特殊化であって、`is_always_lock_free`プロパティが`true`となることが保証される型、のエイリアスが提供されます。
+
+```cpp
+namespace std {
+  using atomic_signed_lock_free   = std::atomic<...>;
+  using atomic_unsigned_lock_free = std::atomic<...>;
+}
+```
+
+これらのエイリアスの`std::atomic<T>`の`T`は少なくとも整数型ですが、型は実装定義です。
+
+また、追加のプロパティとして、これらの型はアトミックな待機と通知操作（`wait()/notify_one()/notify_all()`）が最も効率的に行える型であることが指定されています。
+
+環境によって該当する特殊化が存在しない場合はこのエイリアスは定義されません。その場合はコンパイルエラーによって気づくことができるはずです。
 
 ## Compare-and-exchangeとパディング
 
-`std::atomic<T>`の比較・交換（*Compare-and-exchange*）操作において`T`にパディングビットを含む構造体を使用すると、パディングビットが比較に参加する可能性があることによって、意図通りに比較がされない可能性がありました。
+`std::atomic<T>`の比較・交換（*Compare-and-exchange*）操作において`T`にパディングビットを含む構造体を使用すると、パディングビットが比較に参加する可能性があることによって、比較結果が意図通りにならない可能性がありました。
 
 ```cpp
 #include <atomic>
 
 struct padded {
   char clank = 0x42;/*
-  ここにパディングが入る環境だと
+  ここにパディングが入る環境だとする
   */unsigned biff = 0xC0DEFEFE;
 };
 
@@ -3578,25 +3742,6 @@ bool zap() {
 ```
 
 比較・交換操作とは、`std::atomic`のメンバ関数である`compare_exchange_strong()`と`compare_exchange_weak()`および、その非メンバ関数版と`explicit`付きのものです。
-
-## 整数型のロックフリーエイリアス
-
-整数型の`std::atomic`特殊化は多くの環境で`is_always_lock_free`プロパティ（静的メンバ定数）が`true`となり、それが期待されますが、CPUによってはそれは期待できないこともあり、整数型の`std::atomic`特殊化が常にロックフリーに振る舞うかは`is_always_lock_free`プロパティを調べる必要がありました。
-
-利便性のため、整数型の`std::atomic`特殊化であって、`is_always_lock_free`プロパティが`true`となることが保証される型、のエイリアスが提供されます。
-
-```cpp
-namespace std {
-  using atomic_signed_lock_free   = std::atomic<...>;
-  using atomic_unsigned_lock_free = std::atomic<...>;
-}
-```
-
-これらのエイリアスの`std::atomic<T>`の`T`は少なくとも整数型ですが、型は実装定義です。
-
-また、追加のプロパティとして、これらの型はアトミックな待機と通知操作（`wait()/notify_one()/notify_all()`）が最も効率的に行える型であることが指定されています。
-
-環境によって該当する特殊化が存在しない場合はこのエイリアスは定義されません。その場合はコンパイルエラーによって気づくことができるはずです。
 
 ## `std::memory_order`の定義の変更
 
