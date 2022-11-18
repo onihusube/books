@@ -3936,9 +3936,9 @@ C++17までとC++20からの各文字（列）型と標準出力ストリーム�
 
 この変更は、`std::basic_ostream<CharT, traits>`の非メンバ演算子オーバーロードとして追加されているため、これを継承する全ての出力ストリームが影響を受け、同様の結果になります。
 
-## 文字列バッファ/ストリームクラスの`.view()`
+## 文字列バッファ/ストリームの`.view()`
 
-`std::basic_stringstream`は入出力ストリームであり、その入出力先が内部の文字列バッファに対して行われるストリームです。このクラスはストリーム入出力の結果としての内部文字列を取り出すためのメンバ関数`.str()`を備えていますが、これは内部の文字列バッファの内容をコピーするもので単に参照だけしたい場合に非効率でした。
+文字列ストリームクラス（`std::basic_stringstream`とその特殊化）は入出力ストリームであり、その入出力先が内部の文字列バッファに対して行われるストリームです。このクラスはストリーム入出力の結果としての内部文字列を取り出すためのメンバ関数`.str()`を備えていますが、これは内部の文字列バッファの内容をコピーするもので単に参照だけしたい場合に非効率でした。
 
 そのため、`std::basic_stringstream`の内部バッファ参照時のコピーを回避するために、それを参照する`std::string_view`を返すメンバ関数`.view()`が追加されます
 
@@ -3967,15 +3967,139 @@ C++20
 C++20
 ```
 
-同様の変更は`std::basic_stringstream`の内部バッファとして使用される`std::basic_stringbuf`にも適用されます（が、これを直接使用することはほぼないでしょう）。
+また、`.str()`には右辺値参照修飾されたオーバーロードが追加され、`std::basic_stringstream`オブジェクトが右辺値の時に内部バッファの文字列をムーブして返します。
+
+```cpp
+#include <sstream>
+
+int main() {
+  std::stringstream ss;
+
+  ss << "C++";
+  ss << 20;
+
+  // コピーされている
+  std::string cpstr = ss.str();
+
+  // ムーブされている
+  std::string mvstr = std::move(ss).str();
+}
+```
+
+同様の変更は`std::basic_stringstream`の内部バッファとして使用される文字列バッファクラス（`std::basic_stringbuf`とその特殊化）にも適用されます（が、これを直接使用することはほぼないでしょう）。
 
 ## 文字列バッファ/ストリームクラスのアロケータ対応
+
+文字列ストリームクラスおよび文字列バッファクラスは内部バッファとして実質的に`std::string`を使用しており、どちらのクラスもそのアロケータ型を自身のクラステンプレートのテンプレート引数として受け取ります。
+
+```cpp
+namespace std {
+  template< 
+    class CharT, 
+    class Traits = char_traits<CharT>, 
+    class Allocator = allocator<CharT> 
+  >
+  class basic_stringbuf : public basic_streambuf<CharT, Traits>;
+
+  template< 
+    class CharT, 
+    class Traits = char_traits<CharT>,
+    class Allocator = allocator<CharT>
+  >
+  class basic_stringstream : public basic_iostream<CharT, Traits>;
+}
+```
+
+しかし、このアロケータ型をカスタムした後でカスタムしたアロケータオブジェクトを渡すには、それを内包した`std::string`オブジェクトを渡すしか方法がありませんでした。文字列ストリームの場合は、必ずしも初期文字列を指定しないのでこの使用法は直感的ではありません。
+
+そのため、`std::basic_stringstream`と`std::basic_stringbuf`のコンストラクタに直接アロケータを渡せるようにした上で、異なるアロケータ型を持つ`std::string`からの変換もサポートするようになります。
+
+```cpp
+#include <sstream>
+
+// 自作アロケータ型とする
+struct myalloc {...};
+
+using my_sstream = std::basic_stringstream<char, std::char_traits<char>, myalloc>;
+
+int main() {
+  myalloc alloc{};
+  std::basic_string str("custom alloc", alloc); // CTAD
+  std::string str2("default alloc");
+
+  my_sstream ss1{str};   // ok、C++11から
+  my_sstream ss2{alloc}; // ok、C++20から
+  my_sstream ss3{str2};  // ok、C++20から
+}
+```
+
+型名`S`を`std::basic_stringstream`と`std::basic_stringbuf`のどちらかとして`S<CharT, Traits, Alloc>`に対して、追加されるコンストラクタは次のようになります
+
+|コンストラクタ|`explicit`|`basic_stringstream`|`basic_stringbuf`|
+|---|:-:|:-:|:-:|
+|`S(const Alloc&)`|○|×|○|
+|`S(openmode, const Alloc&)`|-|○|○|
+|`S(basic_string<CharT, Traits, Alloc>&&, openmode)`|○|○|○|
+|`S(const basic_string<CharT, Traits, SAlloc>&, const Alloc&)`|-|○|○|
+|`S(const basic_string<CharT, Traits, SAlloc>&, openmode, const Alloc&)`|-|○|○|
+|`S(const basic_string<CharT, Traits, SAlloc>&, openmode)`|○|○|○|
+|`S(basic_stringbuf&&, const Alloc&)`|-|×|○|
+
+表中の`SAlloc`は`S<CharT, Traits, Alloc>`の`Alloc`と異なるアロケータ型を意味します。
+
+さらに、`.str()`もカスタムアロケータを考慮するようになることで、コピーする際に使用されるアロケータをカスタマイズ可能となります。
+
+```cpp
+#include <sstream>
+
+// 自作アロケータ型とする
+struct myalloc {...};
+
+int main() {
+  myalloc alloc{};
+  std::stringstrem ss;
+
+  ss << "C++";
+  ss << 20;
+
+  // アロケータを渡してそれを用いてコピー先を確保
+  auto restr = ss.str(alloc);
+  // restr.get_allocator() == alloc
+
+  std::basic_string str("replace", alloc);
+
+  // 異なるアロケータを持つ文字列によるバッファ置換
+  ss.str(str);
+}
+```
+
+また、`std::basic_stringbuf`には使用しているアロケータを取得するための`.get_allocator()`が追加されます。
+
+```cpp
+#include <sstream>
+
+template<typename Alloc>
+using sstream = std::basic_stringstream<char, std::char_traits<char>, Alloc>;
+
+template<typename Alloc>
+void f(sstream<Alloc>& strm) {
+  // 内部のstd::stringbufからアロケータを取得
+  auto alloc = strm.rdbuf()->get_allocator();
+
+  // 取得したアロケータを使用したstd::string
+  std::basic_string str("custom alloc", alloc);
+
+  ...
+}
+```
 
 # スマートポインタ
 
 ## `make_shared`の配列対応
 
 ## スマートポインタをデフォルト構築する
+
+## 未初期化メモリに対する操作
 
 # メモリ
 
