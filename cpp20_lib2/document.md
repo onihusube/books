@@ -4045,7 +4045,7 @@ int main() {
 |`S(const basic_string<CharT, Traits, SAlloc>&, openmode)`|○|○|○|
 |`S(basic_stringbuf&&, const Alloc&)`|-|×|○|
 
-表中の`SAlloc`は`S<CharT, Traits, Alloc>`の`Alloc`と異なるアロケータ型を意味します。
+表中の`SAlloc`は`S<CharT, Traits, Alloc>`の`Alloc`と異なるアロケータ型を表します。
 
 さらに、`.str()`もカスタムアロケータを考慮するようになることで、コピーする際に使用されるアロケータをカスタマイズ可能となります。
 
@@ -4097,7 +4097,103 @@ void f(sstream<Alloc>& strm) {
 
 ## `make_shared`の配列対応
 
+`std::make_shared<T>()`は`std::shared_ptr<T>`を作成するヘルパ関数であり、その作成にあたって例外安全性や効率性を提供してくれる優れものです。ただ、`std::shared_ptr`の配列版サポートはあるのに、この関数はなぜか`T`が配列型である場合のサポートがありませんでした。そのため、`T`が配列型の場合のためのオーバーロードが追加されます。
+
+```cpp
+// <memory>で定義
+namespace std {
+  
+  // 要素数不明の配列型（U[]）のためのもの
+  // 各要素は値初期化される
+  template<class T>
+  shared_ptr<T> make_shared(size_t N);
+
+  // 要素数既知の配列型（U[N]）のためのもの
+  // 各要素は値初期化される
+  template<class T>
+  shared_ptr<T> make_shared();
+
+  // 要素数不明の配列型（U[]）のためのもの
+  // uを初期値として各要素を初期化する
+  template<class T>
+  shared_ptr<T> make_shared(size_t N,
+                            const remove_extent_t<T>& u);
+
+  // 要素数既知の配列型（U[N]）のためのもの
+  // uを初期値として各要素を初期化する
+  template<class T>
+  shared_ptr<T> make_shared(const remove_extent_t<T>& u);
+}
+```
+
+これはまた、`std::allocate_shared()`にも同様に追加されます。この関数は、指定されたアロケータを用いてメモリを確保しオブジェクトを初期化しつつ適切に解放を行うカスタムデリータを仕込み、尚且つそれらを1回のメモリ確保で行ってくれるものです。
+
+```cpp
+// <memory>で定義
+namespace std {
+
+  // 要素数不明の配列型（U[]）のためのもの
+  // 各要素は値初期化される
+  template<class T, class A>
+  shared_ptr<T> allocate_shared(constA& a, size_t N);
+
+  // 要素数既知の配列型（U[N]）のためのもの
+  // 各要素は値初期化される
+  template<class T, class A>
+  shared_ptr<T> allocate_shared(constA& a);
+
+  // 要素数不明の配列型（U[]）のためのもの
+  // uを初期値として各要素を初期化する
+  template<class T, class A>
+  shared_ptr<T> allocate_shared(constA& a, size_t N,
+                                const remove_extent_t<T>& u);
+
+  // 要素数既知の配列型（U[N]）のためのもの
+  // uを初期値として各要素を初期化する
+  template<class T, class A>
+  shared_ptr<T> allocate_shared(constA& a, const remove_extent_t<T>& u);
+}
+```
+
+`std::make_shared()`を用いた例
+
+```cpp
+#include <memory>
+
+using std::views::counted;
+using std::ranges::all_of;
+
+template<int N>
+auto eq = [](int n) { return n == N; };
+
+int main() {
+  std::cout << std::boolalpha;
+  
+  // intの配列を10要素で初期化
+  auto sp1 = std::make_shared<int[]>(10);
+  auto sp2 = std::make_shared<int[10]>();
+
+  // 要素は全て値初期化（intなら0）されている
+  std::cout << all_of(counted(sp1.get(), 10), eq<0>) << '\n';
+  std::cout << all_of(counted(sp2.get(), 10), eq<0>) << '\n';
+  
+  // intの配列を10要素、初期値20で初期化
+  auto sp3 = std::make_shared<int[]>(10, 20);
+  auto sp4 = std::make_shared<int[10]>(20);
+  
+  // 要素は全て指定した値で初期化されている
+  std::cout << all_of(counted(sp3.get(), 10), eq<20>) << '\n';
+  std::cout << all_of(counted(sp4.get(), 10), eq<20>) << '\n';
+}
+```
+
+`std::allocate_shared()`は第1引数にアロケータを渡す以外は同様です。
+
+初期値を取らない関数の場合は各要素を値初期化（組み込み型はゼロ相当、クラス型はデフォルトコンストラクタ呼び出し）します。そのため、初期化後の各要素の値が不定にはなりません。
+
 ## スマートポインタをデフォルト構築する
+
+https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p1020r1.html
 
 ## 未初期化メモリに対する操作
 
