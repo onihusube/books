@@ -4186,6 +4186,14 @@ int main() {
   std::cout << all_of(counted(sp4.get(), 10), eq<20>) << '\n';
 }
 ```
+```{style=planetext}
+true
+true
+true
+true
+```
+
+`views::counted`はイテレータ1つと要素数から範囲を生成するRangeアダプタです。配列版スマートポインタはそのままでは`range`にならないため、これを用いると簡単に`range`化できます（結果型は`std::span`になります）。
 
 `std::allocate_shared()`は第1引数にアロケータを渡す以外は同様です。
 
@@ -4236,7 +4244,88 @@ namespace std {
 
 `make_unique`が要素数が既知の配列型（`T[N]`）に対して`delete`されているのは、`std::make_unique<T>()`が`std::unique_ptr<T>`を返すという一貫性を維持していることと、`delete`定義が無い場合に`std::make_unique<T[N]>()`を使用すると非配列オーバーロードが使用されて非配列版`std::unique_ptr`が返されてしまうことを防止するためです。
 
-## 未初期化メモリに対する操作
+## 未初期化メモリに対するアロゴリズム
+
+前節の`for_overwrite`系の関数で配列としてメモリを確保したとき、その領域の初期化は少し面倒な作業です。典型的な`for`ループではなく、アロゴリズム的にさっと書いて済ませられると便利です。それを行う関数としてC++11から`std::uninitialized_~`系の未初期化メモリに対する操作アルゴリズム関数が用意されています。
+
+それらの現在のものはイテレータペアを取るものであり、`<ranges>`導入に伴って`range`を取ることができコンセプトで制約されたRange版が追加されます。これらの関数はRangeアルゴリズムと同様に`std::ranges`名前空間に配置されます。
+
+|関数|効果|
+|---|---|
+|`uninitialized_default_construct(r)`|各要素をデフォルト構築する|
+|`uninitialized_default_construct_n(it, n)`|先頭`n`個の要素をデフォルト構築する|
+|`uninitialized_value_construct(r)`|各要素を値初期化する|
+|`uninitialized_value_construct_n(it, n)`|先頭`n`個の要素を値初期化する|
+|`uninitialized_copy(in_r, out_r)`|各要素を別の範囲からコピーして初期化する|
+|`uninitialized_copy_n(ii, n, oif, oil)`|先頭`n`個の要素を別の範囲からコピーして初期化する|
+|`uninitialized_move(in_r, out_r)`|各要素を別の範囲からムーブして初期化する|
+|`uninitialized_move_n(ii, n, oif, oil)`|先頭`n`個の要素を別の範囲からムーブして初期化する|
+|`uninitialized_fill(r, init)`|各要素を`init`で初期化する|
+|`uninitialized_fill_n(it, n, init)`|先頭`n`個の要素を`init`で初期化する|
+|`construct_at(p, args...)`|指定されたポインタの指すオブジェクトを構築する|
+|`destroy_at(p)`|指定されたポインタの指すオブジェクトを破棄する|
+|`destroy(r)`|各要素を破棄する|
+|`destroy_n(it, n)`|先頭`n`個の要素を破棄する|
+
+表内引数の意味
+
+- `r, out_r` : 初期化対象の範囲（`ranges`）
+- `n` : 要素数
+- `in_r` : 初期化するオブジェクトを提供する他の範囲
+- `ii` : `in_r`の先頭イテレータ
+- `oif, oil` : `out_r`のイテレータペア
+- `init` : 初期値
+- `it` : `out_r`の先頭イテレータ
+- `p` : ポインタ
+- `args...` : コンストラクタ引数
+
+範囲（`r, out_r, in_r`）を受け取る関数は、その位置にイテレータペアを受け取るオーバーロードも用意されています。
+
+`_default_construct`系は範囲をデフォルト初期化（トリビアルな型は何もせず、それ以外の型はデフォルトコンストラクタ呼び出し）し、`_value_construct`系は範囲を値初期化するものですので、これらはスマートポインタの生成ヘルパ関数の結果に対して使うことはないでしょう。前者の状態が欲しい場合は`for_overwrite`系の関数を、後者の状態が欲しい場合は`for_overwrite`ではない関数を使用すればよいためです。
+
+```cpp
+#include <memory>
+
+using namespace std::ranges;
+using namespace std::views;
+
+template<int N>
+auto eq = [](int n) { return n == N; };
+
+int main() {
+  // 配列を動的確保しスマートポインタに詰める
+  // 領域は未初期化
+  auto up = std::make_unique_for_overwrite<int[]>(10);
+  auto sp = std::make_shared_for_overwrite<int[]>(10);
+
+  // [0, 10)の数列で初期化
+  uninitialized_copy(iota(0, 10), counted(up.get(), 10));
+
+  // 全要素を20で埋める
+  uninitialized_fill(counted(sp.get(), 10), 20);
+
+  std::cout << std::boolalpha;
+  std::cout << equal(counted(up.get(), 10), iota(0, 10)) << '\n';
+  std::cout << all_of(counted(sp.get(), 10), eq<20>) << '\n';
+
+  // 範囲の各要素のオブジェクトを破棄（デストラクタ呼び出し）
+  destroy(counted(up.get(), 10));
+  
+  // 先頭5要素をspの範囲からムーブして初期化
+  uninitialized_move_n(sp.get(), 5, up.get(), up.get() + 10);
+  
+  std::cout << equal(counted(up.get(), 5), eq<20>) << '\n';
+}
+```
+```{style=planetext}
+true
+true
+true
+```
+
+`uninitialized_copy`と`uninitialized_move`は最初の引数に初期値を提供する範囲を指定し、最後の引数で初期化対象の未初期化範囲を指定するのですが、初期化したい範囲を指定する引数の位置がほかと異なっているため注意が必要かもしれません。
+
+これらの関数は、Rangeアルゴリズムや`std::ranges`のイテレータ関連ユーティリティ（`ranges::advance()`等）と同様にADLを無効化する性質を持っています。特に、`ranges::construct_at()`と`ranges::destroy_at()`はこの点だけが対応する`std`名前空間にあるものと異なります。
 
 # メモリ
 
@@ -4249,7 +4338,7 @@ namespace std {
 
 # `constexpr`化
 
-## `std::string/std::vector`及びアロケータ
+## コンパイル時メモリ確保
 
 # 型特性
 
