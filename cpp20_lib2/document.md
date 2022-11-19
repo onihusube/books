@@ -4193,7 +4193,48 @@ int main() {
 
 ## スマートポインタをデフォルト構築する
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p1020r1.html
+前節の`std::make_shared()`や`std::allocate_shared()`の配列版では、初期値を指定しない場合に値初期化が行われていました。この挙動は非配列版や`std::make_unique()`でも同様であり、これはすなわち確保したメモリのゼロクリアが常に行われることを示しています。
+
+確保するメモリ量が大きくなるとこのオーバーヘッドは無視できなくなり、パフォーマンス低下の可能性があります。そのため、これらのスマートポインタ生成ヘルパ関数に対してサフィックスに`for_overwrite`と付く、確保した領域に何もしない関数が追加されます。
+
+```cpp
+// <memory>で定義
+namespace std {
+
+  // 非配列型のためのもの
+  template<class T>
+  constexpr unique_ptr<T> make_unique_for_overwrite();
+  
+  // 配列型のためのもの
+  template<class T>
+  constexpr unique_ptr<T> make_unique_for_overwrite(size_t n);
+  
+  // 要素数が既知の配列型では使用不可
+  template<class T, class... Args>
+  unspecified make_unique_for_overwrite(Args&&...) = delete;
+
+
+  // 非配列型のためのもの
+  template<class T>
+  shared_ptr<T> make_shared_for_overwrite();
+  
+  // 非配列型のためのもの
+  template<class T, class A>
+  shared_ptr<T> allocate_shared_for_overwrite(const A& a);
+
+  // 配列型のためのもの
+  template<class T>
+  shared_ptr<T> make_shared_for_overwrite(size_t N);
+  
+  // 配列型のためのもの
+  template<class T, class A>
+  shared_ptr<T> allocate_shared_for_overwrite(const A& a, size_t N);
+}
+```
+
+これらの関数はその意図として初期化後の領域の状態が不定になります。従って、読み出しの前に適切に各要素を初期化する必要があります。
+
+`make_unique`が要素数が既知の配列型（`T[N]`）に対して`delete`されているのは、`std::make_unique<T>()`が`std::unique_ptr<T>`を返すという一貫性を維持していることと、`delete`定義が無い場合に`std::make_unique<T[N]>()`を使用すると非配列オーバーロードが使用されて非配列版`std::unique_ptr`が返されてしまうことを防止するためです。
 
 ## 未初期化メモリに対する操作
 
