@@ -4444,6 +4444,102 @@ constexpr int f() {
 
 ## `assume_aligned`
 
+`std::assume_aligned()`は、メモリ領域のアライメントについての仮定をコンパイラに伝える関数です。この目的はより積極的な最適化にあります。`std::assume_aligned<N>(ptr)`のように使用して、`ptr`のメモリ領域が`N`アライメントでアラインされていることをコンパイラに伝達します。なお、`N`は２のべき乗の正の整数値である必要があります。
+
+```cpp
+namespace std {
+  template<size_t N, class T>
+  [[nodiscard]]
+  constexpr T* assume_aligned(T* ptr);
+}
+```
+
+`std::assume_aligned()`の戻り値は引数の`ptr`がそのまま返されますが、`[[nodiscard]]`がついているように、戻り値は仮定されたアライメントを満たしている領域へのポインタとみなされる新しいポインタであり、この関数の恩恵を受けるにはこの戻り値のポインタを使用しなければなりません。
+
+```cpp
+#include <memory>
+
+void add(float* v1, float* v2) {
+  constexpr int N = 4;
+
+  float* p1 = std::assume_aligned<16>(v1);
+  float* p2 = std::assume_aligned<16>(v2);
+
+  for (int i = 0; i < N; ++i) {
+    // assume_alignedを通したポインタを使用する
+    p1[i] += p2[i];
+  }
+}
+```
+
+このコードをg++ 12.2 -std=c++20 -O3でコンパイルし、出力アセンブリを見てみます。比較のために、`std::assume_aligned()`を使用しない場合も載せておきます
+
+`std::assume_aligned()`を使用する場合
+
+```asm
+add(float*, float*):
+        movaps  xmm0, XMMWORD PTR [rdi]
+        addps   xmm0, XMMWORD PTR [rsi]
+        movaps  XMMWORD PTR [rdi], xmm0
+        ret
+```
+
+`movaps`はSSE命令の1つで、4つの`float`値をSSEレジスタ（`xmm0`）にコピーするものです。`addps`もSSE命令で、第1オペランド（`xmm0`）の4つの`float`値に、第2オペランドの4つの`float`値を足しこむものです。3行目の`movaps`は結果を第1引数（`v1`）の領域に書き戻しています。
+
+`std::assume_aligned()`を使用しない場合（サンプルコード中の`p1, p2`の初期化を`v1, v2`をそのまま代入するように変更）
+
+```asm
+add(float*, float*):
+        lea     rdx, [rsi+4]
+        mov     rax, rdi
+        sub     rax, rdx
+        cmp     rax, 8
+        jbe     .L2
+        movups  xmm0, XMMWORD PTR [rsi]
+        movups  xmm1, XMMWORD PTR [rdi]
+        addps   xmm0, xmm1
+        movups  XMMWORD PTR [rdi], xmm0
+        ret
+.L2:
+        movss   xmm0, DWORD PTR [rdi]
+        addss   xmm0, DWORD PTR [rsi]
+        movss   DWORD PTR [rdi], xmm0
+        movss   xmm0, DWORD PTR [rdi+4]
+        addss   xmm0, DWORD PTR [rsi+4]
+        movss   DWORD PTR [rdi+4], xmm0
+        movss   xmm0, DWORD PTR [rdi+8]
+        addss   xmm0, DWORD PTR [rsi+8]
+        movss   DWORD PTR [rdi+8], xmm0
+        movss   xmm0, DWORD PTR [rdi+12]
+        addss   xmm0, DWORD PTR [rsi+12]
+        movss   DWORD PTR [rdi+12], xmm0
+        ret
+```
+
+まずやたら長いので少なくともコードが変わっていることが分かります。ここで行われているのは、まず入力配列のアライメントをチェックして8バイトアライメントよりも大きければ`movups`命令（アライメント要求が無い`movaps`）によって先程とほぼ同様にSSE命令によって処理されます。8バイトアライメント以下である場合、ループ（展開されてはいますが）によって1要素づつ足しています。
+
+`std::assume_aligned()`を使用しない場合でもコンパイラは相当頑張った最適化をしていますが、`std::assume_aligned()`によってアライメント仮定が伝わることでアライメントの考慮をしなくて済むようになり、最適化が促進されています。
+
+このように、適切に使用すると最適化を促進できる可能性がありますが、`std::assume_aligned()`に渡したポインタが本当に仮定したアライメント通りにアラインされていることはプログラマが保証しなければなりません。そうでない場合未定義動作です。
+
+例えば、上記の`std::assume_aligned()`を使用する`add()`に、何も考えずに作成した`float`配列を渡すとアライメント違反の例外によってプログラムが終了します。
+
+```cpp
+#include <memory>
+
+// 定義略
+void add(float* v1, float* v2);
+
+int main() {
+  float a1[4] = {1, 2, 3, 4};
+  float a2[4] = {1, 2, 3, 4};
+
+  add(a1, a2);  // UB、x86環境では一般保護例外が発生する
+}
+```
+
+最適化の前にまず計測はよく言われることですが、この関数を使用する際は本当に必要かどうか慎重に検討したうえで、仮定が満たされるかについても考慮する必要があります。
+
 ## uses-allcator構築のためのユーティリティ  
 
 ## `polymorphic_allocator`の改良
