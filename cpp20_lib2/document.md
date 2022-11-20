@@ -4542,15 +4542,17 @@ int main() {
 
 ## uses-allcator構築のためのユーティリティ
 
-uses-allcator構築はアロケータを用いてメモリを確保しその領域にオブジェクトを構築する際に、その使用したアロケータを適切に伝播させるための構築法の事で、特にスコープアロケータモデルにおいて必須の操作です。
+uses-allcator構築は、アロケータを用いてメモリを確保しその領域にオブジェクトを構築する際に、その使用したアロケータを適切に伝播させるための構築法の事で、特にスコープアロケータモデルにおいて必須の操作です。
 
 このアロケータ伝播経路はかなりアドホックなものであり、アロケータを用いて構築可能な型が`std::pair`に包まれていたりするとアロケータの伝播が阻害されていたりしました。また、その特殊ケースを処理するために`std::polymorphic_allocator`では複雑な構築をサポートしており、このような構築が将来必要な別の型についても同様の記述が必要になることが予想されていました。
 
 uses-allcator構築における`std::pair`のハンドリングと、標準のuses-allcator構築の規定を簡素化し集約するために、uses-allcator構築を行うユーティリティが追加されます。
 
-まず、オブジェクト構築の際にuses-allcator構築のために必要な引数列を求めるために、`std::uses_allocator_construction_args()`が追加されます。これは、`std::uses_allocator_construction_args<T>(alloc, arga...)`のように使用して、型`T`のuses-allcator構築のために必要な引数列が戻り値の`std::tuple`に詰められて得られます。例えば、`T`がアロケータを用いなければ単に`alloc`が無視され、`T`が`std::pair`の場合はその内部にアロケータを伝播させるために適切な`std::pair`コンストラクタを呼び出すための引数列を返します。
+まず、オブジェクト構築の際にuses-allcator構築のために必要な引数列を求めるために、`std::uses_allocator_construction_args()`が追加されます。これは、`std::uses_allocator_construction_args<T>(alloc, args...)`のように使用して、型`T`のuses-allcator構築のために必要な引数列が戻り値の`std::tuple`に詰められて得られます。例えば、`T`がアロケータを用いなければ単に`alloc`が無視され、`T`が`std::pair`の場合はその内部にアロケータを伝播させるために適切な`std::pair`コンストラクタを呼び出すための引数列を返します。
 
-この関数を使用してアロケータとコンストラクタ引数からオブジェクト構築を行う`std::make_obj_using_allocator()`と、未初期化領域に対してuses-allcator構築を行って初期化するための`std::uninitialized_construct_using_allocator()`が追加されます。
+`std::uses_allocator_construction_args()`は、ネストしている`std::pair`に対しても内部の`std::pair`にまで再帰的にuses-allcator構築を行います。
+
+そして、この関数を使用してアロケータとコンストラクタ引数からオブジェクト構築を行う`std::make_obj_using_allocator()`と、未初期化領域に対してuses-allcator構築を行って初期化するための`std::uninitialized_construct_using_allocator()`が追加されます。
 
 多くの場合はこの2つの関数を使用すればよく、`std::uses_allocator_construction_args()`を直接使用する必要はないでしょう。
 
