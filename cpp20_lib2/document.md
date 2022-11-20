@@ -4540,7 +4540,60 @@ int main() {
 
 最適化の前にまず計測はよく言われることですが、この関数を使用する際は本当に必要かどうか慎重に検討したうえで、仮定が満たされるかについても考慮する必要があります。
 
-## uses-allcator構築のためのユーティリティ  
+## uses-allcator構築のためのユーティリティ
+
+uses-allcator構築はアロケータを用いてメモリを確保しその領域にオブジェクトを構築する際に、その使用したアロケータを適切に伝播させるための構築法の事で、特にスコープアロケータモデルにおいて必須の操作です。
+
+このアロケータ伝播経路はかなりアドホックなものであり、アロケータを用いて構築可能な型が`std::pair`に包まれていたりするとアロケータの伝播が阻害されていたりしました。また、その特殊ケースを処理するために`std::polymorphic_allocator`では複雑な構築をサポートしており、このような構築が将来必要な別の型についても同様の記述が必要になることが予想されていました。
+
+uses-allcator構築における`std::pair`のハンドリングと、標準のuses-allcator構築の規定を簡素化し集約するために、uses-allcator構築を行うユーティリティが追加されます。
+
+まず、オブジェクト構築の際にuses-allcator構築のために必要な引数列を求めるために、`std::uses_allocator_construction_args()`が追加されます。これは、`std::uses_allocator_construction_args<T>(alloc, arga...)`のように使用して、型`T`のuses-allcator構築のために必要な引数列が戻り値の`std::tuple`に詰められて得られます。例えば、`T`がアロケータを用いなければ単に`alloc`が無視され、`T`が`std::pair`の場合はその内部にアロケータを伝播させるために適切な`std::pair`コンストラクタを呼び出すための引数列を返します。
+
+この関数を使用してアロケータとコンストラクタ引数からオブジェクト構築を行う`std::make_obj_using_allocator()`と、未初期化領域に対してuses-allcator構築を行って初期化するための`std::uninitialized_construct_using_allocator()`が追加されます。
+
+多くの場合はこの2つの関数を使用すればよく、`std::uses_allocator_construction_args()`を直接使用する必要はないでしょう。
+
+```cpp
+#include <memory>
+
+using pair = std::pair<
+                std::pmr::string,
+                int
+             >;
+
+int main() {
+  std::pmr::monotonic_buffer_resource mr{};
+  std::pmr::polymorphic_allocator<pair> alloc{&mr};
+
+  // uses-allcator構築によるオブジェクト構築
+  pair p = std::make_obj_using_allocator<pair>(alloc, "first", 10);
+
+  std::cout << std::boolalpha;
+  std::cout << (p.first.get_allocator() == alloc) << '\n';
+  std::cout << p.second << '\n';
+
+  // メモリ領域の確保
+  pair* ptr = alloc.allocate(sizeof(pair));
+  // uses-allcator構築によるオブジェクト構築
+  ptr = std::uninitialized_construct_using_allocator(ptr, alloc, "first", 10);
+  
+  std::cout << (ptr->first.get_allocator() == alloc) << '\n';
+  std::cout << ptr->second << '\n';
+
+  // オブジェクト破棄とメモリ解放
+  std::destroy_at(ptr);
+  alloc.deallocate(ptr, sizeof(pair));
+}
+```
+```{style=planetext}
+true
+10
+true
+10
+```
+
+`std::make_obj_using_allocator()`は、渡されたアロケータを用いてメモリを確保してそこにオブジェクトを構築する関数ではなく、渡されたアロケータを用いたuses-allcator構築を行うだけの関数です。返されたオブジェクトはスタック領域上に配置されています。
 
 ## `polymorphic_allocator`の改良
 
