@@ -4244,7 +4244,7 @@ namespace std {
 
 `make_unique`が要素数が既知の配列型（`T[N]`）に対して`delete`されているのは、`std::make_unique<T>()`が`std::unique_ptr<T>`を返すという一貫性を維持していることと、`delete`定義が無い場合に`std::make_unique<T[N]>()`を使用すると非配列オーバーロードが使用されて非配列版`std::unique_ptr`が返されてしまうことを防止するためです。
 
-## 未初期化メモリに対するアロゴリズム
+## 未初期化メモリに対するアルゴリズム
 
 前節の`for_overwrite`系の関数で配列としてメモリを確保したとき、その領域の初期化は少し面倒な作業です。典型的な`for`ループではなく、アロゴリズム的にさっと書いて済ませられると便利です。それを行う関数としてC++11から`std::uninitialized_~`系の未初期化メモリに対する操作アルゴリズム関数が用意されています。
 
@@ -4262,8 +4262,6 @@ namespace std {
 |`uninitialized_move_n(ii, n, oif, oil)`|先頭`n`個の要素を別の範囲からムーブして初期化する|
 |`uninitialized_fill(r, init)`|各要素を`init`で初期化する|
 |`uninitialized_fill_n(it, n, init)`|先頭`n`個の要素を`init`で初期化する|
-|`construct_at(p, args...)`|指定されたポインタの指すオブジェクトを構築する|
-|`destroy_at(p)`|指定されたポインタの指すオブジェクトを破棄する|
 |`destroy(r)`|各要素を破棄する|
 |`destroy_n(it, n)`|先頭`n`個の要素を破棄する|
 
@@ -4325,9 +4323,124 @@ true
 
 `uninitialized_copy`と`uninitialized_move`は最初の引数に初期値を提供する範囲を指定し、最後の引数で初期化対象の未初期化範囲を指定するのですが、初期化したい範囲を指定する引数の位置がほかと異なっているため注意が必要かもしれません。
 
-これらの関数は、Rangeアルゴリズムや`std::ranges`のイテレータ関連ユーティリティ（`ranges::advance()`等）と同様にADLを無効化する性質を持っています。特に、`ranges::construct_at()`と`ranges::destroy_at()`はこの点だけが対応する`std`名前空間にあるものと異なります。
+これらの関数は、Rangeアルゴリズムや`std::ranges`のイテレータ関連ユーティリティ（`ranges::advance()`等）と同様にADLを無効化する性質を持っています。
+
+ここまでは流れでこれらのアルゴリズム関数を`for_overwrite`系のスマートポインタ生成関数で例示していましたが、スマートポインタ生成関数はいずれも確保した領域にオブジェクトを構築するまでが仕事であるため、厳密にはこれらアルゴリズムが対象とする未初期化メモリ領域ではありません。本当の未初期化メモリとは、`::operator new()`（`new`式ではなく）や`malloc()`、システムやライブラリの提供するメモリ確保関数など、メモリの確保だけを行う関数によって取得されたメモリ領域です。そのような素のメモリ領域には想定するであろう型のオブジェクトが構築されていないため、ポインタを通したアクセスが未定義動作となります。
+
+```cpp
+#include <memory>
+
+class C {
+  int n = 10;
+public:
+  C() = default;
+
+  int get() {
+    return this->n;
+  }
+};
+
+// Cはトリビアルではない
+static_assert(not std::is_trivially_default_constructible_v<C>);
+
+using namespace std::ranges;
+using namespace std::views;
+
+template<int N>
+auto eq = [](C& c) { return c.get() == N; };
+
+int main() {
+  // 5要素分のCの領域を確保
+  C* p1 = static_cast<C*>(::operator new(sizeof(C[5])));
+  C* p2 = static_cast<C*>(std::malloc(sizeof(C[5])));
+
+  // UB!! p1,p2の指す領域は未初期化
+  //std::cout << p1->get();
+  //std::cout << p2->get();
+
+  // 領域を値初期化
+  uninitialized_value_construct(counted(p1, 5));
+  // 領域をデフォルト初期化
+  uninitialized_default_construct(counted(p2, 5));
+
+  std::cout << std::boolalpha;
+  std::cout << all_of(counted(p1, 5), eq<10>) << '\n';
+  std::cout << all_of(counted(p2, 5), eq<10>) << '\n';
+}
+```
+```{style=planetext}
+true
+true
+```
+
+この例では、値初期化でもデフォルト初期化でも`C`のデフォルトコンストラクタが呼ばれ、デフォルトメンバ初期化の`10`で`C::n`は初期化されています。
+
+ただし、*implicit-lifetime types*と呼ばれる型のオブジェクトはこのような場合でも暗黙的に構築されます（詳細は「C++20 言語機能」を参照）。組み込み型は少なくともその型のグループに含まれています。
 
 # メモリ
+
+## コンパイル時メモリ確保関連
+
+C++20で解禁されたコンパイル時動的メモリ確保は、言語仕様の変更と一部のライブラリ機能の特別扱いによって達成されています。その詳細は「C++20 言語機能」を参照してください。ここではライブラリの変更のみを扱います。
+
+まず、グローバルな置換可能な（非ユーザー定義）`operator new`と`operator delete`が定数式で呼び出し可能になりますが、これは特別扱いされており特に`constexpr`指定されているわけではありません。
+
+次に、これを標準コンテナなどで利用するために、アロケータクラスが`constexpr`対応します。次のクラスとそのメンバ関数が`constexpr`指定されるようになります
+
+- `std::allocator`
+    - コンストラクタ
+    - デストラクタ
+    - `.allocate()`
+    - `.deallocate()`
+    - `operator=`
+    - `operator==`（非メンバ関数）
+    - `operator!=`（非メンバ関数）
+- `std::allocator_traits`
+    - `.allocate()`
+    - `.deallocate()`
+    - `.max_size()`
+    - `.construct()`
+    - `.destroy()`
+    - `.select_on_container_copy_construction()`
+
+`std::allocator_traits`の`.construct()`と`.destroy()`の定数式での実行においては、前者は配置`new`後者は`~T()`（デストラクタ呼び出し）が必要で、これらの実行においてはポインタの再解釈が必要となります。定数式でそれは許可されないため、これらの操作を行うライブラリ関数を`constexpr`指定します。
+
+- オブジェクト構築（配置`new`）を行う
+    - `std::construct_at()`
+    - `std::ranges::construct_at()`
+- オブジェクト破棄（デストラクタ呼び出し）を行う
+    - `std::destroy_at()`
+    - `std::ranges::destroy_at()`
+    - `std::destroy()`
+    - `std::destroy_n()`
+    - `std::ranges::destroy()`
+    - `std::ranges::destroy_n()`
+
+`ranges::construct_at()`と`ranges::destroy_at()`はADLを無効化するという性質を持つ点だけが`std`名前空間にあるものと異なり、範囲を受け取って一括処理するものではありません。`destroy`系関数については前節を参照。
+
+これらのものはユーザーが直接使用することもできますが、その時でもコンパイル時動的メモリ確保のルールに従っている必要があります。最も、多くの場合は`std::string`と`std::vector`を介して使用することになるかと思われます。
+
+```cpp
+#include <memory>
+
+// ok、C++20から
+constexpr int f() {
+  std::allocator<int> alloc{};
+
+  // メモリ確保とオブジェクト構築
+  int* p = alloc.allocate(1);
+  p = std::construct_at(p);
+
+  *p = 20;
+  int n = *p;
+
+  // オブジェクト破棄とメモリ解放
+  std::destroy_at(p);
+  alloc.deallocate();
+
+  return n;
+}
+```
 
 ## `assume_aligned`
 
@@ -4338,7 +4451,6 @@ true
 
 # `constexpr`化
 
-## コンパイル時メモリ確保
 
 # 型特性
 
