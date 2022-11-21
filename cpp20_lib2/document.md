@@ -4242,11 +4242,11 @@ namespace std {
 
 これらの関数はその意図として初期化後の領域の状態が不定になります。従って、読み出しの前に適切に各要素を初期化する必要があります。
 
-`make_unique`が要素数が既知の配列型（`T[N]`）に対して`delete`されているのは、`std::make_unique<T>()`が`std::unique_ptr<T>`を返すという一貫性を維持していることと、`delete`定義が無い場合に`std::make_unique<T[N]>()`を使用すると非配列オーバーロードが使用されて非配列版`std::unique_ptr`が返されてしまうことを防止するためです。
+`make_unique`が要素数が既知の配列型（`T[N]`）に対して`delete`されているのは、`std::make_unique<T>()`が`std::unique_ptr<T>`を返すという一貫性を維持していることと、`delete`定義が無い場合に`std::make_unique<T[N]>()`を使用すると非配列オーバーロードが使用されて非配列版`std::unique_ptr<T[N]>`が返されてしまうことを防止するためです。
 
 ## 未初期化メモリに対するアルゴリズム
 
-前節の`for_overwrite`系の関数で配列としてメモリを確保したとき、その領域の初期化は少し面倒な作業です。典型的な`for`ループではなく、アロゴリズム的にさっと書いて済ませられると便利です。それを行う関数としてC++11から`std::uninitialized_~`系の未初期化メモリに対する操作アルゴリズム関数が用意されています。
+前節の`for_overwrite`系の関数で配列としてメモリを確保したとき、その領域の初期化は少し面倒な作業です。典型的な`for`ループではなく、アルゴリズム的にさっと書いて済ませられると便利です。それを行う関数としてC++11から`std::uninitialized_~`系の未初期化メモリに対する操作アルゴリズム関数が用意されています。
 
 それらの現在のものはイテレータペアを取るものであり、`<ranges>`導入に伴って`range`を取ることができコンセプトで制約されたRange版が追加されます。これらの関数はRangeアルゴリズムと同様に`std::ranges`名前空間に配置されます。
 
@@ -4309,10 +4309,10 @@ int main() {
   // 範囲の各要素のオブジェクトを破棄（デストラクタ呼び出し）
   destroy(counted(up.get(), 10));
   
-  // 先頭5要素をspの範囲からムーブして初期化
+  // upの先頭5要素をspの範囲からムーブして初期化
   uninitialized_move_n(sp.get(), 5, up.get(), up.get() + 10);
   
-  std::cout << equal(counted(up.get(), 5), eq<20>) << '\n';
+  std::cout << all_of(counted(up.get(), 5), eq<20>) << '\n';
 }
 ```
 ```{style=planetext}
@@ -4377,7 +4377,7 @@ true
 
 ただし、*implicit-lifetime types*と呼ばれる型のオブジェクトはこのような場合でも暗黙的に構築されます（詳細は「C++20 言語機能」を参照）。組み込み型は少なくともその型のグループに含まれています。
 
-# メモリ
+# その他メモリ関連
 
 ## コンパイル時メモリ確保関連
 
@@ -4472,7 +4472,7 @@ void add(float* v1, float* v2) {
 }
 ```
 
-このコードをg++ 12.2 -std=c++20 -O3でコンパイルし、出力アセンブリを見てみます。比較のために、`std::assume_aligned()`を使用しない場合も載せておきます
+このコードをx86-64環境のg++ 12.2 -std=c++20 -O3でコンパイルし、出力アセンブリを見てみます（Compiler Explorerを使用しました）。比較のために、`std::assume_aligned()`を使用しない場合も載せておきます
 
 `std::assume_aligned()`を使用する場合
 
@@ -4520,9 +4520,7 @@ add(float*, float*):
 
 `std::assume_aligned()`を使用しない場合でもコンパイラは相当頑張った最適化をしていますが、`std::assume_aligned()`によってアライメント仮定が伝わることでアライメントの考慮をしなくて済むようになり、最適化が促進されています。
 
-このように、適切に使用すると最適化を促進できる可能性がありますが、`std::assume_aligned()`に渡したポインタが本当に仮定したアライメント通りにアラインされていることはプログラマが保証しなければなりません。そうでない場合未定義動作です。
-
-例えば、上記の`std::assume_aligned()`を使用する`add()`に、何も考えずに作成した`float`配列を渡すとアライメント違反の例外によってプログラムが終了します。
+このように、適切に使用すると最適化を促進できる可能性がありますが、`std::assume_aligned()`を通したポインタが本当に仮定したアライメント通りにアラインされていることはプログラマが保証しなければなりません。そうでない場合未定義動作です。例えば、上記の`std::assume_aligned()`を使用する`add()`に、何も考えずに作成した`float`配列を渡すとアライメント違反の例外によってプログラムが終了するでしょう。
 
 ```cpp
 #include <memory>
@@ -4599,9 +4597,94 @@ true
 
 ## `polymorphic_allocator`の改良
 
+`std::pmr::polymorphic_allocator`はC++17で追加されたアロケータで、そのメモリ確保戦略を型に示すことなく実行時に切り替えられるアロケータです。メモリアロケータの実体は`std::pmr::memory_resource`というインターフェースを実装した型で、`std::pmr::polymorphic_allocator`には`std::pmr::memory_resource`を実装したオブジェクトのポインタを渡すことでアロケータ実装を注入します。
 
-# `constexpr`化
+`std::pmr::memory_resource`は非クラステンプレートであり、`std::allocator<T>`などと異なりアロケート対象の型に束縛されません。一方、`std::pmr::polymorphic_allocator<T>`はクラステンプレートであり、従来のアロケータに倣って確保する要素型`T`をテンプレートパラメータに取ります。前述のように実際にはその型はアロケーションに使用されておらず殆ど無意味でした。むしろ、このテンプレートパラメータがあることによって異なる型のアロケータが必要になった際にアロケータのrebindが必要になるなど、使用感を損ねていました。
 
+そのため、C++20からはテンプレートパラメータのデフォルト引数として`std::byte`が指定されるようになり、`std::pmr::polymorphic_allocator<>`の形で利用できるようになります。
+
+```cpp
+// <memory_resource>で定義
+namespace std::pmr {
+
+  // C++20からの宣言例
+  template <class Tp = byte>
+  class polymorphic_allocator {
+    ...
+  };
+}
+```
+
+また、この変更によって`std::allocator_traits`を介さない利用がより促進されたため、単体でアロケータクラスとして活用できるように便利なアロケーション関数が追加されます。
+
+|関数|戻り値|意味|
+|---|---|---|
+|`allocate_bytes(n, al)`|確保領域のポインタ|`al`アライメントで`n`バイトのメモリを確保する|
+|`deallocate_bytes(p, n, al)`|なし|`allocate_bytes()`で確保した領域を解放する|
+|`allocate_object<T>(n)`|確保領域のポインタ|`T[n]`を配置するのに十分なメモリを確保する|
+|`deallocate_object<T>(p, n)`|なし|`allocate_object()`で確保した領域を解放する|
+|`new_object<T>(args...)`|構築したオブジェクトのポインタ|メモリを確保し`T`のオブジェクトを構築する|
+|`delete_object<T>(p)`|なし|`new_object()`で構築したオブジェクトを破棄しメモリを解放する|
+
+```cpp
+#include <memory_resource>
+
+using std::uninitialized_construct_using_allocator;
+using namespace std::ranges;
+using namespace std::views;
+
+template<int N>
+auto eq = [](int& n) { return n == N; };
+
+int main() {
+  std::pmr::monotonic_buffer_resource mr{};
+  std::pmr::polymorphic_allocator<> alloc{&mr};
+
+  std::cout << std::boolalpha;
+  {
+    // メモリ確保と初期化
+    void* ptr = alloc.allocate_bytes(sizeof(std::string), alignof(std::string));
+    // アロケータ型が異なるため、アロケータは伝播しない
+    auto* ps = uninitialized_construct_using_allocator(static_cast<std::string*>(ptr), alloc, "str");
+
+    std::cout << *ps << '\n';
+
+    // オブジェクト破棄とメモリ解放
+    std::destroy_at(ps);
+    alloc.deallocate_bytes(ptr, sizeof(std::string), alignof(std::string));
+  }
+  {
+    // メモリ確保と初期化
+    int* ptr = alloc.allocate_object<int>(5);
+    uninitialized_fill(counted(ptr, 5), 20);
+
+    std::cout << all_of(counted(ptr, 5), eq<20>) << '\n';
+
+    // オブジェクト破棄とメモリ解放
+    destroy(counted(ptr, 5));
+    alloc.deallocate_object(ptr, 5);
+  }
+  {
+    // メモリ確保と初期化
+    auto* ps = alloc.new_object<std::pmr::string>("pmrstr");
+
+    std::cout << *ps << '\n';
+    // uses-allocator構築が行われている
+    std::cout << (ps->get_allocator() == alloc) << '\n';
+
+    // オブジェクト破棄とメモリ解放
+    alloc.delete_object(ps);
+  }
+}
+```
+```{style=planetext}
+str
+true
+pmrstr
+true
+```
+
+これらの調整は`std::pmr::polymorphic_allocator<>`を語彙型（*vocabulary type*）として活用可能とすることを意図しています。
 
 # 型特性
 
@@ -4659,6 +4742,9 @@ auto f() {
 ## 標準ライブラリ型の`<=>`
 
 ## `[[nodiscard]]`
+
+
+# `constexpr`化
 
 # 非推奨と削除
 
