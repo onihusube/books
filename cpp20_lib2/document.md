@@ -4734,11 +4734,13 @@ true
 
 # 型特性（*type traits*）
 
+この章の機能は全て、`<type_traits>`ヘッダに配置されます。
+
 ## `remove_cvref`
 
 C++17まで、型特性`std::remove_reference`と`std::remove_cv`はそれぞれ個別に存在していました。しかし、実際のTMPにおいてはこれを2つ組み合わせてCV修飾と参照修飾を同時に除去したいことがほとんどでした。しかしちょうどこの2つを組み合わせた型特性は用意されておらず、近い振る舞いをする`std::decay`はその名前の由来となっている配列と関数のポインタへの減衰（*decay*）作用が不要だったり、ちょうどいいものがありませんでした。
 
-この問題は標準ライブラリにおいても同様であり、利便性と標準ライブラリの規定の簡略化と適切な指定のために、CV修飾と参照修飾の除去だけを行う型特性として`std::remove_cvref`が用意されます。
+この問題は標準ライブラリにおいても同様であり、利便性と標準ライブラリ規定の簡略化と適切な指定のために、CV修飾と参照修飾の除去だけを行う型特性として`std::remove_cvref`が用意されます。
 
 ```cpp
 static_assert(std::same_as<
@@ -4778,6 +4780,99 @@ using remove_cvref = std::remove_reference<std::remove_cv_t<T>>;
 ```
 
 ## `type_identity`
+
+`std::type_identity<T>`は受け取った型`T`をそのまま返すだけの型特性です。
+
+```cpp
+// なにもしない
+static_assert(std::same_as<
+  std::type_identity_t<const int volatile>,
+  const int volatile
+>);
+```
+
+この関数の一番の利用シーンは、関数テンプレートにおいて特定の引数の型推論を無効化したい場合でしょう。
+
+```cpp
+#include <type_traits>
+
+// 両方のテンプレートパラメータは同じ型
+template<typename T>
+void f(T x, T y) {}
+
+int main() {
+  f(10, 1.0); // ng 
+}
+```
+
+この例では、`f()`は2つの引数の型が同じ一つのテンプレートパラメータによって指定されています。それによって、2つの引数のテンプレートパラメータ推論が異なる型を導く場合にテンプレートパラメータを決定できずにエラーになります。このような場合に、どちらかの引数の推論結果から残りの引数型を決定してもらうには、片方の引数をテンプレートパラメータの推論対象から外す必要があります。
+
+```cpp
+#include <type_traits>
+
+// 第1引数だけを推論してもらう
+template<typename T>
+void f(T x, std::type_identity_t<T> y) {}
+
+int main() {
+  f(10, 1.0); // ok
+}
+```
+
+テンプレートパラメータの推論においては、テンプレートパラメータに対してある引数の型が直接そのテンプレートパラメータを使用していない場合に型推論の対象になりません（これを、推論されないコンテキストと言ったりします）。それはまさにこの例のように、他のクラステンプレートのテンプレートパラメータとして使用されている場合が該当しており、`std::type_identity`は型に何も触らずに意図的にそれを起こすことができます。
+
+また、テンプレートパラメータに型を渡す場合に渡すその場所（`T<int, char, ...>`の`<>`内）で型が不正（名前が型名を示さない場合）になると、たとえその型が使用されなくてもそこでハードエラーを起こします。
+
+```cpp
+#include <type_traits>
+
+template<bool, typename T>
+struct maybe_invalid {
+  using type = T;
+};
+
+template<typename T>
+struct maybe_invalid<false, T> {};
+
+// bによっては無効な型となる
+template<bool b, typename T>
+using maybe_invalid_t = typename maybe_invalid<b, T>::type;
+
+template<typename T, typename U>
+using cond_t = typename std::conditional_t<
+    true, // 真になるとして
+    T,    // 常にこっちが選択されるものの
+    maybe_invalid_t<false, U> // ここでハードエラー
+  >;
+
+using test = cond_t<int, int>;  // ng
+```
+
+これを回避するには一旦クラステンプレート内部の`::type`に埋め込んで、`std::conditional_t`の結果が確定してから`type`を取得する、のようにして`::type`の取得を遅延させる方法があります。ただこの場合、`T`は素の型なのでそのままだと別のクラスの定義が必要になりますが、それはまさに`std::type_identity`です。
+
+```cpp
+#include <type_traits>
+
+template<bool, typename T>
+struct maybe_invalid {
+  using type = T;
+};
+
+template<typename T>
+struct maybe_invalid<false, T> {};
+
+template<typename T, typename U>
+using cond_t = typename std::conditional_t<
+    true, // 真になるとして
+    std::type_identity<T>,  // Tを::typeに埋め込む
+    maybe_invalid<false, U> // 型名を示しているのでok
+  >::type;  // 結果が出てから型名を取得
+
+using test = cond_t<int, int>;  // ok
+```
+
+他にも色々な所で（主にTMPにおいて）活用できる地味に便利な機能です。
+
 ## `is_nothrow_convertible`
 ## `is_bounded_array`
 
