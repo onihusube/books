@@ -4894,7 +4894,27 @@ struct wrap {
 };
 ```
 
-## `is_bounded_array`
+## 配列型の要素数の有無の検出
+
+`std::make_shared()`や`std::make_unique()`では、配列型がその要素数が既知かどうかで振る舞いが変わっていました。このように、配列型では要素数が既知かどうかでほぼ別の型として扱う必要が出てくることがあります。しかし、標準ライブラリにはこれを検出する方法が用意されていませんでした。
+
+その検出のために、要素数が既知である場合に`true`となる`std::is_bounded_array`と要素数が不明の場合に`true`となる`std::is_unbounded_array`が追加されます。
+
+```cpp
+#include <type_traits>
+
+// どちらも配列型ではある
+static_assert(std::is_array_v<int[]>);
+static_assert(std::is_array_v<int[1]>);
+
+// 要素数が既知である場合にtrue
+static_assert(not std::is_bounded_array_v<int[]>);
+static_assert(std::is_bounded_array_v<int[1]>);
+
+// 要素数不明の場合にtrue
+static_assert(std::is_unbounded_array_v<int[]>);
+static_assert(not std::is_unbounded_array_v<int[1]>);
+```
 
 ## `unwrap_reference`
 
