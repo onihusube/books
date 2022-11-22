@@ -78,13 +78,22 @@ C++20では、コンセプトと`<ranges>`の導入に伴って、イテレー�
 ```cpp
 #include <iterator>
 
-int main() {
-  using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<int>>;
+using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<int>>;
 
-  static_assert(std::same_as<std::iter_difference_t<std::vector<int>::iterator>, std::ptrdiff_t>);
-  static_assert(std::same_as<std::iter_difference_t<int*>, std::ptrdiff_t>);
-  static_assert(std::same_as<std::iter_difference_t<iota_view_iter>, std::ptrdiff_t>);
-}
+static_assert(std::same_as<
+  std::iter_difference_t<std::vector<int>::iterator>, 
+  std::ptrdiff_t
+>);
+
+static_assert(std::same_as<
+  std::iter_difference_t<int*>,
+  std::ptrdiff_t
+>);
+
+static_assert(std::same_as<
+  std::iter_difference_t<iota_view_iter>,
+  std::ptrdiff_t
+>);
 ```
 
 #### `std::incrementable_traits`
@@ -111,13 +120,22 @@ C++20からのイテレータ型は上記いずれかで取得できるように
 ```cpp
 #include <iterator>
 
-int main() {
-  using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
+using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
 
-  static_assert(std::same_as<std::iter_value_t<std::vector<int>::iterator>, int>);
-  static_assert(std::same_as<std::iter_value_t<double*>, double>);
-  static_assert(std::same_as<std::iter_value_t<iota_view_iter>, unsigned int>);
-}
+static_assert(std::same_as<
+  std::iter_value_t<std::vector<int>::iterator>,
+  int
+>);
+
+static_assert(std::same_as<
+  std::iter_value_t<double*>,
+  double
+>);
+
+static_assert(std::same_as<
+  std::iter_value_t<iota_view_iter>,
+  unsigned int
+>);
 ```
 
 #### `std::indirectly_readable_traits`
@@ -142,13 +160,22 @@ int main() {
 ```cpp
 #include <iterator>
 
-int main() {
-  using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
+using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
 
-  static_assert(std::same_as<std::iter_reference_t<std::vector<int>::iterator>, int&>);
-  static_assert(std::same_as<std::iter_reference_t<double*>, double&>);
-  static_assert(std::same_as<std::iter_reference_t<iota_view_iter>, unsigned int>);
-}
+static_assert(std::same_as<
+  std::iter_reference_t<std::vector<int>::iterator>,
+  int&
+>);
+
+static_assert(std::same_as<
+  std::iter_reference_t<double*>,
+  double&
+>);
+
+static_assert(std::same_as<
+  std::iter_reference_t<iota_view_iter>,
+  unsigned int
+>);
 ```
 
 `reference`というのは歴史的経緯から来る名前で、イテレータの間接参照の戻り値型は必ずしも参照型ではなくてもokです。
@@ -171,13 +198,22 @@ namespace std {
 ```cpp
 #include <iterator>
 
-int main() {
-  using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
-  
-  static_assert(std::same_as<std::iter_rvalue_reference_t<std::vector<int>::iterator>, int&&>);
-  static_assert(std::same_as<std::iter_rvalue_reference_t<double*>, double&&>);
-  static_assert(std::same_as<std::iter_rvalue_reference_t<iota_view_iter>, unsigned int>);
-}
+using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
+
+static_assert(std::same_as<
+  std::iter_rvalue_reference_t<std::vector<int>::iterator>,
+  int&&
+>);
+
+static_assert(std::same_as<
+  std::iter_rvalue_reference_t<double*>,
+  double&&
+>);
+
+static_assert(std::same_as<
+  std::iter_rvalue_reference_t<iota_view_iter>,
+  unsigned int
+>);
 ```
 
 イテレータを`i`とすると、大抵の場合は`decltype(std::move(*i))`の型を取得することになりますが、`*i`がprvalueを返す場合はその型をそのまま取得します。
@@ -193,13 +229,22 @@ int main() {
 ```cpp
 #include <iterator>
 
-int main() {
-  using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
+using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
 
-  static_assert(std::same_as<std::iter_common_reference_t<std::vector<int>::iterator>, int&>);
-  static_assert(std::same_as<std::iter_common_reference_t<double*>, double&>);
-  static_assert(std::same_as<std::iter_common_reference_t<iota_view_iter>, unsigned int>);
-}
+static_assert(std::same_as<
+  std::iter_common_reference_t<std::vector<int>::iterator>,
+  int&
+>);
+
+static_assert(std::same_as<
+  std::iter_common_reference_t<double*>,
+  double&
+>);
+
+static_assert(std::same_as<
+  std::iter_common_reference_t<iota_view_iter>,
+  unsigned int
+>);
 ```
 
 これも`reference`といいつつ、必ずしも参照型であるとは限りません。
@@ -227,17 +272,18 @@ namespace std {
 template<typename T>
 auto comp(const T& lhs, const T& rhs) -> bool;
 
-int main() {
-  using f_t = decltype(&comp<int>);
-  using vecit = std::vector<int>::iterator;
+using f_t = decltype(&comp<int>);
+using vecit = std::vector<int>::iterator;
 
-  static_assert(std::same_as<
-                  std::indirect_result_t<f_t, int*, int*>, 
-                  bool>);
-  static_assert(std::same_as<
-                  std::indirect_result_t<f_t, vecit, vecit>, 
-                  bool>);
-}
+static_assert(std::same_as<
+  std::indirect_result_t<f_t, int*, int*>, 
+  bool
+>);
+
+static_assert(std::same_as<
+  std::indirect_result_t<f_t, vecit, vecit>, 
+  bool
+>);
 ```
 
 イテレータ`i1, i2, ..., in`とその要素を渡して呼びだす関数`f`がある時、`f(*i1, *i2, ..., *in)`と呼んだ時の戻り値型を取得するものです。
@@ -4542,7 +4588,7 @@ int main() {
 
 uses-allcator構築は、アロケータを用いてメモリを確保しその領域にオブジェクトを構築する際に、その使用したアロケータを適切に伝播させるための構築法の事で、特にスコープアロケータモデルにおいて必須の操作です。
 
-このアロケータ伝播経路はかなりアドホックなものであり、アロケータを用いて構築可能な型が`std::pair`に包まれていたりするとアロケータの伝播が阻害されていたりしました。また、その特殊ケースを処理するために`std::polymorphic_allocator`では複雑な構築をサポートしており、このような構築が将来必要な別の型についても同様の記述が必要になることが予想されていました。
+このアロケータ伝播経路はかなりアドホックなものであり、アロケータを用いて構築可能な型が`std::pair`に包まれていたりするとアロケータの伝播が阻害されていました。また、その特殊ケースを処理するために`std::polymorphic_allocator::construct()`では複雑な構築をサポートしており、このような構築が将来必要な別の型についても同様の記述が必要になることが予想されていました。
 
 uses-allcator構築における`std::pair`のハンドリングと、標準のuses-allcator構築の規定を簡素化し集約するために、uses-allcator構築を行うユーティリティが追加されます。
 
@@ -4686,9 +4732,51 @@ true
 
 これらの調整は`std::pmr::polymorphic_allocator<>`を語彙型（*vocabulary type*）として活用可能とすることを意図しています。
 
-# 型特性
+# 型特性（*type traits*）
 
 ## `remove_cvref`
+
+C++17まで、型特性`std::remove_reference`と`std::remove_cv`はそれぞれ個別に存在していました。しかし、実際のTMPにおいてはこれを2つ組み合わせてCV修飾と参照修飾を同時に除去したいことがほとんどでした。しかしちょうどこの2つを組み合わせた型特性は用意されておらず、近い振る舞いをする`std::decay`はその名前の由来となっている配列と関数のポインタへの減衰（*decay*）作用が不要だったり、ちょうどいいものがありませんでした。
+
+この問題は標準ライブラリにおいても同様であり、利便性と標準ライブラリの規定の簡略化と適切な指定のために、CV修飾と参照修飾の除去だけを行う型特性として`std::remove_cvref`が用意されます。
+
+```cpp
+static_assert(std::same_as<
+  std::remove_cvref_t<const volatile int&>,
+  int
+>);
+
+// トップレベルのCV修飾を除去する
+static_assert(std::same_as<
+  std::remove_cvref_t<int const * const>,
+  int const *
+>);
+
+static_assert(std::same_as<
+  std::remove_cvref_t<int&&>,
+  int
+>);
+
+// 関数型を減衰しない
+static_assert(std::same_as<
+  std::remove_cvref_t<void(int)>,
+  void(int)
+>);
+
+// 配列参照も参照だけを除去
+static_assert(std::same_as<
+  std::remove_cvref_t<int(&)[5]>,
+  int[5]
+>);
+```
+
+前述のように、これは`std::remove_reference`と`std::remove_cv`を組み合わせただけのものであるので、C++17までの環境においても簡単に実装できます。
+
+```cpp
+template<typename T>
+using remove_cvref = std::remove_reference<std::remove_cv_t<T>>;
+```
+
 ## `type_identity`
 ## `is_nothrow_convertible`
 ## `is_bounded_array`
