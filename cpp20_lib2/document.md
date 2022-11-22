@@ -4826,6 +4826,7 @@ int main() {
 ```cpp
 #include <type_traits>
 
+// bによっては::typeは無効な型となる
 template<bool, typename T>
 struct maybe_invalid {
   using type = T;
@@ -4834,7 +4835,7 @@ struct maybe_invalid {
 template<typename T>
 struct maybe_invalid<false, T> {};
 
-// bによっては無効な型となる
+// bがfalseだと無効な型名となる
 template<bool b, typename T>
 using maybe_invalid_t = typename maybe_invalid<b, T>::type;
 
@@ -4848,7 +4849,7 @@ using cond_t = typename std::conditional_t<
 using test = cond_t<int, int>;  // ng
 ```
 
-これを回避するには一旦クラステンプレート内部の`::type`に埋め込んで、`std::conditional_t`の結果が確定してから`type`を取得する、のようにして`::type`の取得を遅延させる方法があります。ただこの場合、`T`は素の型なのでそのままだと別のクラスの定義が必要になりますが、それはまさに`std::type_identity`です。
+これを回避するには一旦クラステンプレート内部の`::type`に埋め込んで、`std::conditional_t`の結果が確定してから`type`を取得する、のようにして`::type`の取得を遅延させる方法があります。ただこの場合`T`は素の型なので`::type`に埋め込こむには別のクラス定義が必要になりますが、それはまさに`std::type_identity`です。
 
 ```cpp
 #include <type_traits>
@@ -4874,6 +4875,25 @@ using test = cond_t<int, int>;  // ok
 他にも色々な所で（主にTMPにおいて）活用できる地味に便利な機能です。
 
 ## `is_nothrow_convertible`
+
+`std::is_nothrow_convertible<From, To>`は、型`From`から型`To`へ例外を投げずに暗黙変換可能であるかを調べる型特性です。`std::is_convertible`はC++11で追加されていましたが、なぜか長らくこの型特性はありませんでした。
+
+これは、主に条件付き`noexcept`指定において使用します。
+
+```cpp
+template<typename T>
+struct wrap {
+  T t;
+
+  // ラップするTに暗黙変換可能なUから構築
+  template<typename U>
+    requires std::is_convertible_v<U, T>
+  wrap(U&& u) noexcept(noexcept(std::is_nothrow_convertible_v<U, T>))
+    : t(std::forward<U>(u))
+  {}
+};
+```
+
 ## `is_bounded_array`
 
 ## `unwrap_reference`
