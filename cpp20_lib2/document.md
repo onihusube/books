@@ -4925,7 +4925,7 @@ static_assert(not std::is_unbounded_array_v<int[1]>);
 
 template<typename T>
 auto f(T t) {
-  using Ref = std::unwrap_reference<T>::type&;
+  using Ref = std::unwrap_reference_t<T>&;
 
   // 常に、生の参照として取得する
   Ref r = t;
@@ -4951,6 +4951,96 @@ auto f() {
 これらは主に、テンプレートの文脈で`std::reference_wrapper<T>`とそれ以外の型（の参照型）を統一的に扱いたい場合に使用できるでしょう。
 
 これは、標準ライブラリ内の関数（`std::make_pair`など）の規定を簡単にするためにも使用されています。
+
+## `common_reference`
+
+イテレータのところで`std::iter_common_reference`として共通の参照型の概念を既に紹介していましたが、その実装に使用され、イテレータ型に限らない２つの型の間の共通の参照型を求めるための型特性が`std::common_reference`です。
+
+```cpp
+#include <type_traits>
+
+static_assert(std::same_as<
+  std::common_reference_t<int, int&>,
+  int
+>);
+
+static_assert(std::same_as<
+  std::common_reference_t<int&, const int&>,
+  const int&
+>);
+
+static_assert(std::same_as<
+  std::common_reference_t<std::string&, std::string_view>,
+  std::string_view
+>);
+```
+
+イテレータの時も言っていましたが、参照型と言いつつも必ずしも参照型ではありません。両方の型の値を束縛できるような型を言っています。
+
+`std::common_reference`は`std::common_type`と似たような感じで力技によって共通の参照型を求めているため、共通の基底クラスや共通で変換できる型など、直接2つの型の間に現れないような共通の参照型を求めることができません。その場合にそれを手動でアダプトするために、`std::basic_common_reference`が用意されています。
+
+```cpp
+// <type_traits>で定義
+namespace std {
+  template<class T, class U, template<class> class TQual, template<class> class UQual>
+  struct basic_common_reference {};
+}
+```
+
+通常`std`名前空間のテンプレートはユーザーが勝手に特殊化を追加することが禁じられていますが、これはその数少ない例外の1つです。例えば次のように部分特殊化を追加して、`std::common_reference`の結果をカスタムします。
+
+```cpp
+#include <type_traits>
+
+// reference_wrapper<T>とT&の共通参照型をT&にする
+namespace std {
+  template<class T, template<class> class TQual, template<class> class UQual>
+  struct basic_common_reference<T, reference_wrapper<T>, TQual, UQual> {
+    using type = common_reference_t<TQual<T>, T&>;
+  };
+
+  template<class T, template<class> class TQual, template<class> class UQual>
+  struct basic_common_reference<reference_wrapper<T>, T, TQual, UQual> {
+    using type = common_reference_t<UQual<T>, T&>;
+  };
+}
+```
+
+これは現在C++23に向けて提案されている最中のもの（[P2655R0](https://wg21.link/p2655r0)）から拝借してきたものです。C++20時点では`std::reference_wrapper<T>`と`T&`の`std::common_reference`は`T`でしたが、これは非自明で有用ではない結果だったので修正されようとしています。
+
+`std::basic_common_reference`を2つの型に対してこのように部分特殊化し、メンバ型`type`にその共通参照型を指定します。`std::common_reference<T, U>`と`std::common_reference<U, T>`で同じ結果を得るために引数順を入れ替えた2種類の特殊化が必要となります。
+
+`std::basic_common_reference`の後ろ2つのテンプレート引数`TQual`と`UQual`はそれぞれ、`std::common_reference<T, U>`としたときの`T`と`U`の参照・CV修飾を伝播させるためのエイリアステンプレートです。例えば`TQual<C>`とすると、`T`の修飾を`C`にコピーした型が得られます（`T`が`int&`なら`C&`、`const int`なら`const C`）。特殊化する際はこの部分に触れてはいけません。
+
+`std::common_reference<T, U>`としたとき、`std::basic_common_reference<A, B>`の引数`A, B`には`T, U`を`std::remove_cvref`した型が渡され、`T, U`の修飾情報は`TQual, UQual`に保存されます。そのため、`std::basic_common_reference`の部分特殊化を定義する際は定義したい2つの型の修飾を考慮する必要はなく、順番を入れ替えた2種類だけを定義すれば良いわけです。
+
+この例の`std::basic_common_reference`定義では、型`T`と`std::reference_wrapper<T>`の共通参照型を、非`reference_wrapper`引数から修飾を`T`にコピーした型と`T&`の間の共通参照型として求めています。別の見方では、この特殊化を通すことで`std::reference_wrapper<T>`を`T&`に変換してから`std::common_reference`を求めていると見ることもできます。
+
+`std::common_reference<T&, std::reference_wrapper<T>>`としたときの`T&`の修飾情報は`TQual`（逆順の場合は`UQual`）に保存されているので、内部でそれを`T`に対して復帰することで、通常の参照型と参照型の間の`std::common_reference`計算に帰着させています。仮に`T`が非参照の場合は結果も非参照型になります。これは現在の振る舞いや参照型と非参照型の共通参照型の結果と一致します。
+
+```cpp
+// 先程の特殊化が定義されているとする
+
+static_assert(std::same_as<
+  std::common_reference_t<std::reference_wrapper<int>, int&>,
+  int&
+>);
+
+static_assert(std::same_as<
+  std::common_reference_t<std::reference_wrapper<int>, const int&>,
+  const int&
+>);
+
+static_assert(std::same_as<
+  std::common_reference_t<std::reference_wrapper<int>, int&&>,
+  const int&
+>);
+
+static_assert(std::same_as<
+  std::common_reference_t<std::reference_wrapper<int>, int>,
+  int
+>);
+```
 
 ## レイアウト/ポインタ互換性の判定
 
