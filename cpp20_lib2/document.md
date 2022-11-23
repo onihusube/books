@@ -4821,7 +4821,7 @@ int main() {
 
 テンプレートパラメータの推論においては、テンプレートパラメータに対してある引数の型が直接そのテンプレートパラメータを使用していない場合に型推論の対象になりません（これを、推論されないコンテキストと言ったりします）。それはまさにこの例のように、他のクラステンプレートのテンプレートパラメータとして使用されている場合が該当しており、`std::type_identity`は型に何も触らずに意図的にそれを起こすことができます。
 
-また、テンプレートパラメータに型を渡す場合に渡すその場所（`T<int, char, ...>`の`<>`内）で型が不正（名前が型名を示さない場合）になると、たとえその型が使用されなくてもそこでハードエラーを起こします。
+他の使用法としては、テンプレートパラメータに型を渡す場合に渡すその場所（`T<int, char, ...>`の`<>`内）で型が不正（名前が型名を示さない場合）になると、たとえその型が使用されなくてもそこでハードエラーを起こしますが、それを回避するのにも使用できます。
 
 ```cpp
 #include <type_traits>
@@ -5043,6 +5043,74 @@ static_assert(std::same_as<
 ```
 
 ## レイアウト/ポインタ互換性の判定
+
+クラスのレイアウトにまつわるいくつかの事を判定するための型特性が4つ追加されます。
+
+```cpp
+namespace std {
+  
+  // 2つのクラスのレイアウト互換性を判定する
+  template<class T, class U>
+  struct is_layout_compatible;
+
+  // 派生クラスと基底クラスのポインタの相互変換可能性を判定する
+  template<class Base, class Derived>
+  struct is_pointer_interconvertible_base_of;
+  
+  // クラスのポインタとその先頭メンバのポインタの相互変換可能性を判定する
+  template<class S, class M>
+  constexpr bool is_pointer_interconvertible_with_class(M S::*m) noexcept;
+
+  // 2つのメンバポインタがクラス内で対応する位置にあるかを判定
+  template<class S1, class S2, class M1, class M2>
+  constexpr bool is_corresponding_member(M1 S1::*m1, M2 S2::*m2) noexcept;
+}
+```
+
+`std::is_pointer_interconvertible_with_class()`と`std::is_corresponding_member()`は、他の型特性と異なり`constexpr`な関数です。
+
+### 共通初期シーケンスの判定
+
+2つのクラスの共通初期シーケンス（*common initial sequence*）とは、2つのクラスの先頭からの非静的メンバの型と並びが一致している部分を言います。これは特に、共用体に詰めた時にもそのアクティブメンバにかかわらずアクセスすることができる領域であり、タグ付き共用体で活用されます。
+
+`std::is_corresponding_member()`はメンバポインタを2つ受けて、それぞれがクラスの内部で対応する位置に配置されていてなおかつレイアウト互換のある型かを判定するものです。厳密には共通初期シーケンスを判定するものではありませんが、位置とレイアウトの対応関係をチェックしておくことができます。。
+
+```cpp
+#include <type_traits>
+
+struct T1 {
+  int idx = 0;
+  std::string str;
+};
+
+struct T2 {
+  const int id = 1;
+  double d;
+};
+
+union U {
+  T1 t1;
+  T2 t2;
+};
+
+static_assert(
+  std::is_corresponding_member(&T1::idx, &T2::id)
+);
+
+
+void test(U & u) {
+  // 共通初期シーケンスはアクティブメンバによらず読み出せる
+  int i = u.t1.idx;  // ok
+
+  if (i == 0) {
+    std::cout << u.str;
+  } else if (i == 1) {
+    std::cout << u.d;
+  }
+}
+```
+
+このように、`T1, T2`の定義が後から変更された時でもその対応が崩れないように静的にチェックをかけておくのに使用できます。
 
 #　その他
 
