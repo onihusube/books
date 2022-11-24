@@ -5151,7 +5151,38 @@ void test(U & u) {
 
 ## `filesystem::path`の`char8_t`文字列からの構築
 
-`u8path()`非推奨
+`filesystem::path`はコンストラクタにパス文字列を渡して構築しますが、C++17までは文字型でUTF-8エンコーディングを判別できないことからUTF-8の文字列を渡すことが禁止されていました。例えば、C++17までの`u8""`リテラルは`char`型の文字列でしたが、Windows環境では`char`型のエンコーディングはほとんどの場合UTF-8ではなく、`char`の文字列が渡されたときにどのエンコーディングで解釈するべきかが曖昧になります（C++17では非UTF-8と仮定していました）。
+
+このため、`filesystem::path`をUTF-8文字列から構築するためのヘルパ関数`filesystem::u8path()`が用意されていました。
+
+```cpp
+#include <filesystem>
+
+using namespace fs = std::filesystem;
+
+int main() {
+  // 環境によっては文字化けする（charのエンコーディングとして構築）
+  fs::path p1{u8"C:\\フォルダ\\ファイル"};
+  // 文字化けしない（UTF-8エンコーディングから変換して構築）
+  auto p2 = fs::u8path(u8"C:\\フォルダ\\ファイル");
+}
+```
+
+C++20で`char8_t`が導入され`u8""`リテラルも`char8_t`文字列型を返すようになり、文字型によってUTF-8エンコーディングを判別可能となったため、`filesystem::path`のコンストラクタに`char8_t`文字列からの構築が追加され、`u8""`リテラルから直接構築できるようになります。
+
+```cpp
+#include <filesystem>
+
+using namespace fs = std::filesystem;
+
+int main() {
+  // どちらも文字化けしない（UTF-8エンコーディングから変換して構築）
+  fs::path p1{u8"C:\\フォルダ\\ファイル"};
+  auto p2 = fs::u8path(u8"C:\\フォルダ\\ファイル");
+}
+```
+
+ちなみに、`filesystem::u8path()`も`char8_t`文字列を受け取れるようにされているため`u8""`リテラルの破壊的変更の影響を受けません。ただし、`filesystem::path`のコンストラクタが`char8_t`文字列から構築できるようになったことで、`filesystem::u8path()`の役割は無くなってしまったため、C++20からは非推奨となっています。
 
 ## 安全な整数型の比較
 
