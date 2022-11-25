@@ -5158,14 +5158,24 @@ void test(U & u) {
 ```cpp
 #include <filesystem>
 
-using namespace fs = std::filesystem;
+namespace fs = std::filesystem;
 
 int main() {
   // 環境によっては文字化けする（charのエンコーディングとして構築）
   fs::path p1{u8"C:\\フォルダ\\ファイル"};
   // 文字化けしない（UTF-8エンコーディングから変換して構築）
   auto p2 = fs::u8path(u8"C:\\フォルダ\\ファイル");
+
+  std::cout << p1 << '\n';
+  std::cout << p2 << '\n';
 }
+```
+
+godboltのMSVC 19.33で`/std:c++17`を指定した時の結果
+
+```{style=planetext}
+"C:\\ãƒ•ã‚©ãƒ«ãƒ€\\ãƒ•ã‚¡ã‚¤ãƒ«"
+"C:\\フォルダ\\ファイル"
 ```
 
 C++20で`char8_t`が導入され`u8""`リテラルも`char8_t`文字列型を返すようになり、文字型によってUTF-8エンコーディングを判別可能となったため、`filesystem::path`のコンストラクタに`char8_t`文字列からの構築が追加され、`u8""`リテラルから直接構築できるようになります。
@@ -5173,18 +5183,140 @@ C++20で`char8_t`が導入され`u8""`リテラルも`char8_t`文字列型を返
 ```cpp
 #include <filesystem>
 
-using namespace fs = std::filesystem;
+namespace fs = std::filesystem;
 
 int main() {
   // どちらも文字化けしない（UTF-8エンコーディングから変換して構築）
   fs::path p1{u8"C:\\フォルダ\\ファイル"};
   auto p2 = fs::u8path(u8"C:\\フォルダ\\ファイル");
+
+  std::cout << p1 << '\n';
+  std::cout << p2 << '\n';
 }
+```
+
+godboltのMSVC 19.33で`/std:c++20`を指定した時の結果
+
+```{style=planetext}
+"C:\\フォルダ\\ファイル"
+"C:\\フォルダ\\ファイル"
 ```
 
 ちなみに、`filesystem::u8path()`も`char8_t`文字列を受け取れるようにされているため`u8""`リテラルの破壊的変更の影響を受けません。ただし、`filesystem::path`のコンストラクタが`char8_t`文字列から構築できるようになったことで、`filesystem::u8path()`の役割は無くなってしまったため、C++20からは非推奨となっています。
 
 ## 安全な整数型の比較
+
+C++における整数型の比較においては、符号有無が混ざると複雑な暗黙変換が介在することによって意図しない結果となることがあります。
+
+```cpp
+int main() {
+  std::cout << std::boolalpha;
+  
+  std::cout << (-1 < 0u) << '\n';
+  std::cout << (-1 < 0) << '\n';
+}
+```
+```{style=planetext}
+false
+true
+```
+
+`-1 < 0u`では、左辺のオペランドが`int`型（符号付き32bit整数）、右辺のオペランドが`unsigned int`型（符号なし32bit整数）であり、暗黙変換（汎整数拡張）によって両編の型が`unsigned int`に揃えられ、左辺の値は`unsigned int`にキャストされ32bit符号なし整数値の最大値`4294967295`になります。結果、`-1 < 0u`は`4294967295 < 0`という比較をしていることになり、これはどう見ても`false`です。
+
+一方、`-1 < 0`の方は両辺が共に`int`型のため変換は行われず、その値通りの比較結果となります。
+
+これはよく知られている問題であるため、コンパイラは符号有無が混在した整数値の比較に対して警告を発してくれます。
+
+```cpp
+void f(std::vector<int> vec) {
+  int n = 10;
+
+  // ここの条件式で警告される
+  if (n < vec.size()) {
+    ...
+  }
+
+  // 真ん中の継続条件の式で警告される
+  for (int i = 0; i < vec.size(); ++i) {
+
+  }
+}
+```
+
+この警告を消すには両辺の整数型の符号有無を揃える必要があるのですが、そのためにはキャスト（C++的に正しいのは`static_cast`）をしなければならず、これは構文的にかなり冗長なものがあります。また、どちらのオペランドをキャストするのかも重要になります。そのような事情によって、この警告への対処は簡単にいつも行えるものではなく無視されてしまうことすらあります。
+
+これらの問題に対処するために、安全な整数値の比較を行う関数が追加されます。
+
+```cpp
+// <utility>で定義
+namespace std {
+  // t == u
+  template <class T, class U>
+  constexpr bool cmp_equal(T t, U u) noexcept;
+
+  // t != u
+  template <class T, class U>
+  constexpr bool cmp_not_equal(T t, U u) noexcept;
+
+  // t < u
+  template <class T, class U>
+  constexpr bool cmp_less(T t, U u) noexcept;
+
+  // t > u
+  template <class T, class U>
+  constexpr bool cmp_greater(T t, U u) noexcept;
+
+  // t <= u
+  template <class T, class U>
+  constexpr bool cmp_less_equal(T t, U u) noexcept;
+
+  // t >= u
+  template <class T, class U>
+  constexpr bool cmp_greater_equal(T t, U u) noexcept;
+}
+```
+
+これらの関数は`t`を左辺オペランド、`u`を右辺オペランドとしてその名前通りの比較を行う関数です。なおかつ、2つの引数型の符号有無が異なっている場合でもその実際の値による比較と一致した結果を返し、警告も表示されません。
+
+```cpp
+#include <utility>
+
+int main() {
+  std::cout << std::boolalpha;
+
+  std::cout << std::cmp_less(-1, 0u) << '\n';
+  std::cout << std::cmp_less(-1, 0) << '\n';  
+}
+```
+```{style=planetext}
+false
+true
+```
+
+これらの関数を用いることで、符号有無が混在する整数値の比較をしているようなコードにおける安全性を改善し警告の抑制を行うことができます。
+
+また、ある整数値がある整数型で表現可能かどうか（その整数型の最小値と最大値の範囲内に収まっているか）を調べるための`std::in_range()`も用意されます。
+
+```cpp
+#include <utility>
+
+int main() {
+  std::cout << std::boolalpha;
+
+  std::cout << std::in_range<std::uint32_t>(-1) << '\n';
+  std::cout << std::in_range<std::int8_t>(128) << '\n';
+  std::cout << std::in_range<std::uint32_t>(0) << '\n';
+  std::cout << std::in_range<std::int8_t>(127) << '\n';
+}
+```
+```{style=planetext}
+false
+false
+true
+true
+```
+
+`std::in_range<T>(n)`が`false`になるということは、値`n`を型`T`にキャストすると意図しない値になる可能性があるということです。
 
 ## 標準ライブラリ型の`<=>`
 
