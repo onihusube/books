@@ -5204,6 +5204,46 @@ godboltのMSVC 19.33で`/std:c++20`を指定した時の結果
 
 ちなみに、`filesystem::u8path()`も`char8_t`文字列を受け取れるようにされているため`u8""`リテラルの破壊的変更の影響を受けません。ただし、`filesystem::path`のコンストラクタが`char8_t`文字列から構築できるようになったことで、`filesystem::u8path()`の役割は無くなってしまったため、C++20からは非推奨となっています。
 
+## ディレクトリ作成系関数のエラー挙動の変更
+
+`<filesystem>`の`create_directory()`と`create_directories()`はどちらもディレクトリを作成するもので、ディレクトリが作成された場合に`true`を返します。ただ、ディレクトリは作成できなかったもののエラーではないとみなされる場合があり、この戻り値とエラーの関係に関しては複雑です。
+
+```cpp
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+int main() {
+  std::error_code ec;
+
+  if(fs::create_directory(“a/b/c”, ec) == false) {
+    // ここに来るのはどんな時？
+    assert(bool(ec)); // ecの状態は??
+  }
+
+  if (fs::create_directories(“d/e/f”, ec) == false) {
+    // ここに来るのはどんな時？
+    assert(bool(ec)); // ecの状態は??
+  }
+}
+```
+
+`create_directory()`は指定されたディレクトリだけを作成し、`create_directories()`はそのパス中に含まれる存在していないディレクトリも作成するものです。`create_directories()`は`create_directory()`をパスの先頭から順番に試行していくものなので、`create_directory()`だけに注目することにします。
+
+この戻り値とエラー状態に関しては紆余曲折がありましたが、最終的な`create_directory("path", ec)`の呼び出しに対する、事後状態と戻り値及びエラー（`ec`）状態の組み合わせは次のようになります。
+
+|状態|戻り値|`ec`|
+|---|---|---|
+|ディレクトリを作成した|`true`|正常|
+|ディレクトリが既に存在する|`false`|正常|
+|同名のファイルが既に存在する|`false`|エラー|
+|パス中のディレクトリが存在しない|`false`|エラー|
+|その他のディレクトリ作成失敗|`false`|エラー|
+
+`ec`のエラー状態とは、`bool(ec) == true`となる状態です。
+
+これはC++17に対する欠陥報告なので、一部の実装では以前からこうなっていた可能性があります。
+
 ## 安全な整数型の比較
 
 C++における整数型の比較においては、符号有無が混ざると複雑な暗黙変換が介在することによって意図しない結果となることがあります。
