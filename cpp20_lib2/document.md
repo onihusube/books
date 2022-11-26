@@ -5414,7 +5414,7 @@ int main() {
 
 ## 非推奨
 
-次のものは、C++20で非推奨となりました
+次のものは、C++20で非推奨となりました。削除されるまでは使用することができますが、なるべく早期に使用を辞めることが推奨されます。
 
 - `std::relops`
 - `std::is_pod`
@@ -5431,6 +5431,7 @@ int main() {
     - `ATOMIC_VAR_INIT`
     - `ATOMIC_FLAG_INIT`
     - `std::shared_ptr`のためのアトミックフリー関数
+    - ロックフリーではない`std::atomic`特殊化の`volatile`メンバ関数
 - ロケールカテゴリファセット
     - `std::codecvt<char16_t, char, mbstate_t>`
     - `std::codecvt<char32_t, char, mbstate_t>`
@@ -5439,7 +5440,44 @@ int main() {
 
 ## 削除
 
+次のものは、C++20で削除されたものです。非推奨と異なり、削除されたものは使用できなくなります。
 
+- `std::allocator`のメンバ
+    - `size_type`
+    - `difference_type`
+    - `pointer`
+    - `const_pointer`
+    - `reference`
+    - `const_reference`
+    - `rebind`
+    - `.address()`
+    - `.allocate()`
+    - `.max_size()`
+    - `.construct()`
+    - `.destroy()`
+- `std::allocator<void>`
+- `std::is_literal_type`
+- `std::get_temporary_buffer()`
+- `std::return_temporary_buffer()`
+- `std::raw_storage_iterator`
+- `std::not1()`
+- `std::not2()`
+- `std::unary_negate`
+- `std::binary_negate`
+- 標準関数オブジェクトのメンバ型
+    - `result_type`
+    - `argument_type`
+    - `first_argument_type`
+    - `second_argument_type`
+- `std::shared_ptr::unique()`
+- `std::result_of`
+- `std::uncaught_exception()`
+- C互換ヘッダ
+    - `<ccomplex>`
+    - `<cstdalign>`
+    - `<cstdbool>`
+    - `<ctgmath>`
+    - `<ciso646>`
 
 \clearpage
 
