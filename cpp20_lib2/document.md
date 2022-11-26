@@ -5365,6 +5365,10 @@ int main() {
 
 一部の標準ライブラリのクラス型にも、`<=>/==`による自動実装を活用して演算子定義を削減しているものがあります。
 
+# 大域的な変更のリスト
+
+ここでは、大きくはないものの同種の変更がより広いライブラリ機能にわたるものについて簡単に列挙しておきます。その性質上、抜けがあるかもしれませんが、ご容赦ください。
+
 ## `[[nodiscard]]`
 
 `[[nodiscard]]`属性はC++17で追加されたもので、関数の戻り値やオブジェクトを使わずに捨ててしまう場合に警告するものです。C++20では、この属性がいくつかの標準ライブラリの関数に指定されるようになります。
@@ -5406,13 +5410,36 @@ int main() {
 - `std::rotl()`
 - `std::rotr()`
 
-# `constexpr`化
-
-# 非推奨と削除
+## `constexpr`化
 
 ## 非推奨
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2139r2.html
+次のものは、C++20で非推奨となりました
+
+- `std::relops`
+- `std::is_pod`
+- `volatile`なクラステンプレート特殊化
+    - `std::tuple_size`
+    - `std::tuple_element`
+    - `std::variant_size`
+    - `std::variant_alternative`
+    - `std::move_iterator::operator->()`
+    - `std::basic_string::reserve()`のデフォルト引数
+    - `std::filesystem::u8path()`
+- アトミック関連
+    - `std::atomic_init()`
+    - `ATOMIC_VAR_INIT`
+    - `ATOMIC_FLAG_INIT`
+    - `std::shared_ptr`のためのアトミックフリー関数
+- ロケールカテゴリファセット
+    - `std::codecvt<char16_t, char, mbstate_t>`
+    - `std::codecvt<char32_t, char, mbstate_t>`
+    - `std::codecvt_byname<char16_t, char, mbstate_t>`
+    - `std::codecvt_byname<char32_t, char, mbstate_t>`
+
+## 削除
+
+
 
 \clearpage
 
