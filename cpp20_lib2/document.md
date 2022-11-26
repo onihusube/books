@@ -5367,6 +5367,44 @@ int main() {
 
 ## `[[nodiscard]]`
 
+`[[nodiscard]]`属性はC++17で追加されたもので、関数の戻り値やオブジェクトを使わずに捨ててしまう場合に警告するものです。C++20では、この属性がいくつかの標準ライブラリの関数に指定されるようになります。
+
+- `::operator new`
+- `::operator new[]`
+- 標準アロケータの`allocate()`
+    - `std::allocator`
+    - `std::allocator_traits`
+    - `std::scoped_allocator_adaptor`
+- `std::pmr::memory_resurce`の`allocate()`
+- `std::pmr::polymorphic_allocator`
+    - `.allocate()`
+    - `.allocate_bytes()`
+    - `.deallocate_bytes()`
+    - `.allocate_object()`
+- `std::lunder()`
+- `std::assume_aligned()`
+- `std::async()`
+- 標準コンテナの`.empty()`及び`std::empty()`
+    - `std::string`、`std::string_view`、`std::filesystem::path`、`std::match_results`も含む
+- `std::stop_source`
+    - `.get_token()`
+    - `.stop_possible()`
+    - `.stop_requested()`
+    - `operator==/!=`
+- `std::stop_token`
+    - `.stop_possible()`
+    - `.stop_requested()`
+    - `operator==/!=`
+- `std::barrier`
+    - `.arrive()`
+- `std::jthread`
+    - `.get_stop_source()`
+- `std::ranges::subrange`
+    - `.begin()`
+        - イテレータが`copyable`ではない場合のみ
+    - `.next()`
+- `std::rotl()`
+- `std::rotr()`
 
 # `constexpr`化
 
