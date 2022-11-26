@@ -3043,7 +3043,38 @@ auto read(T& buf) {
 
 ## `string_view`のイテレータペアを受け取るコンストラクタ
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1391r4.pdf
+`std::basic_string`はその文字型を要素とするイテレータのペアを受けて構築することができます。一方、`std::basic_string_view`はできません。`std::vector`を文字列バッファとして使用している場合など、文字の範囲から`std::string_view`を構築したいことはよくありますが、C++17まではその先頭アドレスと長さを与えることでしか行えませんでした。
+
+C++20からは、`std::basic_string_view`にイテレータペアからの構築のためのコンストラクタが追加されます。
+
+```cpp
+#include <string_view>
+
+int main() {
+  std::string_view input = std::string_view("split_view takes a view and a delimiter");
+
+  // スペースをデリミタとしてsplitする
+  for (auto inner_range : input | std::views::split(' ')) {
+    // イテレータペアから構築
+    std::string_view str{inner_range.begin(), inner_range.end()};
+
+    // split_viewの内側rangeは文字列ではないので、string_viewに変換すると便利
+    //std::cout << inner_range; // ng
+    std::cout << str << '\n'; // ok
+  }
+}
+```
+```{style=planetext}
+split_view
+takes
+a
+view
+and
+a
+delimiter
+```
+
+C++23ではさらに、`explicit`ではあるものの、`range`オブジェクトからの変換コンストラクタが追加されます。
 
 ## `char8_t`文字列型
 
