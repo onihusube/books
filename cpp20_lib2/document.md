@@ -5365,9 +5365,9 @@ int main() {
 
 一部の標準ライブラリのクラス型にも、`<=>/==`による自動実装を活用して演算子定義を削減しているものがあります。
 
-# 大域的な変更のリスト
+# 大域的な変更
 
-ここでは、大きくはないものの同種の変更がより広いライブラリ機能にわたるものについて簡単に列挙しておきます。その性質上、抜けがあるかもしれませんが、ご容赦ください。
+ここでは、大きくはないものの同種の変更がより広いライブラリ機能にわたるものについて簡単に列挙しておきます。その性質上、抜けがあるかもしれませんがご容赦ください。
 
 ## `[[nodiscard]]`
 
@@ -5410,7 +5410,49 @@ int main() {
 - `std::rotl()`
 - `std::rotr()`
 
-## `constexpr`化
+## `constexpr`
+
+次の関数はC++20から`constexpr`指定されるようになり、定数式で使用可能となります。
+
+- 全メンバ関数
+    - `std::array`
+    - `std::vector`
+    - `std::string`
+    - `std::allocator`
+    - `std::allocator_traits`
+    - `std::back_insert_iterator`
+    - `std::front_insert_iterator`
+    - `std::insert_iterator`
+    - `std::reference_wrapper`
+    - `std::complex`
+    - `std::pair`
+    - `std::tuple`
+- `std::back_inserter()`
+- `std::front_inserter()`
+- `std::inserter()`
+- `<algorithm>` : 以下のものを除くイテレータアルゴリズム
+    - 並列アルゴリズム
+    - `std::shuffle()`
+    - `std::sample()`
+    - `std::stable_sort()`
+    - `std::stable_partition()`
+    - `std::inplace_merge()`
+- `<numeric>`
+    - 並列アルゴリズムを除く数値アルゴリズム
+    - `std::gcd()`
+    - `std::lcm()`
+    - `std::midpoint()`
+- `std::invoke()`
+- `std::not_fn()`
+- `std::bind()`
+- `std::mem_fn()`
+- `std::char_traits`
+    - `move()`
+    - `copy()`
+    - `assign()`
+- `std::pointer_traits::pointer_to()`
+- `std::swap()`
+- `std::exchange()`
 
 ## 非推奨
 
