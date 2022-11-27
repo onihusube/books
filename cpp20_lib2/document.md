@@ -36,7 +36,7 @@ okuduke:
 
 本書は、C++20の新機能に興味はあるもののついて行けないという人や、ある程度C++20機能を知っているものの深入りできていないという人向けに、C++20で新しく導入されたライブラリ機能の内容や意義についての解説を試みるものです。
 
-この本で取り上げるライブラリ機能は主に、新しく導入されたヘッダを中心とした大きな機能です。既存ライブラリの改善などの小さめの機能は後ほど刊行（予定）のライブラリ機能 2で紹介する予定です。
+この本で取り上げるライブラリ機能は主に、既存ライブラリの改善などの小さめの機能です。ヘッダ単位などの大きな機能は『C++20 ライブラリ機能1』にて取り上げています。
 
 なお、本書ではC++17までのライブラリ機能に関しては前提知識として説明しません。また、C++20のコア言語機能に関しては拙著『C++20 コア言語機能』を、C++20 Rangeライブラリについては拙著『C++20 ranges』をご参照ください。
 
@@ -65,7 +65,7 @@ hello world!
 
 C++20では、コンセプトと`<ranges>`の導入に伴って、イテレータライブララリ周りも大幅に改修されています。特に明記しない場合、この章で紹介している機能は`<iterator>`ヘッダに配置されます。
 
-## イテレータへの問合せ
+## イテレータ情報の問合せ
 
 これまで、イテレータ型の各種情報を問い合わせるのには`std::iterator_traits`を使用していましたが、C++20からはそれに変わるより簡易な手段が提供されるようになります。また同時に、従来はなかった追加の情報を取得するための手段も提供されます。
 
@@ -78,7 +78,9 @@ C++20では、コンセプトと`<ranges>`の導入に伴って、イテレー�
 ```cpp
 #include <iterator>
 
-using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<int>>;
+using std::ranges::iota_view;
+
+using iota_view_iter= std::ranges::iterator_t<iota_view<int>>;
 
 static_assert(std::same_as<
   std::iter_difference_t<std::vector<int>::iterator>, 
@@ -97,6 +99,8 @@ static_assert(std::same_as<
 ```
 
 #### `std::incrementable_traits`
+
+　
 
 `std::iter_difference_t`は基本的にはC++20で追加された`std::incrementable_traits`を用いて`difference_type`を取得していて、`std::incrementable_traits`はいくつかの経路を使って`difference_type`を探してくれます。
 
@@ -120,7 +124,9 @@ C++20からのイテレータ型は上記いずれかで取得できるように
 ```cpp
 #include <iterator>
 
-using iota_view_iter = std::ranges::iterator_t<std::ranges::iota_view<unsigned int>>;
+using std::ranges::iota_view;
+
+using iota_view_iter = std::ranges::iterator_t<iota_view<unsigned int>>;
 
 static_assert(std::same_as<
   std::iter_value_t<std::vector<int>::iterator>,
@@ -139,6 +145,8 @@ static_assert(std::same_as<
 ```
 
 #### `std::indirectly_readable_traits`
+
+　
 
 `std::iter_value_t<I>`は基本的にはC++20で追加された`std::indirectly_readable_traits`を用いて`value_type`を取得し、`std::indirectly_readable_traits`はいくつかの経路を使って`value_type`を探してくれます。
 
@@ -258,7 +266,7 @@ namespace std {
 }
 ```
 
-普通のイテレータでは`std::iter_reference_t<I>`と同じ型になると思われますが、例えば間接参照がprvalueを返すイテレータではその型を`T`とすると`const T&`などになります。
+普通のイテレータでは`std::iter_reference_t<I>`と同じ型になると思われますが、例えば間接参照がprvalueを返すイテレータではその型を`T`とするとそのまま`T`になります。
 
 イテレータを用いたアルゴリズムを書く際にこのような性質を持つ型が必要になることがよくあるため、それを簡易に求めたい時に使用できます。
 
@@ -353,13 +361,13 @@ namespace std {
 }
 ```
 
-`std::indirectly_writable<Out>`は、`Out`のオブジェクトが間接参照演算子（`operator*`）によって型`T`の値を書き込む事ができる場合に`true`となります。これもまた、イテレータ型だけではなくポインタ型やスマートポインタ型でも満たす事ができます。
+`std::indirectly_writable<Out, T>`は、`Out`のオブジェクトが間接参照演算子（`operator*`）によって型`T`の値を書き込む事ができる場合に`true`となります。これもまた、イテレータ型だけではなくポインタ型やスマートポインタ型でも満たす事ができます。
 
 このコンセプトを構成する4つの制約式は全て、等しさを保持することを要求されません。つまりは、`*o`が内部状態を更新することを認めています。
 
-このコンセプトには意味論要件が指定されています
+このコンセプトには意味論要件が指定されています。型`T`の値`e`と間接参照可能な型`Out`のオブジェクト`o`について
 
-型`T`の値`e`と間接参照可能な型`Out`のオブジェクト`o`について
+\clearpage
 
 - 型`Out, T`が`indirectly_readable<Out> && same_as<iter_value_t<Out>, decay_t<T>>`のモデルとなる場合、`e`を4つの制約式のいずれかによって出力した後で`*o`と`e`は等値となる
 
@@ -391,9 +399,7 @@ concept weakly_incrementable =
 
 `is-signed-integer-like<T>`とは説明専用の変数テンプレートで、`T`が符号付き整数型である場合に`true`となるもので、`std::signed_integral`を使用しないのは非標準の整数型を含めることを意図しているためです。`std::weakly_incrementable`は後述のイテレータコンセプトからも参照されており、これによってイテレータの距離型（`difference_type`）が符号付き整数型であることを要求します。
 
-このコンセプトには意味論要件が指定されています
-
-型`I`のオブジェクト`i`について
+このコンセプトには意味論要件が指定されています。型`I`のオブジェクト`i`について
 
 - `++i`と`i++`は同じ定義域をもつ
 - `i`がインクリメント可能ならば、`++i`と`i++`は`i`を次の要素へ進める
@@ -423,9 +429,7 @@ concept incrementable =
 
 `std::weakly_incrementable`との構文的な違いは、後置インクリメント（`i++`）の戻り値型がその型の*prvalue*であると指定されているところで、`std::weakly_incrementable`では戻り値なし（`void`）でも良かったところが厳しくなっています。ただし、これはC++17までの多くのイテレータで普通だったことであり、`weakly_incrementable`なイテレータの後置インクリメントの戻り値型が`void`でもいいのはC++17イテレータとの非互換ポイントでもあります。
 
-このコンセプトには意味論要件が指定されています
-
-まず
+このコンセプトには意味論要件が指定されています。まず
 
 - `std::weakly_incrementable`の前置/後置`++`は等しさを保持する
 
@@ -475,9 +479,7 @@ concept sentinel_for =
 
 番兵型に対する要求はイテレータ型と比較して非常に弱く、`input_or_output_iterator`であることも求められておらずイテレータ型`I`と`S`の間で等値比較可能であることがほぼ全てです。
 
-このコンセプトには意味論要件が指定されています
-
-型`S, I`のオブジェクトをそれぞれ`s, i`とし、`[i, s)`は範囲を表すとして
+このコンセプトには意味論要件が指定されています。型`S, I`のオブジェクトをそれぞれ`s, i`とし、`[i, s)`は範囲を表すとして
 
 - `i == s`が未定義動作を含まない
 - `bool(i != s)`が`true`の場合、`i`は間接参照可能であり`[++i, s)`も範囲を表す
@@ -506,9 +508,7 @@ concept sized_sentinel_for =
 
 `std::sized_sentinel_for<S, I>`は、`std::sentinel_for<S, I>`が`true`であり2項`opreator-`によってイテレータと番兵の間で距離を求めることができる場合に`true`となります。
 
-このコンセプトには意味論要件が指定されています
-
-イテレータが型`I`と番兵型`S`のオブジェクト`i, s`とそれによって示される範囲`[i, s)`、`bool(i == s)`が`true`となるために必要な`++i`の適用回数を`N`として
+このコンセプトには意味論要件が指定されています。イテレータが型`I`と番兵型`S`のオブジェクト`i, s`とそれによって示される範囲を`[i, s)`、`bool(i == s)`が`true`となるために必要な`++i`の適用回数を`N`として
 
 - `N`が`iter_difference_t<I>`型で表現可能である場合、`s - i`は未定義動作を含まず、`N`に等しい
 - `-N`が`iter_difference_t<I>`型で表現可能である場合、`i - s`は未定義動作を含まず、`-N`に等しい
@@ -539,6 +539,8 @@ concept input_iterator =
 単に`input_iterator`であるイテレータには例えば、`std::istream_iterator`があります。
 
 #### `ITER_CONCEPT(I)`
+
+　
 
 `std::input_iterator`を構成する制約式のうち後2つはイテレータ型からイテレータタグ型を引き出しチェックするためのもので、イテレータの要件そのものに直接関与しているものではありません。そこで使用されている`ITER_CONCEPT(I)`はイテレータから取得したイテレータタグ型を表すエイリアステンプレートのようなものです。
 
@@ -592,9 +594,7 @@ concept output_iterator =
 
 最後の制約式は、後置インクリメントの戻り値型が`I`を返し、右辺値イテレータからも出力可能であることを制約しています。後置インクリメントの戻り値型がイテレータ型であることの要求は`std::incrementable`で行われていますがこのコンセプトはそれを包摂しておらず、マルチパス保証もありません。
 
-このコンセプトには意味論要件が指定されています
-
-型`T`の値`t`と`I`の値`i`について
+このコンセプトには意味論要件が指定されています。型`T`の値`t`と`I`の値`i`について
 
 - `*i++ = t`は次の式と等価
 
@@ -632,7 +632,7 @@ concept forward_iterator =
 
 マルチパス保証やこれらの要件によって、`forward_iterator`であるイテレータが参照する範囲はかなりしっかりとしたものである必要があり、イテレータの操作によって範囲の状態が変更されることはありません。1つ目の要件は異なる範囲を参照するイテレータ間の比較はこのコンセプトによって保証されないことを言っています。
 
-例えば、標準ライブラリの全てのコンテナのイテレータは少なくとも`forward_iterator`であり、単に`forward_iterator`であるイテレータに`std::forward_list`のイテレータがあります。
+標準ライブラリの全てのコンテナのイテレータは少なくとも`forward_iterator`であり、単に`forward_iterator`であるイテレータに`std::forward_list`のイテレータがあります。
 
 ### `bidirectional_iterator`
 
@@ -651,9 +651,7 @@ concept bidirectional_iterator =
 
 `std::bidirectional_iterator<I>`は、`I`が`forward_iterator`でありデクリメント操作（`--`）による後進が可能である場合に`true`となります。
 
-このコンセプトには意味論要件が指定されています
-
-まず
+このコンセプトには意味論要件が指定されています。まず
 
 - 双方向イテレータ`r`は`++q == r`となるようなイテレータ`q`が存在する場合にのみデクリメント可能である。
     - デクリメント可能なイテレータはデクリメント操作（`--`）の定義域に含まれる
@@ -675,6 +673,8 @@ concept bidirectional_iterator =
 
 `std::random_access_iterator`はランダムアクセスイテレータであることを表すコンセプトです。
 
+\clearpage
+
 ```cpp
 template<class I>
 concept random_access_iterator =
@@ -694,9 +694,7 @@ concept random_access_iterator =
 
 `std::random_access_iterator<I>`は、`I`が`bidirectional_iterator`かつ`totally_ordered`かつ`sized_sentinel_for`であり、整数との`+ - += -=`および添え字演算子`[]`が提供されている場合に`true`となります。
 
-このコンセプトには意味論要件が指定されています
-
-`std::iter_difference_t<I>`を`D`、`D`の値を`n`、`I`の有効なイテレータを`a, b`、`b`は`++a`を`n`回適用すると到達するとして
+このコンセプトには意味論要件が指定されています。`std::iter_difference_t<I>`を`D`、`D`の値を`n`、`I`の有効なイテレータを`a, b`、`b`は`++a`を`n`回適用すると到達するとして
 
 - `(a += n)`は`b`と等値
 - `addressof(a += n)`は`addressof(a)`と等値
@@ -716,7 +714,7 @@ concept random_access_iterator =
 
 大量かつ複雑な要件ですが、ほぼ整数値`n`との演算がイテレータの進行を表すものであることを言っています。最後の要件は、イテレータ間の順序とは指している要素の相対的な位置関係によることを言っています。
 
-配列や`std::vector`等のイテレータが`random_access_iterator`ですが、単に`random_access_iterator`であるイテレータには`std::deque`があります。
+生の配列や`std::array`、`std::vector`等のイテレータが`random_access_iterator`ですが、単に`random_access_iterator`であるイテレータには`std::deque`のイテレータがあります。
 
 ### `contiguous_iterator`
 
@@ -742,9 +740,7 @@ concept contiguous_iterator =
 
 対応するタグ型の`std::contiguous_iterator_tag`はC++20で追加されたものです。
 
-このコンセプトには意味論要件が指定されています
-
-`a, b`を間接参照可能な型`I`のイテレータ、`c`を間接参照不可能な型`I`のイテレータとして`b`は`a`から、`C`は`b`から到達可能であり、`std::iter_difference_t<I>`を`D`として
+このコンセプトには意味論要件が指定されています。`a, b`を間接参照可能な型`I`のイテレータ、`c`を間接参照不可能な型`I`のイテレータとして`b`は`a`から、`c`は`b`から到達可能であり、`std::iter_difference_t<I>`を`D`として
 
 - `std::to_address(a) == std::addressof(*a)`
 - `std::to_address(b) == std::to_address(a) + D(b - a)`
@@ -794,7 +790,7 @@ C++20のコード（`new_iter_alg()`）からはイテレータの性質は主�
 
 `old_iter_alg()`はC++17の*forward iterator*を受け入れます。C++17イテレータは問題なく使用できているはずで、C++20イテレータもC++17*forward iterator*要件を満たしているならば問題なく使用できます。その場合の`std::iterator_traits`の各種メンバ型は`std::iter_reference_t`などを用いて自動で取得されます。
 
-基本的に、C++20のイテレータコンセプトの要求はC++17のイテレータ要件よりも厳しくなっており、C++17イテレータをC++20イテレータとして利用することは難しい一方で、C++20イテレータはC++17イテレータとしても利用することができる場合があります。ただし、細部の要件の非互換（`operator*`の戻り値型が参照型でなくても（*prvalue*でも）良いなど）のためにそのままのイテレータカテゴリ（特に、*forward*以上）のままでは利用できない場合があります。その場合に、C++17コードからは`std::iterator_traits`を通してイテレータの性質が取得されることを利用して、`std::iterator_traits`を介した場合にC++20イテレータがより弱いC++17イテレータとして見えるようにできるようになっています。
+基本的に、C++20のイテレータコンセプトの要求はC++17のイテレータ要件よりも厳しくなっており、C++17イテレータをC++20イテレータとして利用することは難しい一方で、C++20イテレータはC++17イテレータとしても利用することができる場合があります。ただし、細部の要件の非互換（`operator*`の戻り値型が参照型でなくても（*prvalue*でも）良いなど）のためにそのままのイテレータカテゴリ（特に、*forward*以上）のままでは利用できない場合があります。その場合に、C++17コードからは`std::iterator_traits`を通してイテレータの性質が取得されることを利用して、`std::iterator_traits`を介した場合にC++20イテレータがより弱いC++17イテレータとして見えるようになっています。
 
 その際に重要なのが、`iterator_cateogry`と`iterator_concept`の2種類のメンバ型です。`iterator_cateogry`が以前からそうであるように、この2つのメンバ型はイテレータのタグ型を指定しておくことでそのイテレータ型がどの種類のイテレータなのかを表明するものです。そして、イテレータコンセプトは常に`iterator_concept`を優先して見に行き、`std::iterator_traits`は`iterator_cateogry`しか見に行きません。これによって、C++20コードから利用された時とC++17コードから利用された時で取得されるイテレータタグ型を切り替えることができるわけです。例えばそれはポインタ型に対する`std::iterator_traits`特殊化に見ることができます。
 
@@ -909,15 +905,12 @@ void f(F&& f, I i) {
   f(*i);  // 参照型による呼び出し
 
   auto e = *i;
-  f(e);   // 値型による呼び出し
+  f(e);   // 値型の左辺値による呼び出し
 
   using CI = std::iter_common_reference_t<I>;
-  CI b1 = *i;
-  CI b2 = e;
-
   // 共通の参照型による呼び出し
-  f(b1);
-  f(b2);
+  f(CI(*i));
+  f(CI(e));
 }
 ```
 
@@ -958,7 +951,7 @@ concept indirectly_regular_unary_invocable =
 
 `std::indirectly_regular_unary_invocable<F, I>`は`I`の要素型によって`F`が`regular_invocable`である場合に`true`となります。
 
-このコンセプトは`std::indirectly_unary_invocable`の副作用を禁止する（ことを表明する）バージョンであり、違いは意味論要件のみです。それは、コンセプト定義中の`invocable`が`regular_invocable`に置き換えられていることによって要求されています。それ以外の部分は同一です。
+このコンセプトは`std::indirectly_unary_invocable`の副作用を禁止する（ことを表明する）バージョンであり、違いは意味論要件のみです。それは、コンセプト定義中の`invocable`が`regular_invocable`に置き換えられていることによって要求されていて、それ以外の部分は同一です。
 
 ### `indirect_unary_predicate`
 
@@ -1065,7 +1058,7 @@ concept indirect_strict_weak_order =
 
 狭義弱順序関係とは、`<`による順序関係であって、比較不可能な値同士を同値として扱って順序付けするような順序関係です。これは、`std::sort`など標準ライブラリ内で並べ替えを行う際に仮定される順序関係として要求されます。
 
-## カスタマイゼーションオブジェクト
+## カスタマイゼーションポイントオブジェクト
 
 イテレータを介した操作を効率化するためのCPOが用意されます。
 
@@ -1284,9 +1277,7 @@ auto tmp = *in;
 *out = std::move(tmp);
 ```
 
-このコンセプトには意味論要件が指定されています
-
-関節参照可能な`In`のオブジェクト`i`について
+このコンセプトには意味論要件が指定されています。関節参照可能な`In`のオブジェクト`i`について
 
 - 次のように初期化された`obj`はこの直前の`*i`の値と等しい
 
@@ -1296,7 +1287,7 @@ std::iter_value_t<In> obj(std::ranges::iter_move(i));
 
 - この時、`std::iter_rvalue_reference_t<In>`が右辺値参照型を示す場合、この後の`*i`の値は有効だが未規定
 
-ムーブという操作がその意味通りの振る舞いをすることを言っています。「有効だが未規定」というのは標準ライブラリ型オブジェクトがムーブされた後の状態を指定する常套句であり、別の値を代入しない限りその操作は未定義となります。
+ムーブという操作がその意味通りの振る舞いをすることを言っています。「有効だが未規定」というのは標準ライブラリ型のオブジェクトがムーブされた後の状態を指定する常套句であり、別の値を代入しない限りそのほとんどの操作は未定義となります。
 
 ### `indirectly_copyable`
 
@@ -1336,14 +1327,12 @@ const auto tmp = *in;
 *out = tmp;
 ```
 
-このコンセプトには意味論要件が指定されています
-
-関節参照可能な`In`のオブジェクト`i`について
+このコンセプトには意味論要件が指定されています。関節参照可能な`In`のオブジェクト`i`について
 
 - 次のように初期化された`obj`はこの直前の`*i`の値と等しい
 
 ```cpp
-std::iter_value_t<In> obj(std::ranges::iter_move(i));
+std::iter_value_t<In> obj(*i);
 ```
 
 - この時、`std::iter_reference_t<In>`が右辺値参照型を示す場合、この後の`*i`の値は有効だが未規定
@@ -1628,7 +1617,7 @@ int main() {
 }
 ```
 
-この2つはこれまでの`std::next()`とほぼ同様の振る舞いをします。`n`には負数を渡しても意図通りになりますが、この関数の意味的には常に正の値を渡すべきで、イテレータの後退をしたい場合は次の`std::ranges::prev()`を使用した方が良いでしょう。
+この2つはこれまでの`std::next()`とほぼ同様の振る舞いをします。`n`には負数を渡しても意図通りになりますが、この関数の意味的には常に正の値を渡すべきで、イテレータの後退をしたい場合は次の項の`std::ranges::prev()`を使用した方が良いでしょう。
 
 ```cpp
 namespace std::ranges {
@@ -1715,6 +1704,8 @@ int main() {
 ```
 
 この2つはこれまでの`std::prev()`とほぼ同様の振る舞いをします。`std::prev()`同様に、戻す距離`n`は戻したい数を指定するもので、負の値を指定すると戻るのではなく進むことになります。
+
+\clearpage
 
 ```cpp
 namespace std::ranges {
@@ -1840,7 +1831,7 @@ void foo() {
 
 このような`distance()`の呼び出しは、従来ならばADL経由で`std::distance()`を発見し、そちらの方がより特殊化されている（テンプレートパラメータ1つで2引数受けている）ため`std::distance()`が選択されていたはずです。しかし、`ranges::distance()`はそれが見えているコンテキストで同名に対するADLを無効化するため、`std::distance()`は一切考慮されることなく`ranges::distance()`が呼ばれます。この効果は見えていなければ働かないため、最初の`using namespace std::ranges`をコメントアウトすると`std::distance()`がADL経由で呼ばれます。
 
-これは、`std::ranges`にあるリファインされた関数を呼び出すつもりのところで意図せずに古い同名関数を呼び出さないようにするための仕組みです。
+これは、`std::ranges`にあるリファインされた関数を呼び出すつもりのところで意図せずに古い同名関数を呼び出さないようにするための仕組みです。これら4つの関数だけではなく、`std::ranges`名前空間に配置されている関数はほぼこの性質を持っています。
 
 この性質は通常の関数定義では実現不可能であり、通常これらの関数は関数オブジェクトとして実装されます。
 
@@ -1876,6 +1867,7 @@ struct my_iterator {
     ...
   }
 
+
   // 2項-によって距離を求める
   friend auto operator-(std::default_sentinel_t lhs, const my_iterator& rhs) -> difference_type {
     // 距離計算の処理
@@ -1902,7 +1894,7 @@ auto use_myiter(my_iterator it) {
     ...
 
     // 終端との間の距離の計算
-    auto d = std::default_sentinel - it;
+    std::ptrdiff_t d = std::default_sentinel - it;
 
     ...
   }
@@ -1915,7 +1907,7 @@ auto use_myiter(my_iterator it) {
 
 `std::unreachable_sentinel`は、イテレータの終端チェックをスキップするために使用できる特殊な番兵型です。
 
-使用可能なところは非常に限られおり、イテレータを用いた検索など範囲を操作する際に、終端チェックとは別の条件によって、終端に到達する前に範囲の走査が終了することが確実にわかっている場合に使用できます。
+使用可能なところは非常に限られおり、イテレータを用いた検索などで範囲を走査する際に、終端チェックとは別の条件によって終端に到達する前に範囲の走査が終了することが確実にわかっている場合に使用できます。
 
 ```cpp
 #include <iterator>
@@ -1985,6 +1977,8 @@ int main() {
 
 `std::common_iterator<I, S>`は`I`にイテレータ型、`S`に番兵型を指定し、`I, S`のオブジェクトどちらからも構築でき、どちらのオブジェクトも保持することができます。
 
+　
+
 ```cpp
 namespace std {
   // common_iteratorの定義例
@@ -2028,19 +2022,19 @@ namespace std {
 ```cpp
 #include <iterator>
 
-bool is_prime(int n) {
-  return /* 素数判定処理 */
+bool is_odd(int n) {
+  return n % 2 == 1;
 }
 
 int main() {
   // 何かしらの範囲オブジェクトとする
-  std::ranges::range auto seq = {1, 3, 5, 7, 9, 11, 13, 15};
+  std::ranges::range auto seq = {1, 3, 5, 7, 10, 11, 12};
 
   // seqの先頭から4要素を参照するイテレータを得る
   std::counted_iterator it{std::ranges::begin(seq), 4};
 
-  // 範囲内の数値が全て素数かを調べる
-  bool b = std::ranges::all_of(it, std::default_sentinel, is_prime);
+  // 範囲内の数値が全て奇数かを調べる
+  bool b = std::ranges::all_of(it, std::default_sentinel, is_odd);
   // b == true
 }
 ```
@@ -2098,6 +2092,8 @@ int main() {
 `std::counted_iterator<I>`はイテレータ型`I`の性質を可能な限り継承しようとし、`std::counted_iterator<I>`のイテレータカテゴリは`I`のカテゴリと同じになります。例えば、`I`が`contiguous_iterator`の時でも`std::counted_iterator<I>`は`contiguous_iterator`となります。これによって、後退（`--`）や和による進行（`+ +=`）や添字（`[]`）などが`I`のカテゴリ次第で利用可能となります。
 
 ただし、`std::counted_iterator<I>`は、C++20イテレータとしてみた時は`I`のC++20イテレータとしての性質を、C++17イテレータとしてみた時はC++17イテレータとしての性質をそれぞれ継承します。もし`I`についてのそれらが異なる場合は`std::counted_iterator<I>`のそれら性質も異なることになります。
+
+\clearpage
 
 # コンテナ
 
@@ -2497,6 +2493,8 @@ C++17までは、これら削除操作の前にコンテナの要素数（`.size
 
 `std::list`にも変更が及んだのは、リストという種類のコンテナの操作について一貫性を重視したためです。
 
+\clearpage
+
 # アルゴリズム
 
 `<algorithm>`と`<numeric>`にあるイテレータ/数値アルゴリズムにいくつか新顔が追加されます。
@@ -2832,6 +2830,8 @@ int main() {
 
 このような処理は線形補完としてよく知られており、これは`a + t * (b - a)`などとして簡単に求めることができそうに思えます。しかし実際には。`std::midpoint()`のように考慮すべきこと（数値誤差やオーバーフロー、非正規化数など）が多いため、それらをハンドリングするライブラリ機能として提供されます。
 
+\clearpage
+
 # 関数オブジェクト
 
 ここで紹介するものは、`<functional>`に配置されています。
@@ -2954,6 +2954,8 @@ int main() {
 呼び出しに当たっては`std::invoke()`が使用されるためこれによって呼び出せさえすればなんでも（ラムダクロージャ、メンバポインタ、`std::reference_wrapper`などなど）束縛させることができ、`std::bind_front(f, boud_args...)(call_args...)`の呼び出しは、`std::invoke(f, boud_args..., call_args...)`のような呼び出しと等価になります。渡された引数`f`と`boud_args...`はコピー/ムーブされて戻り値の関数オブジェクト内に保持されており、参照を渡したい場合は`std::ref()`や`std::cref()`を使う必要があります。
 
 なおこれの逆版（関数引数の後ろ側を部分適用）はC++23から`std::bind_back()`として利用できる予定です。
+
+\clearpage
 
 # 文字列周り
 
@@ -3278,6 +3280,8 @@ int main() {
 この関数の入力`src`は`char8_t`へのポインタではなく`char8_t`の値を1つだけ取ります。UTF-8エンコーディングは最大4バイト（`char8_t`4つ分）になり、UTF-8で1バイトになる文字とはすなわちASCII範囲内の文字です。1バイトのUTF-8はASCIIと互換性があるため変換はキャストで十分であり、実質的にこの関数を使用する意味はなさそうです。戻り値を見て、`char8_t`1つがASCII範囲内の文字かどうかを判定するのには使えるかもしれませんが。
 
 `std::c8rtomb()`がこのような残念仕様になってしまっているのは`<cuchar>`にある他の関数とインターフェースを一貫させた結果だと思われます。`<cuchar>`には他にも`char16_t`と`char32_t`に対して同様の役割の2対の関数が用意されており、確かに`char16_t`や`char32_t`から`char`の変換では`src`が1変数分でも十分に意味があります。`char16_t`と`char32_t`に対する関数はC++11（C11）から存在しているため、そちらのインターフェースに合わせざるを得なかったのだと思われます・・・
+
+\clearpage
 
 # `std::atomic`関連
 
@@ -3859,6 +3863,8 @@ C++17までの定義はCとの互換性を意識したものでしたが、Cが`
 
 結局、この変更はAPIもABIも破損していないため、利用する分にはあまり気にする必要はありません。
 
+\clearpage
+
 # `iostream`
 
 ## 配列への入力の修正
@@ -4174,6 +4180,8 @@ void f(sstream<Alloc>& strm) {
 }
 ```
 
+\clearpage
+
 # スマートポインタ
 
 ## `make_shared`の配列対応
@@ -4458,7 +4466,9 @@ true
 
 ただし、*implicit-lifetime types*と呼ばれる型のオブジェクトはこのような場合でも暗黙的に構築されます（詳細は「C++20 言語機能」を参照）。組み込み型は少なくともその型のグループに含まれています。
 
-# その他メモリ関連
+\clearpage
+
+# メモリ関連
 
 ## コンパイル時メモリ確保関連
 
@@ -4766,6 +4776,8 @@ true
 ```
 
 これらの調整は`std::pmr::polymorphic_allocator<>`を語彙型（*vocabulary type*）として活用可能とすることを意図しています。
+
+\clearpage
 
 # 型特性（*type traits*）
 
@@ -5182,7 +5194,11 @@ void test(U & u) {
 
 これらの例のように、これらの型特性を使用した`static_assert`によるチェックを入れておくことでコンパイル毎にチェックが自動化され、後から型の定義を変更して期待する性質が失われた場合にもコンパイルエラーとして早期発見することができます。これらの型特性によって指定される性質は非常に難解であり、思わぬ変更によって容易に失われてしまう可能性があるため、このような静的なチェックを行っておくと安心感が増します。
 
-#　その他
+\clearpage
+
+# その他
+
+ここでは、ここまでのもののようにある程度のカテゴリに納めづらいものをまとめておきます。
 
 ## `filesystem::path`の`char8_t`文字列からの構築
 
@@ -5557,6 +5573,8 @@ int main() {
 `std::to_address(p)`はユーザー定義のポインタlikeな型に対しては`std::pointer_traits::to_address(p)`か`std::to_address(p.operator->())`のどちらかからそのアドレスを取得しようとし、生のポインタ型に対しては`p`をそのまま返します。そのため、ユーザー定義型では`std::pointer_traits`を特殊化するか、`operator->`によってアドレスを返すようにしておきます。
 
 `std::to_address()`はまた、イテレータが`contiguous_iterator`であるかをチェックする際にも使用されます。その場合、イテレータ型はポインタ型ではないため、`std::pointer_traits`特殊化ではなく`operator->`によって`std::to_address()`にアダプトすることが推奨され、これによって`contiguous_iterator`では実質的に`operator->`が要求されます。
+
+\clearpage
 
 # 大域的な変更
 
