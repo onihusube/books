@@ -5045,7 +5045,7 @@ namespace std {
 
 `std::basic_common_reference`を2つの型に対してこのように部分特殊化し、メンバ型`type`にその共通参照型を指定します。`std::common_reference<T, U>`と`std::common_reference<U, T>`で同じ結果を得るために引数順を入れ替えた2種類の特殊化が必要となります。
 
-`std::basic_common_reference`の後ろ2つのテンプレート引数`TQual`と`UQual`はそれぞれ、`std::common_reference<T, U>`としたときの`T`と`U`の参照・CV修飾を伝播させるためのエイリアステンプレートです。例えば`TQual<C>`とすると、`T`の修飾を`C`にコピーした型が得られます（`T`が`int&`なら`C&`、`const int`なら`const C`）。特殊化する際はこの部分に触れてはいけません。
+`std::basic_common_reference`の後ろ2つのテンプレート引数`TQual`と`UQual`はそれぞれ、`std::common_reference<T, U>`としたときの`T`と`U`の参照・CV修飾を伝播させるためのエイリアステンプレートです。例えば`TQual<C>`とすると、`T`の修飾を`C`にコピーした型が得られます（`T`が`int&`なら`C&`、`const int`なら`const C`など）。特殊化する際はこの部分に触れてはいけません。
 
 `std::common_reference<T, U>`としたとき、`std::basic_common_reference<A, B>`の引数`A, B`には`T, U`を`std::remove_cvref`した型が渡され、`T, U`の修飾情報は`TQual, UQual`に保存されます。そのため、`std::basic_common_reference`の部分特殊化を定義する際は定義したい2つの型の修飾を考慮する必要はなく、順番を入れ替えた2種類だけを定義すれば良いわけです。
 
@@ -5180,7 +5180,7 @@ void test(U & u) {
 }
 ```
 
-これらの例のように、これらの型特性を使用した`static_assert`によるチェックを入れておくことでコンパイル毎にチェックが自動化され、後から型の定義を変更して期待する性質が失われた場合にもコンパイルエラーとして早期発見することができます。これらの型特性によって指定される性質は非常に難解であり、思わぬ変更によって容易に失われてしまう可能性があるため、このような静的なチェックは有効であると思われます。
+これらの例のように、これらの型特性を使用した`static_assert`によるチェックを入れておくことでコンパイル毎にチェックが自動化され、後から型の定義を変更して期待する性質が失われた場合にもコンパイルエラーとして早期発見することができます。これらの型特性によって指定される性質は非常に難解であり、思わぬ変更によって容易に失われてしまう可能性があるため、このような静的なチェックを行っておくと安心感が増します。
 
 #　その他
 
@@ -5397,9 +5397,75 @@ true
 
 `std::in_range<T>(n)`が`false`になるということは、値`n`を型`T`にキャストすると意図しない値になる可能性があるということです。
 
-## `condition_variable_any`と`stop_token`
+## `condition_variable_any`の待機関数の`stop_token`サポート
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1869r1.html
+`std::stop_token`の導入に伴って、`std::condition_variable_any`の待機系関数に`std::stop_token`を取るオーバーロードが追加されます。対象となる関数は、`.wait()`、`.wait_until()`、`.wait_for()`の3つです。
+
+これらの関数における条件変数の待機では、条件変数に対する起床シグナル（`.notify()`）に加えて`std::stop_token`に対する停止要求（`std::stop_source::request_stop()`）でも待機が解除されます。
+
+これによって、条件変数使用時に待機の解除よりも先に処理が完了（キャンセル）される場合の後処理を簡易化できるようになります。
+
+```cpp
+#include <condition_variable>
+using namespace std::chrono_literals;
+using namespace std::chrono_literals;
+
+int main() {
+  int shared_state = 0;
+  std::mutex mtx;
+  std::condition_variable_any cv;
+
+  // データ読み取りスレッド
+  std::jthread reader{[&shared_state, &mtx, &cv](std::stop_token st) {
+    int before = 0;
+
+    while (true) {
+      std::unique_lock lock{mtx};
+
+      // データ更新を待機
+      // ここの待機は、stに対する停止要求によっても解除される
+      cv.wait(lock, st, [&before, &shared_state] {
+        return before < shared_state;
+      });
+
+      // 停止要求がなされた時だけ終了する
+      if (st.stop_requested()) {
+        return;
+      }
+
+      // データを使用する
+      before = shared_state;
+      ...
+    }
+  }};
+
+  // データ更新スレッド
+  std::jthread writer{[&shared_state, &mtx, &cv](std::stop_token st) {
+    while (not st.stop_requested()) {
+      {
+        std::lock_guard lock{mtx};
+        // データの更新
+        shared_state += 1;
+        // 待機の解除
+        cv.notify_all();
+      }
+      // 100ms周期でデータ更新
+      std::this_thread::sleep_for(100ms);
+    }
+  }};
+
+  // 5秒後に処理を停止
+  std::this_thread::sleep_for(5s);
+}
+```
+
+この例では、2つのスレッドの終了は`main()`の終了に伴う`std::jthread`のデストラクタからの停止要求によってのみ行われます。`writer`スレッドの方は`stop_token`の`.stop_requested()`をチェックしてループしているため、`100ms`のウェイトが明ければ素直に終了します。一方、`reader`スレッドは条件変数を用いて待機していますが、`.wait()`に`stop_token`を渡していることによって条件変数が`stop_token`に対する停止要求でも起床するため、起床明けの`.stop_requested()`チェックによって正常に終了することができます。
+
+このように、条件変数によって待機するスレッドにおいても`stop_token`による安全な協調的キャンセルの恩恵を受けることができます。
+
+3つの関数すべてで、`std::stop_token`を取るオーバーロードが追加されるのは述語を取るオーバーロードに対してで、`std::stop_token`は第2引数（ロックオブジェクトの後）で受け取ります。
+
+なお、これらのものは`std::condition_variable`の同名関数群には用意されていません。事情は複雑ですがどうやら、安全に実装しようとすると余計なオーバーヘッドがかかってしまい、本来`std::condition_variable`の提供する効率性が（静かに）失われてしまうためのようです。
 
 ## `visit<R>()`
 
