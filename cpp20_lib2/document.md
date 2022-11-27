@@ -5469,6 +5469,30 @@ int main() {
 
 ## `visit<R>()`
 
+`std::variant<Ts...>`に対する`std::visit(f, v)`は`std::variant`オブジェクト`v`の状態に応じて`f`の適切なオーバーロードを呼び分けてくれる関数で、`std::variant`を扱う時にとても便利な関数です。ただし、この関数は`std::variant<Ts...>`の型`Ts...`毎に呼ばれる関数の全てが同じ戻り値型を返すことを要求しており、戻り値型が異なる場合でも変換してくれたりはせずにコンパイルエラーになります。
+
+暗黙変換せずにコンパイルエラーにするという挙動は安全に倒した設計であるため問題があるわけではありませんが、意図的に戻り値型を集約したい場合などに少し不便でした。そのため、明示的に戻り値型を指定することで暗黙変換による戻り値型の集約を行うオーバーロード、`std::visit<R>()`が追加されます。
+
+```cpp
+#include <variant>
+
+int main() {
+  std::variant<int, double> var{1.0};
+
+  // ng、戻り値型が一致しない
+  double r = std::visit([](auto v) {
+    return v;
+  }, var);
+  
+  // ok、doubleに変換する
+  double r = std::visit<double>([](auto v) {
+    return v;
+  }, var);
+}
+```
+
+`std::visit<R>()`は集約先の戻り値型`R`を明示的に指定すること以外は`std::visit()`と同様に使用できます。
+
 ## `to_address()`
 
 ## 標準ライブラリ型の`<=>`
