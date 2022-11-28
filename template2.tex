@@ -594,7 +594,7 @@ $endif$
   backgroundcolor  = \color{listing-background},
   basicstyle       = \color{listing-text-color}\linespread{1.0}$if(code-block-font-size)$$code-block-font-size$$else$\small$endif$\ttfamily{},
   breaklines       = true,   % はみ出したときに自動改行するかどうか
-  frame            = single,  % 枠線の種類
+  frame            = lines,  % 枠線の種類
   framesep         = 0.19em,  % 枠線太さ
   rulecolor        = \color{listing-rule},
   frameround       = ffff,
@@ -642,6 +642,42 @@ $endif$
   morecomment  = [s]{/**}{*/},
   morestring   = [b]",
   morestring   = [b]',
+}
+
+% C++std宣言表示
+\lstdefinestyle{cpp_stddecl}{
+  language         = C++,
+$if(listings-disable-line-numbers)$
+  xleftmargin      = 0.6em,
+  framexleftmargin = 0.4em,
+$else$
+  numbers          = left,
+  xleftmargin      = 2.7em,
+  framexleftmargin = 2.5em,
+$endif$
+  backgroundcolor  = \color{listing-background},
+  basicstyle       = \color{listing-text-color}\linespread{1.0}$if(code-block-font-size)$$code-block-font-size$$else$\small$endif$\ttfamily{},
+  breaklines       = true,   % はみ出したときに自動改行するかどうか
+  frame            = TbrL,  % 枠線の種類
+  framesep         = 0.19em,  % 枠線太さ
+  rulecolor        = \color{listing-rule},
+  frameround       = tttt,  % 角の種類
+  tabsize          = 4,
+  numberstyle      = \color{listing-numbers},
+  aboveskip        = 1.0em,
+  belowskip        = 0.1em,
+  abovecaptionskip = 0em,
+  belowcaptionskip = 1.0em,
+  keywordstyle     = {\color{listing-keyword}\bfseries},
+  keywordstyle     = [1]{\color{listing-keyword}\bfseries},
+  keywordstyle     = [2]{\color{listing-keyword}\bfseries},
+  keywordstyle     = [3]{\color{listing-keyword}\bfseries\itshape},
+  sensitive        = true,  % 大文字小文字の区別
+  identifierstyle  = \color{listing-identifier},
+  commentstyle     = \color{listing-comment},
+  stringstyle      = \color{listing-string},
+  showstringspaces = false,
+  escapeinside     = {/*@}{@*/} % コードブロック中でLatexコマンドを使うためのエスケープ文字列
 }
 
 % C++カスタムスタイル

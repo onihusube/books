@@ -40,11 +40,12 @@ okuduke:
 
 なお、本書ではC++17までのライブラリ機能に関しては前提知識として説明しません。また、C++20のコア言語機能に関しては拙著『C++20 コア言語機能』を、C++20 Rangeライブラリについては拙著『C++20 ranges』をご参照ください。
 
-## サンプルコードのお約束
+## サンプルコード等のお約束
 
 - そこで主題となっているライブラリ機能のためのヘッダのみを明示的にインクルードし、他のヘッダのインクルードは省略します。
 - 主題と関係ないところを`...`で省略していることがあります。
 - 行の末尾コメントで`ok/ng`と表示することで、それがコンパイル可能かどうかを示しています。`// ok`はコンパイルが通り未定義動作がないこと、`// ng`はコンパイルエラーとなる事をそれぞれ表しています。
+- 本文中でメンバ関数を表記する際、`.menber_func()`のように先頭に`.`を付加して区別しています
 
 コードブロック中で標準出力をしている時、直後のブロックでその出力例を示していることがあります。例えば次のようになっています
 
@@ -57,6 +58,18 @@ int main() {
 ```
 ```{style=planetext}
 hello world!
+```
+
+　
+
+標準ライブラリ中での宣言を例示する際、コードブロックの見た目を分けて表示しています（上と左の線が二重線 + 角丸）。例えば次のようになっています
+
+```{style=cpp_stddecl}
+// std::vectorの宣言例
+namespace std {
+  template<class T, class Allocator = allocator<T>>
+  class vector;
+}
 ```
 
 \clearpage
@@ -190,7 +203,7 @@ static_assert(std::same_as<
 
 `std::iter_reference_t`は次のように定義されています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template<dereferenceable I>
   using iter_reference_t = decltype(*declval<I&>());
@@ -259,7 +272,7 @@ static_assert(std::same_as<
 
 `std::iter_common_reference_t`は次のように定義されています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template<indirectly_readable I>
   using iter_common_reference_t = common_reference_t<iter_reference_t<I>, iter_value_t<I>&>;
@@ -306,7 +319,7 @@ C++20より、イテレータという概念はコンセプトによって定義
 
 `std::indirectly_readable`は間接参照によって値を読み出す事ができることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   // 説明専用コンセプト
   template<class In>
@@ -321,7 +334,7 @@ namespace std {
 
 `indirectly-readable-impl`は次のように定義される説明専用のコンセプトで、これを経由しているのは入力の型`In`を`remove_cvref_t`に通すためです。なお、`remove_cvref_t`はC++20から導入された型特性で、型から参照と`const`を取り除くものです（型特性の章で紹介しています）。
 
-```cpp
+```{style=cpp_stddecl}
 template<class In>
 concept indirectly-readable-impl =
   requires(const In in) {
@@ -348,7 +361,7 @@ concept indirectly-readable-impl =
 
 `std::indirectly_writable`は間接参照先に値を書き込む事ができることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template<class Out, class T>
   concept indirectly_writable = 
@@ -381,7 +394,7 @@ namespace std {
 
 `std::weakly_incrementable`は、インクリメント操作が可能であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept weakly_incrementable =
   movable<I> &&
@@ -415,7 +428,7 @@ concept weakly_incrementable =
 
 `std::incrementable`は、`weakly_incrementable`な型が`regular`であり、インクリメント操作が副作用を持たないことを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept incrementable =
   regular<I> &&
@@ -448,7 +461,7 @@ concept incrementable =
 
 `std::input_or_output_iterator`はC++におけるイテレータの最小の要件を表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept input_or_output_iterator =
   requires(I i) {
@@ -465,7 +478,7 @@ concept input_or_output_iterator =
 
 `std::sentinel_for`はイテレータ型に対する番兵型であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class S, class I>
 concept sentinel_for =
   semiregular<S> &&
@@ -495,7 +508,7 @@ concept sentinel_for =
 
 `std::sized_sentinel_for`はイテレータ型に対して距離を定義可能な番兵型であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class S, class I>
 concept sized_sentinel_for =
   sentinel_for<S, I> &&
@@ -521,7 +534,7 @@ concept sized_sentinel_for =
 
 `std::input_iterator`は入力イテレータであることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept input_iterator =
   input_or_output_iterator<I> &&
@@ -562,7 +575,7 @@ concept input_iterator =
 
 3番目のケースはフォールバックのためのもので、イテレータタグ型が取得できない場合はとりあえずランダムアクセスイテレータと思っておいて、実際のインターフェースからイテレータの性質を決定します。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept input_iterator =
   ...
@@ -580,7 +593,7 @@ concept input_iterator =
 
 `std::output_iterator`は出力イテレータであることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I, class T>
 concept output_iterator =
   input_or_output_iterator<I> &&
@@ -611,7 +624,7 @@ concept output_iterator =
 
 `std::forward_iterator`は前方向イテレータであることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept forward_iterator =
   input_iterator<I> &&
@@ -638,7 +651,7 @@ concept forward_iterator =
 
 `std::bidirectional_iterator`は双方向イテレータであることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept bidirectional_iterator =
   forward_iterator<I> &&
@@ -675,7 +688,7 @@ concept bidirectional_iterator =
 
 \clearpage
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept random_access_iterator =
   bidirectional_iterator<I> &&
@@ -720,7 +733,7 @@ concept random_access_iterator =
 
 `std::contiguous_iterator`は隣接イテレータであることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept contiguous_iterator =
   random_access_iterator<I> &&
@@ -794,7 +807,7 @@ C++20のコード（`new_iter_alg()`）からはイテレータの性質は主�
 
 その際に重要なのが、`iterator_cateogry`と`iterator_concept`の2種類のメンバ型です。`iterator_cateogry`が以前からそうであるように、この2つのメンバ型はイテレータのタグ型を指定しておくことでそのイテレータ型がどの種類のイテレータなのかを表明するものです。そして、イテレータコンセプトは常に`iterator_concept`を優先して見に行き、`std::iterator_traits`は`iterator_cateogry`しか見に行きません。これによって、C++20コードから利用された時とC++17コードから利用された時で取得されるイテレータタグ型を切り替えることができるわけです。例えばそれはポインタ型に対する`std::iterator_traits`特殊化に見ることができます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template<class T>
     requires is_object_v<T>
@@ -830,7 +843,7 @@ int main() {
 
 `<ranges>`の`view`型では、`iterator_category`を常に`input_iterator_tag`にしておくことでC++17コードに対する後方互換性を確保する、と言うことがよく行われています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
 
   // split_viewのイテレータ定義（細部は省略）
@@ -858,7 +871,7 @@ namespace std::ranges {
 
 例えば、C++20で追加されたイテレータラッパである`std::counted_iterator<I>`では、これを利用してラップするイテレータ型が`contiguous_iterator`である場合にC++17以前のコードに向けて`pointer`型を提供するようにしています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
 
   template<input_iterator I>
@@ -882,7 +895,7 @@ namespace std {
 
 `std::indirectly_unary_invocable`はイテレータの要素型による単項（1引数）呼び出しが可能であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class F, class I>
 concept indirectly_unary_invocable =
   indirectly_readable<I> &&
@@ -920,7 +933,7 @@ void f(F&& f, I i) {
 
 このような要件を必要とするイテレータアルゴリズムには`std::for_each()`があり、そのRange版ではこのコンセプトが使用されます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   // ranges::for_each()の宣言
   template<input_range R, 
@@ -936,7 +949,7 @@ namespace std::ranges {
 
 `std::indirectly_regular_unary_invocable`はイテレータの要素型による単項呼び出しが可能であり、それが副作用を持たないことを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class F, class I>
 concept indirectly_regular_unary_invocable =
   indirectly_readable<I> &&
@@ -957,7 +970,7 @@ concept indirectly_regular_unary_invocable =
 
 `std::indirect_unary_predicate`は、イテレータの要素型による単項述語（*unary predicate*）であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class F, class I>
 concept indirect_unary_predicate =
   indirectly_readable<I> &&
@@ -973,7 +986,7 @@ concept indirect_unary_predicate =
 
 このような要件を必要とするイテレータアルゴリズムには`std::find_if()`があり、そのRange版ではこのコンセプトが使用されます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<input_range R, 
            class Proj = identity,
@@ -988,7 +1001,7 @@ namespace std::ranges {
 
 `std::indirect_binary_predicate`は、イテレータの要素型による2項述語（*binary predicate*）であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class F, class I1, class I2>
 concept indirect_binary_predicate =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1004,7 +1017,7 @@ concept indirect_binary_predicate =
 
 このような要件を必要とするイテレータアルゴリズムには`std::find()`があり、そのRange版ではこのコンセプトが使用されます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<input_range R,
            class T,
@@ -1020,7 +1033,7 @@ namespace std::ranges {
 
 `std::indirect_equivalence_relation`は、イテレータの要素型による同値関係を表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class F, class I1, class I2 = I1>
 concept indirect_equivalence_relation =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1040,7 +1053,7 @@ concept indirect_equivalence_relation =
 
 `std::indirect_strict_weak_order`は、イテレータの要素型による狭義弱順序関係を表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class F, class I1, class I2 = I1>
 concept indirect_strict_weak_order =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1174,7 +1187,7 @@ auto example(I i1, I i2) {
 
 `std::projected<I, P>`はイテレータ型`I`と射影操作`P`を渡して、イテレータに対して射影を適用した結果を`indirectly_readable`な型として扱うためのクラステンプレートです。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
 
   template<indirectly_readable I, indirectly_regular_unary_invocable<I> Proj>
@@ -1190,7 +1203,7 @@ namespace std {
 
 そのような利用はRangeアルゴリズムにおいて頻出します。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<input_iterator I, 
            sentinel_for<I> S,
@@ -1208,7 +1221,7 @@ namespace std::ranges {
 
 `std::identity`は引数をそのまま返す関数オブジェクトのクラス型です。
 
-```cpp
+```{style=cpp_stddecl}
 // <functional>内で定義される
 namespace std {
   struct identity {
@@ -1224,7 +1237,7 @@ namespace std {
 
 これは主に、Rangeアルゴリズムにおける射影操作のデフォルトとして利用されています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<input_iterator I, 
            sentinel_for<I> S,
@@ -1246,7 +1259,7 @@ namespace std::ranges {
 
 `std::indirectly_movable`は、イテレータの要素型を別のイテレータへムーブしつつ出力することができることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class In, class Out>
 concept indirectly_movable =
   indirectly_readable<In> &&
@@ -1259,7 +1272,7 @@ concept indirectly_movable =
 
 `std::indirectly_movable_storable`は、`indirectly_movable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class In, class Out>
   concept indirectly_movable_storable =
     indirectly_movable<In, Out> &&
@@ -1293,7 +1306,7 @@ std::iter_value_t<In> obj(std::ranges::iter_move(i));
 
 `std::indirectly_copyable`は、イテレータの要素型を別のイテレータへコピーしつつ出力することができることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class In, class Out>
 concept indirectly_copyable =
   indirectly_readable<In> &&
@@ -1306,7 +1319,7 @@ concept indirectly_copyable =
 
 `std::indirectly_copyable_storable`は、`indirectly_copyable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class In, class Out>
 concept indirectly_copyable_storable =
   indirectly_copyable<In, Out> &&
@@ -1343,7 +1356,7 @@ std::iter_value_t<In> obj(*i);
 
 `std::indirectly_swappable`は、2つのイテレータの間でその要素の`swap`が行えることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I1, class I2 = I1>
 concept indirectly_swappable =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1363,7 +1376,7 @@ concept indirectly_swappable =
 
 `std::indirectly_comparable`は、2つのイテレータの間でその要素の比較が行えることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I1, class I2, class R, class P1 = identity, class P2 = identity>
 concept indirectly_comparable =
   indirect_binary_predicate<R, projected<I1, P1>, projected<I2, P2>>;
@@ -1377,7 +1390,7 @@ concept indirectly_comparable =
 
 `std::permutable`は、イテレータ範囲の要素をムーブや`swap`によってin-placeで並べ替えできることを表すコンセプトです
 
-```cpp
+```{style=cpp_stddecl}
 template<class I>
 concept permutable =
   forward_iterator<I> &&
@@ -1393,7 +1406,7 @@ concept permutable =
 
 `std::mergeable`は、2つのソート済みイテレータ範囲をマージしつつコピーして別のイテレータに出力可能であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I1, class I2,
          class Out, class R = ranges::less,
          class P1 = identity, class P2 = identity>
@@ -1410,7 +1423,7 @@ concept mergeable =
 
 非常に複雑ですが、`std::merge()`が可能であるための最小の要求を表しており、実際に`std::ranges::merge`で使用されています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<input_iterator I1, sentinel_for<I1> S1, 
            input_iterator I2, sentinel_for<I2> S2,
@@ -1427,7 +1440,7 @@ namespace std::ranges {
 
 `std::sortable`はイテレータ範囲がソート可能であることを表すコンセプトです。
 
-```cpp
+```{style=cpp_stddecl}
 template<class I, class R = ranges::less, class P = identity>
 concept sortable =
   permutable<I> &&
@@ -1440,7 +1453,7 @@ concept sortable =
 
 これは`std::sort()`を行うための最小の要求であり、実際に`std::ranges::sort`で使用されています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<random_access_iterator I, sentinel_for<I> S, 
            class Comp = ranges::less, class Proj = identity>
@@ -1459,7 +1472,7 @@ namespace std::ranges {
 
 この関数にはオーバーロードが3つあります。
 
-```cpp
+```{style=cpp_stddecl}
 // ranges::advance() 1
 template<input_or_output_iterator I>
 constexpr void advance(I& i, iter_difference_t<I> n);
@@ -1496,7 +1509,7 @@ int main() {
 
 このように、コンセプトによってそのイテレータに最適な方法で入力イテレータを進めます。
 
-```cpp
+```{style=cpp_stddecl}
 // ranges::advance() 2
 template<input_or_output_iterator I, sentinel_for<I> S>
 constexpr void advance(I& i, S bound);
@@ -1533,7 +1546,7 @@ int main() {
 
 注意としては、3つ目の処理が行われる場合は`bound`まで戻るのようなことはできない点で、したがってジェネリックな文脈でこのオーバーロードを後退のために使用するのは不適切です。これは、上2つの処理に該当しない場合は`bound`が`i`の前後どちらにあるかを判定することができないためで、この場合は後ろにあるものとみなして進行させています。
 
-```cpp
+```{style=cpp_stddecl}
 // ranges::advance() 3
 template<input_or_output_iterator I, sentinel_for<I> S>
 constexpr iter_difference_t<I>
@@ -1578,7 +1591,7 @@ int main() {
 
 この関数にはオーバーロードが4つあります。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   // iを1つ進める
   template<input_or_output_iterator I>
@@ -1619,7 +1632,7 @@ int main() {
 
 この2つはこれまでの`std::next()`とほぼ同様の振る舞いをします。`n`には負数を渡しても意図通りになりますが、この関数の意味的には常に正の値を渡すべきで、イテレータの後退をしたい場合は次の項の`std::ranges::prev()`を使用した方が良いでしょう。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   // iをboundまで進める
   template<input_or_output_iterator I, sentinel_for<I> S>
@@ -1664,7 +1677,7 @@ int main() {
 
 この関数にはオーバーロードが3つあります。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   // iを1つ戻す
   template<bidirectional_iterator I>
@@ -1707,7 +1720,7 @@ int main() {
 
 \clearpage
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   // iをboundまでの間でn戻す
   template<input_or_output_iterator I, sentinel_for<I> S>
@@ -1741,7 +1754,7 @@ int main() {
 
 この関数にはオーバーロードが3つあります。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<input_or_output_iterator I, sentinel_for<I> S>
     requires (!sized_sentinel_for<S, I>)
@@ -1788,7 +1801,7 @@ int main() {
 
 `std::ranges::distance()`にはもう一つオーバーロードがあり、`range`オブジェクトを直接渡してその長さを得ることができます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std::ranges {
   template<range R>
   constexpr range_difference_t<R> distance(R&& r);
@@ -1843,7 +1856,7 @@ C++20では終端イテレータが番兵としてイテレータとは別に扱
 
 `std::default_sentinel`は、汎用的に使用可能な番兵です。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   struct default_sentinel_t {};
 
@@ -1926,7 +1939,7 @@ int main() {
 
 `std::unreachable_sentinel`の`operator==`は任意のイテレータとの比較が可能になっており、それは常に`false`を返します。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   struct unreachable_sentinel_t {
     
@@ -1979,7 +1992,7 @@ int main() {
 
 　
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   // common_iteratorの定義例
   template<input_or_output_iterator I, sentinel_for<I> S>
@@ -2041,7 +2054,7 @@ int main() {
 
 `std::counted_iterator`に対する番兵は`std::default_sentinel`であるため、終端イテレータを計算したり取得する必要がありません。元の範囲から部分範囲を得たい場合に、イテレータを取得してコピーして足して・・・のようなことをやるよりも簡易に同じことを達成できます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   // counted_iteratorの宣言例
   template<input_or_output_iterator I>
@@ -2103,14 +2116,17 @@ int main() {
 
 連想コンテナとは次のものです
 
-- `std::set`
-- `std::map`
-- `std::multiset`
-- `std::multimap`
-- `std::unordered_set`
-- `std::unordered_map`
-- `std::unordered_multiset`
-- `std::unordered_multimap`
+- 連想コンテナ
+    - 順序付
+      - `std::set`
+      - `std::map`
+      - `std::multiset`
+      - `std::multimap`
+    - 非順序
+      - `std::unordered_set`
+      - `std::unordered_map`
+      - `std::unordered_multiset`
+      - `std::unordered_multimap`
 
 特に記載がない場合、ここで紹介される機能はこれら全ての連想コンテナに対して追加されます。
 
@@ -2164,12 +2180,13 @@ C++14では、順序付連想コンテナ（`unordered`でないもの）の検�
 // 通常の検索
 iterator find(const key_type& x);
 
+
 // 透過的検索
 template <class K>
 iterator find(const K& x);
 ```
 
-この2つ目のテンプレート`.find()`が透過的検索を行うための関数で、連想コンテナのキー型（`key_type`）と異なる型のオブジェクトをとって検索を行うことができます。これによって、そのようなことをしたい場合に`key_type`に一度変換してから渡す必要性がなくなり、利便性が増すとともに不要なオブジェクトの構築を回避することで効率化できます。
+この2つ目の関数テンプレート`.find()`が透過的検索を行うための関数で、連想コンテナのキー型（`key_type`）と異なる型のオブジェクトをとって検索を行うことができます。これによって、そのようなことをしたい場合に`key_type`に一度変換してから渡す必要性がなくなり、利便性が増すとともに不要なオブジェクトの構築を回避することで効率化できます。
 
 おそらくこのことは、`std::string`をキーとする連想コンテナを使用する際によく出会うことになるでしょう。
 
@@ -2179,7 +2196,7 @@ iterator find(const K& x);
 using namespace std::literals;
 
 int main() {
-  std::map<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3}};
+  std::map<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3} };
 
   bool b1 = map.find("1"sv) != map.end(); // ng
   bool b2 = map.find("4") != map.end();   // ok、ただし一時オブジェクトが作成されている
@@ -2200,7 +2217,7 @@ template<typename Key, typename Value>
 using hetero_map = std::map<Key, Value, std::ranges::less>;
 
 int main() {
-  hetero_map<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3}};
+  hetero_map<std::string, int> map = { {"1", 1}, {"2", 2}, {"3", 3} };
 
   // どちらも、直接比較によって検索される
   bool b1 = map.find("1"sv) != map.end(); // ok
@@ -2315,7 +2332,7 @@ int main() {
 
 コンテナ型を`C`とすると、おおよそ次のように宣言されています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template<class T, class U>
   constexpr typename C::size_type
@@ -2383,7 +2400,7 @@ int main() {
   // decltype(a4) : std::array<short, 3>
   
   // 集成体の配列の作成
-  std::array a5 = std::to_array<std::array<int, 1>>({{1}, {2}});
+  std::array a5 = std::to_array<std::array<int, 1>>({ {1}, {2} });
   // decltype(a5) : std::array<std::array<int, 1>, 2>
 }
 ```
@@ -2397,7 +2414,8 @@ int main() {
 
 int main() {
   int raw_arr[] = {1, 2, 3};
-  
+
+
   // 各要素をコピーして変換
   std::array arr = std::to_array(raw_arr);
   // decltype(arr) : std::array<int, 3>
@@ -2419,9 +2437,9 @@ int main() {
   std::vector vec = {1, 2, 3};
 
   // size()は符号無し整数型で取得
-  std::signed_integral   auto l1 = std::size(vec);
+  std::unsigned_integral auto l1 = std::size(vec);
   // ssize()は符号付き整数型で取得
-  std::unsigned_integral auto l2 = std::ssize(vec);
+  std::signed_integral   auto l2 = std::ssize(vec);
   // l1 == l2 == 3
 }
 ```
@@ -2503,7 +2521,7 @@ C++17までは、これら削除操作の前にコンテナの要素数（`.size
 
 `std::shift_left/std::shift_right`アルゴリズムは、範囲の要素を左/右に指定した数だけシフトさせる（ずらす）ものです。
 
-```cpp
+```{style=cpp_stddecl}
 // 宣言例
 namespace std {
   template<class ForwardIterator>
@@ -2578,11 +2596,13 @@ shift_right(0)  : [1, 2, 3, 4, 5]
 
 なお、これには対応するRangeアルゴリズム（`std::ranges`名前空間のもの）がC++20時点では提供されず、C++23から利用可能になります。導入がほぼ同時期だったので漏れてしまったようです。一方で、並列アルゴリズム（第1引数で`ExecutionPolicy`を取るもの）は利用可能です。
 
+入力範囲の要素数を`N`とすると、`std::shift_left`は最大で`N - n`回の代入が行われ、`std::shift_right`は`N - n`回の代入あるいは`swap`が行われます。
+
 ## `lexicographical_compare_three_way`
 
 `std::lexicographical_compare_three_way`は2つの範囲を辞書式順序（*lexicographical order*）によって三方比較するアルゴリズムです。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template<class InputIterator1, class InputIterator2, class Cmp>
   constexpr auto
@@ -2693,7 +2713,7 @@ int main() {
 
 `std::midpoint()`は2つの数値の中点を求めるものです。これは`<numeric>`に配置されています。
 
-```cpp
+```{style=cpp_stddecl}
 // <numeric>内
 namespace std {
   template <class T>
@@ -2781,13 +2801,13 @@ int main() {
 1.79769e+308 : inf
 ```
 
-中点を求めるという単純な処理はしかし、数値型のハードウェア実装の都合などによってかなり奥が深い処理です。CppCon2019では、`std::midpoint()`の紹介と解説で1時間費やした発表が行われています（検索するとYotubeで見つかるでしょう）。
+中点を求めるという単純な処理はしかし、数値型のハードウェア実装の都合などによってかなり奥が深い処理です。CppCon2019では、`std::midpoint()`の紹介と解説で1時間費やした発表が行われています（検索するとYoutubeで見つかるでしょう）。
 
 ## `lerp`
 
 `std::lerp()`は、2つの浮動小数点数値間の値の線形補完を行う関数です。これは、`<cmath>`に配置されています。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   constexpr double lerp(double a, double b, double t) noexcept;
 }
@@ -2904,7 +2924,7 @@ int main() {
 
 このように、ラムダ式（非`const`呼び出しのために`mutable`が必要、長い）や`std::bind`（プレースホルダが必要、値カテゴリが伝播されない）と比較するとシンプルに同じ部分適用をより正確に達成できます。渡す関数呼び出し可能なものに対する`const`性と値カテゴリの伝播を適切に自動化できるほか、この関数は引数列の前側の部分適用をするものであるため、残りの引数を気にする必要が無くなります。
 
-`std::bind_front(f, boud_args...)`の戻り値は、左辺値で呼ばれると渡された`f`を左辺値として、右辺値で呼ばれると`f`を右辺値として呼び出し、自信の`const`をその呼び出しにまで伝播します。この性質によって、`const`性と値カテゴリの伝播が自動化され適切に解決されます。
+`std::bind_front(f, boud_args...)`の戻り値は、左辺値で呼ばれると渡された`f`を左辺値として、右辺値で呼ばれると`f`を右辺値として呼び出し、自身の`const`をその呼び出しにまで伝播します。この性質によって、`const`性と値カテゴリの伝播が自動化され適切に解決されます。
 
 ```cpp
 #include <functional>
@@ -2957,7 +2977,7 @@ int main() {
 
 \clearpage
 
-# 文字列周り
+# 文字列
 
 主に`std::string`・`std::string_view`と`char8_t`関連です。
 
@@ -2965,7 +2985,7 @@ int main() {
 
 `.starts_with()`は文字列の前方が指定された文字列と一致しているかを調べる関数です。これは`std::string`と`std::string_view`（他の文字型/アロケータ型特殊化も含めて）の両方で利用可能です。`.ends_with()`はその逆に、文字列の前方が指定された文字列と一致しているかを調べます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template <class CharT, class Traits = char_traits<CharT>>
   class basic_string_view {
@@ -3014,11 +3034,13 @@ C++23では、この関数を任意の`range`と`range`に一般化した`std::r
 
 ## `reserve()`の縮小機能の廃止
 
-`std::string`の`.reserve()`は指定された数の文字を追加のメモリ確保無しで保持できるように内部キャパシティ（`.capacity()`、現在確保しているメモリ量）を増大させる（すなわち、指定された分のメモリを確保する）関数です。この関数には数値を指定しますが、C++17まではその数値が現在のキャパシティよりも小さい場合に確保しているメモリ量を縮小することができていました（実装定義だったようです）。
+`std::string`の`.reserve()`は指定された数の文字を追加のメモリ確保無しで保持できるように内部キャパシティ（`.capacity()`、現在確保しているメモリ量）を増大させる（すなわち、指定された分のメモリを確保する）関数です。この関数には数値を指定しますが、C++17まではその数値が現在のキャパシティよりも小さい場合に確保しているメモリ量を縮小することができていました（実装定義だったようですが）。
 
 `std::vector`の`.reserve()`は縮小できなかったこともあり、この`std::string`独特の振る舞いは気づきづらい罠であり、ジェネリックなコード記述の妨げになっていました。
 
 C++20ではそれが正され、`std::string`の`.reserve()`は指定された量が現在のキャパシティより小さい場合は何もしなくなりました。
+
+\clearpage
 
 ```cpp
 template<typename T>
@@ -3041,7 +3063,7 @@ auto read(T& buf) {
 }
 ```
 
-ファイルやネットワークのI/Oなどでこのようなことを行いたいことは非常に良くあります。ある一定の量まではメモリ確保を起こさないようにするために`.reserve()`を使用しますが、この入力のバッファが使いまわされている場合など、既に確保されている可能性もあり、その場合は何もしないことが期待されます。C++20からはその期待に沿う振る舞いをするようになり、`std::string`オブジェクトの現在のキャパシティを気にせずに使用予定メモリ領域の予約を行えます。
+ファイルやネットワークのI/Oなどでこのようなことを行いたいことは非常に良くあります。ある一定の量まではメモリ確保を起こさないようにするために`.reserve()`を使用しますが、この入力のバッファが使いまわされている場合などには既に十分な量が確保されている可能性があり、その場合は何もしないことが期待されます。C++20からはその期待に沿う振る舞いをするようになり、`std::string`オブジェクトの現在のキャパシティを気にせずに使用予定メモリ領域の予約を行えます。
 
 ## `string_view`のイテレータペアを受け取るコンストラクタ
 
@@ -3053,7 +3075,7 @@ C++20からは、`std::basic_string_view`にイテレータペアからの構築
 #include <string_view>
 
 int main() {
-  std::string_view input = std::string_view("split_view takes a view and a delimiter");
+  std::string_view input = "split_view takes a view and a delimiter";
 
   // スペースをデリミタとしてsplitする
   for (auto inner_range : input | std::views::split(' ')) {
@@ -3082,7 +3104,7 @@ C++23ではさらに、`explicit`ではあるものの、`range`オブジェク�
 
 言語機能としてUTF-8文字を表す`char8_t`が追加されたのに伴って、`char8_t`によって特殊化された文字列型（`std::string`, `std::string_view`）が追加されます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   // <string>内
   using u8string  = basic_string<char8_t>;
@@ -3110,7 +3132,7 @@ int main() {
 
 また、文字列型を生成するリテラル（`""s`、`""sv`）にも`char8_t`オーバーロードが追加されます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   inline namespace literals {
     // <string>内
@@ -3151,7 +3173,7 @@ int main() {
 |`path::u8string()`|`std::string`|`std::u8string`|
 |`path::generic_u8string()`|`std::string`|`std::u8string`|
 
-残念ながら、C++17までに書かれたコードでこの戻り値型に依存している部分はコンパイルエラーになってしまいます。言語バージョンを下げる以外に回避手段はないので、都度修正するしかありません。
+残念ながら、C++17までに書かれたコードでこの戻り値型に依存している部分はコンパイルエラーになってしまいます。言語バージョンを下げる以外に回避手段はないので、都度修正するしかありません（一応、GCCやMSVCには`char8_t`を無効化するオプションが用意されていたりはします）。
 
 ## `char8_t/char`文字エンコーディングの相互変換
 
@@ -3218,7 +3240,7 @@ int main() {
     - `dst`には何も書き込まれない
 - それ以外 : 変換は正常完了。値は入力文字列（`src`）の先頭から変換のために消費した（読み込んだ）バイト数
 
-これは1文字を変換するものなので文字列の変換のためにはこれを連続適用する必要があり、正常位の戻り値もそのような使用法を想定しているようです。
+これは1文字を変換するものなので文字列の変換のためにはこれを連続適用する必要があり、正常時の戻り値もそのような使用法を想定しているようです。
 
 ```cpp
 #include <cuchar>
@@ -3226,7 +3248,6 @@ int main() {
 // charのエンコーディング -> UTF-8 の文字列変換を行う
 auto str_to_u8str(std::string_view src) -> std::u8string {
   const char* ptr = src.data();
-  char8_t res[4]{};
   std::mbstate_t ms{};
   std::size_t bytes = 0;
   std::size_t consumed = 0;
@@ -3235,6 +3256,7 @@ auto str_to_u8str(std::string_view src) -> std::u8string {
   u8str.reserve(src.length());
 
   while (consumed < src.length()) {
+    char8_t res[4]{};
     bytes = std::mbrtoc8(res, ptr, 4, &ms);
 
     assert(0 < bytes && bytes < std::size_t(-3));
@@ -3242,12 +3264,14 @@ auto str_to_u8str(std::string_view src) -> std::u8string {
     consumed += bytes;
     ptr += bytes;
 
-    u8str.append(res, bytes);
+    u8str.append(res);
   }
 
   return u8str;
 }
 ```
+
+　
 
 `std::c8rtomb(dst, src, ps)`では、`dst`は変換結果出力先の`char8_t`変数へのポインタ、`src`は変換元`char`文字（文字列）へのポインタを指定します。
 
@@ -3283,7 +3307,7 @@ int main() {
 
 \clearpage
 
-# `std::atomic`関連
+# `std::atomic`
 
 ## `char8_t`に対する特殊化
 
@@ -3291,7 +3315,7 @@ int main() {
 
 C++20で追加された`char8_t`型についても同様に明示的特殊化が定義され、その名前付き型とロックフリープロパティも用意されます。
 
-```cpp
+```{style=cpp_stddecl}
 // <atomic>で定義
 
 // char8_tのアトミックロックフリープロパティ
@@ -3350,7 +3374,7 @@ void thread_func() {
 
 ## `shared_ptr/weak_ptr`に対する特殊化
 
-`std::shared_ptr`には元々、そのオブジェクト（ポインタ）そのものにアトミックにアクセスするための非メンバ関数群が用意されていました。しかし、アトミックアクセスしたい`std::shared_ptr`オブジェクトは型としてそうではないものと区別がつかず、アトミックアクセス関数を通して使用しないとアトミックアクセスは保証されません。また、`std::shared_ptr`オブジェクトを間接参照（デリファレンス）しようとするときは、別の`std::shared_ptr`オブジェクトにロードしてからそのローカル化した`std::shared_ptr`オブジェクトを間接参照する、という手間を踏まなければポインタにアトミックにアクセスできません。
+`std::shared_ptr`には元々、そのオブジェクト（ポインタ）そのものにアトミックにアクセスするための非メンバ関数群が用意されていました。しかし、アトミックアクセスしたい`std::shared_ptr`オブジェクトは型としてそうではないものと区別がつかず、アトミックアクセス関数を通して使用しないとアトミックアクセスは保証されません。また、`std::shared_ptr`オブジェクトを間接参照（デリファレンス）しようとするときは、別の`std::shared_ptr`オブジェクトにアトミックにロードしてからそのローカル化した`std::shared_ptr`オブジェクトを間接参照する、という手間を踏まなければポインタにアトミックにアクセスできません。
 
 ```cpp
 #include <memory>
@@ -3380,7 +3404,7 @@ void f() {
 
 このようなAPIは間違えやすく、意図通りに使用することが難しかったため、C++20にて`std::shared_ptr`に対する`std::atomic`の部分的特殊化を追加することによって置き換えられました。`std::weak_ptr`も所有権を必要としないだけで同様に扱うことができるため（こちらにはアトミックアクセスAPIすらなかった）、同時に`std::weak_ptr`に対する`std::atomic`の部分的特殊化も追加されます。
 
-```cpp
+```{style=cpp_stddecl}
 // <memory>で定義
 namespace std {
 
@@ -3579,11 +3603,14 @@ int main() {
 ```cpp
 #include <atomic>
 
-// 複数スレッドからアクセスされるとする
+// 複数スレッドからアクセスされる
+// ただし、要素数は変更されないものとする
 std::vector<int> vec(10);
 
 // 範囲をアトミックな範囲に変換するRangeアダプタ
-auto as_atomic = std::views::transform([](auto& e) { return std::atomic_ref{e}; });
+auto as_atomic = std::views::transform([](auto& e) { 
+                                         return std::atomic_ref{e};
+                                       });
 
 // あるタイミングでvecの内容を確認
 void observe() {
@@ -3602,7 +3629,7 @@ void clear() {
 
 （些細な注意点ですが、このようなことをする場合は`transform`に渡しているラムダ式の引数型が参照型になるように注意しましょう）
 
-`std::atomic_ref<T>`はその事前定義特殊化やメンバ関数など、ほとんど`std::atomic<T>`と同様に扱うことができます。ただし、`std::atomic_ref`はコンストラクタで指定されたオブジェクトを参照で保持し所有権を持たないため、参照先のオブジェクトの寿命に注意を払う必要があります。例えば上の例で、`transform`引数のラムダ式の引数型の`&`を１文字忘れるとそれに出会うことができます・・・
+`std::atomic_ref<T>`はその事前定義特殊化やメンバ関数など、ほとんど`std::atomic<T>`と同様に扱うことができます。ただし、`std::atomic_ref`はコンストラクタで指定されたオブジェクトを参照で保持し所有権を持たないため、参照先のオブジェクトの寿命に注意を払う必要があります。例えば上の例で、`transform`引数のラムダ式の引数型の`&`を１文字忘れるとそれに出会うことができます。
 
 ## アトミックオブジェクトを介した待機・通知機構
 
@@ -3746,15 +3773,19 @@ public:
 }
 ```
 
-この実装は、MSVC STLの`std::latch`実装を参考にしています（https://github.com/microsoft/STL/blob/main/stl/inc/latch ）
+この実装は、MSVC STLの`std::latch`実装を参考にしています  
+（https://github.com/microsoft/STL/blob/main/stl/inc/latch ）
 
 ## 整数型のロックフリーエイリアス
 
 整数型の`std::atomic`特殊化は多くの環境で`is_always_lock_free`プロパティ（静的メンバ定数）が`true`となり、それが期待されますが、CPUによってはそれは期待できないこともあり、整数型の`std::atomic`特殊化が常にロックフリーに振る舞うかは`is_always_lock_free`プロパティを調べる必要がありました。
 
-利便性のため、整数型の`std::atomic`特殊化であって、`is_always_lock_free`プロパティが`true`となることが保証される型、のエイリアスが提供されます。
+利便性のため、整数型の`std::atomic`特殊化であって`is_always_lock_free`プロパティが`true`となることが保証される型、のエイリアスが提供されます。
 
-```cpp
+\clearpage
+
+```{style=cpp_stddecl}
+// ロックフリーな整数型のatomic特殊化の宣言例
 namespace std {
   using atomic_signed_lock_free   = std::atomic<...>;
   using atomic_unsigned_lock_free = std::atomic<...>;
@@ -3808,7 +3839,7 @@ bool zap() {
 
 struct padded {
   char clank = 0x42;/*
-  ここにパディングが入る環境だと
+  ここにパディングが入る環境だとする
   */unsigned biff = 0xC0DEFEFE;
 };
 
@@ -3832,14 +3863,13 @@ bool zap() {
 
 C++20から、`std::memory_order`列挙型とその値の定義が変更されます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   // C++17までの定義
   typedef enum memory_order {
     memory_order_relaxed, memory_order_consume, memory_order_acquire,
     memory_order_release, memory_order_acq_rel, memory_order_seq_cst
   } memory_order;
-
 
   // C++20からの定義
   enum class memory_order : ... {
@@ -3859,7 +3889,7 @@ namespace std {
 
 C++17までの定義はCとの互換性を意識したものでしたが、Cが`_Atomic`を採用したことや`std`名前空間で定義されていることからあまり意味がなかったため修正される事になりました。
 
-`std::memory_order`列挙値の名前を変更しているのは名前中の`memory_order`の重複を避けるためで、`std`名前空間にばら撒かれた`memory_order_~`な変数はC++17以前のコードの互換性のためのものです。列挙子の型を変更するとABIを破損する事になるため、新しい`std::memory_order`の基底型は未規定（実装定義）とされています。
+`std::memory_order`列挙値の名前を変更しているのは名前中の`memory_order`の重複を避けるためで、`std`名前空間に配置された`memory_order_~`な変数はC++17以前のコードの互換性のためのものです。列挙子の型を変更するとABIを破損する事になるため、新しい`std::memory_order`の基底型は未規定（実装定義）とされています。
 
 結局、この変更はAPIもABIも破損していないため、利用する分にはあまり気にする必要はありません。
 
@@ -3884,7 +3914,7 @@ int main() {
 
 ただし、これはバッファオーバーフローの危険性がありました。なぜなら、ここで使用されている`>>`は次のように宣言されているポインタを受け取るもので、配列長を考慮していないからです。
 
-```cpp
+```{style=cpp_stddecl}
 // C++17まで、配列等バッファへの入力演算子
 namespace std {
   template<class CharT, class Traits>
@@ -3902,7 +3932,7 @@ namespace std {
 
 そこで、上記のような有用なユースケースを保護しつつ危険な使用を削除するために、これらポインタを受けるオーバーロードを配列を受けるように変更します。
 
-```cpp
+```{style=cpp_stddecl}
 // C++20から、生配列への入力演算子
 namespace std {
   template<class CharT, class Traits, std::size_t N>
@@ -4025,7 +4055,7 @@ C++17までとC++20からの各文字（列）型と標準出力ストリーム�
 
 ## 文字列バッファ/ストリームの`.view()`
 
-文字列ストリームクラス（`std::basic_stringstream`とその特殊化）は入出力ストリームであり、その入出力先が内部の文字列バッファに対して行われるストリームです。このクラスはストリーム入出力の結果としての内部文字列を取り出すためのメンバ関数`.str()`を備えていますが、これは内部の文字列バッファの内容をコピーするもので単に参照だけしたい場合に非効率でした。
+文字列ストリームクラス（`std::basic_stringstream`とその特殊化）は入出力ストリームであり、その入出力が内部の文字列バッファに対して行われるストリームです。このクラスはストリーム入出力の結果としての内部文字列を取り出すためのメンバ関数`.str()`を備えていますが、これは内部の文字列バッファの内容をコピーするもので単に参照だけしたい場合に非効率でした。
 
 そのため、`std::basic_stringstream`の内部バッファ参照時のコピーを回避するために、それを参照する`std::string_view`を返すメンバ関数`.view()`が追加されます
 
@@ -4079,7 +4109,8 @@ int main() {
 
 文字列ストリームクラスおよび文字列バッファクラスは内部バッファとして実質的に`std::string`を使用しており、どちらのクラスもそのアロケータ型を自身のクラステンプレートのテンプレート引数として受け取ります。
 
-```cpp
+```{style=cpp_stddecl}
+// 文字列ストリーム関連クラスの宣言例
 namespace std {
   template< 
     class CharT, 
@@ -4122,17 +4153,18 @@ int main() {
 
 型名`S`を`std::basic_stringstream`と`std::basic_stringbuf`のどちらかとして`S<CharT, Traits, Alloc>`に対して、追加されるコンストラクタは次のようになります
 
-|コンストラクタ|`explicit`|`basic_stringstream`|`basic_stringbuf`|
-|---|:-:|:-:|:-:|
-|`S(const Alloc&)`|○|×|○|
-|`S(openmode, const Alloc&)`|-|○|○|
-|`S(basic_string<CharT, Traits, Alloc>&&, openmode)`|○|○|○|
-|`S(const basic_string<CharT, Traits, SAlloc>&, const Alloc&)`|-|○|○|
-|`S(const basic_string<CharT, Traits, SAlloc>&, openmode, const Alloc&)`|-|○|○|
-|`S(const basic_string<CharT, Traits, SAlloc>&, openmode)`|○|○|○|
-|`S(basic_stringbuf&&, const Alloc&)`|-|×|○|
+1. `explicit S(const Alloc&)`
+    - `std::basic_stringbuf`のみ
+2. `S(openmode, const Alloc&)`
+    - `openmode`にはデフォルト引数がない
+3. `explicit S(basic_string<CharT, Traits, Alloc>&&, openmode)`
+4. `S(const basic_string<CharT, Traits, SAlloc>&, const Alloc&)`
+5. `S(const basic_string<CharT, Traits, SAlloc>&, openmode, const Alloc&)`
+6. `explicit S(const basic_string<CharT, Traits, SAlloc>&, openmode)`
+7. `S(basic_stringbuf&&, const Alloc&)`
+    - `std::basic_stringbuf`のみ
 
-表中の`SAlloc`は`S<CharT, Traits, Alloc>`の`Alloc`と異なるアロケータ型を表します。
+リスト中の`SAlloc`は`S<CharT, Traits, Alloc>`の`Alloc`と異なるアロケータ型を表します。また、2のコンストラクタを除いて`openmode`（`std::ios_base::openmode`）の引数にはデフォルト値として`std::ios_base::in | std::ios_base::out`が指定されています。
 
 さらに、`.str()`もカスタムアロケータを考慮するようになることで、コピーする際に使用されるアロケータをカスタマイズ可能となります。
 
@@ -4149,13 +4181,14 @@ int main() {
   ss << "C++";
   ss << 20;
 
-  // アロケータを渡してそれを用いてコピー先を確保
+  // アロケータを渡してそれを用いてコピー先メモリを確保
   auto restr = ss.str(alloc);
   // restr.get_allocator() == alloc
 
   std::basic_string str("replace", alloc);
 
   // 異なるアロケータを持つ文字列によるバッファ置換
+  // ただし、アロケータを置き換えるわけではない
   ss.str(str);
 }
 ```
@@ -4188,7 +4221,7 @@ void f(sstream<Alloc>& strm) {
 
 `std::make_shared<T>()`は`std::shared_ptr<T>`を作成するヘルパ関数であり、その作成にあたって例外安全性や効率性を提供してくれる優れものです。ただ、`std::shared_ptr`の配列版サポートはあるのに、この関数はなぜか`T`が配列型である場合のサポートがありませんでした。そのため、`T`が配列型の場合のためのオーバーロードが追加されます。
 
-```cpp
+```{style=cpp_stddecl}
 // <memory>で定義
 namespace std {
   
@@ -4217,7 +4250,7 @@ namespace std {
 
 これはまた、`std::allocate_shared()`にも同様に追加されます。この関数は、指定されたアロケータを用いてメモリを確保しオブジェクトを初期化しつつ適切に解放を行うカスタムデリータを仕込み、尚且つそれらを1回のメモリ確保で行ってくれるものです。
 
-```cpp
+```{style=cpp_stddecl}
 // <memory>で定義
 namespace std {
 
@@ -4286,7 +4319,7 @@ true
 
 `std::allocate_shared()`は第1引数にアロケータを渡す以外は同様です。
 
-初期値を取らない関数の場合は各要素を値初期化（組み込み型はゼロ相当、クラス型はデフォルトコンストラクタ呼び出し）します。そのため、初期化後の各要素の値が不定にはなりません。
+初期値を取らない関数の場合は各要素を値初期化（組み込み型はゼロ相当、クラス型はデフォルトコンストラクタ呼び出し）します。そのため、初期化後の各要素の値が不定にはなりません（クラス型でメンバを初期化しない場合は不定値を抱え込む場合があります）。
 
 ## スマートポインタをデフォルト構築する
 
@@ -4294,7 +4327,7 @@ true
 
 確保するメモリ量が大きくなるとこのオーバーヘッドは無視できなくなり、パフォーマンス低下の可能性があります。そのため、これらのスマートポインタ生成ヘルパ関数に対してサフィックスに`for_overwrite`と付く、確保した領域に何もしない関数が追加されます。
 
-```cpp
+```{style=cpp_stddecl}
 // <memory>で定義
 namespace std {
 
@@ -4341,18 +4374,18 @@ namespace std {
 
 |関数|効果|
 |---|---|
-|`uninitialized_default_construct(r)`|各要素をデフォルト構築する|
-|`uninitialized_default_construct_n(it, n)`|先頭`n`個の要素をデフォルト構築する|
-|`uninitialized_value_construct(r)`|各要素を値初期化する|
-|`uninitialized_value_construct_n(it, n)`|先頭`n`個の要素を値初期化する|
-|`uninitialized_copy(in_r, out_r)`|各要素を別の範囲からコピーして初期化する|
-|`uninitialized_copy_n(ii, n, oif, oil)`|先頭`n`個の要素を別の範囲からコピーして初期化する|
-|`uninitialized_move(in_r, out_r)`|各要素を別の範囲からムーブして初期化する|
-|`uninitialized_move_n(ii, n, oif, oil)`|先頭`n`個の要素を別の範囲からムーブして初期化する|
-|`uninitialized_fill(r, init)`|各要素を`init`で初期化する|
-|`uninitialized_fill_n(it, n, init)`|先頭`n`個の要素を`init`で初期化する|
-|`destroy(r)`|各要素を破棄する|
-|`destroy_n(it, n)`|先頭`n`個の要素を破棄する|
+|`uninitialized_default_construct(r)`|各要素をデフォルト構築|
+|`uninitialized_default_construct_n(i, n)`|先頭`n`要素をデフォルト構築|
+|`uninitialized_value_construct(r)`|各要素を値初期化|
+|`uninitialized_value_construct_n(i, n)`|先頭`n`要素を値初期化|
+|`uninitialized_copy(in_r, out_r)`|各要素を別の範囲からコピーして初期化|
+|`uninitialized_copy_n(ii, n, oif, oil)`|先頭`n`要素を別の範囲からコピーして初期化|
+|`uninitialized_move(in_r, out_r)`|各要素を別の範囲からムーブして初期化|
+|`uninitialized_move_n(ii, n, oif, oil)`|先頭`n`要素を別の範囲からムーブして初期化|
+|`uninitialized_fill(r, init)`|各要素を`init`で初期化|
+|`uninitialized_fill_n(i, n, init)`|先頭`n`要素を`init`で初期化|
+|`destroy(r)`|各要素を破棄|
+|`destroy_n(i, n)`|先頭`n`要素を破棄|
 
 表内引数の意味
 
@@ -4362,7 +4395,7 @@ namespace std {
 - `ii` : `in_r`の先頭イテレータ
 - `oif, oil` : `out_r`のイテレータペア
 - `init` : 初期値
-- `it` : `out_r`の先頭イテレータ
+- `i` : `out_r`の先頭イテレータ
 - `p` : ポインタ
 - `args...` : コンストラクタ引数
 
@@ -4412,9 +4445,9 @@ true
 
 `uninitialized_copy`と`uninitialized_move`は最初の引数に初期値を提供する範囲を指定し、最後の引数で初期化対象の未初期化範囲を指定するのですが、初期化したい範囲を指定する引数の位置がほかと異なっているため注意が必要かもしれません。
 
-これらの関数は、Rangeアルゴリズムや`std::ranges`のイテレータ関連ユーティリティ（`ranges::advance()`等）と同様にADLを無効化する性質を持っています。
+なお、これらの関数はRangeアルゴリズムや`std::ranges`のイテレータ関連ユーティリティ（`ranges::advance()`等）と同様にADLを無効化する性質を持っています。
 
-ここまでは流れでこれらのアルゴリズム関数を`for_overwrite`系のスマートポインタ生成関数で例示していましたが、スマートポインタ生成関数はいずれも確保した領域にオブジェクトを構築するまでが仕事であるため、厳密にはこれらアルゴリズムが対象とする未初期化メモリ領域ではありません。本当の未初期化メモリとは、`::operator new()`（`new`式ではなく）や`malloc()`、システムやライブラリの提供するメモリ確保関数など、メモリの確保だけを行う関数によって取得されたメモリ領域です。そのような素のメモリ領域には想定するであろう型のオブジェクトが構築されていないため、ポインタを通したアクセスが未定義動作となります。
+ここまでは流れでこれらのアルゴリズム関数を`for_overwrite`系のスマートポインタ生成関数で例示していましたが、スマートポインタ生成関数はいずれも確保した領域にオブジェクトを構築するまでが仕事であるため、厳密にはこれらアルゴリズムが対象とする未初期化メモリ領域ではありません（そのため、デストラクタがユーザー定義されているクラス型では先ほどのような上書きは安全ではありません）。本当の未初期化メモリとは、`::operator new()`（`new`式ではなく）や`malloc()`、システムやライブラリの提供するメモリ確保関数など、メモリの確保だけを行う関数によって取得されたメモリ領域です。そのような素のメモリ領域には想定するであろう型のオブジェクトが構築されていないため、ポインタを通したアクセスが未定義動作となります。
 
 ```cpp
 #include <memory>
@@ -4438,12 +4471,13 @@ using namespace std::views;
 template<int N>
 auto eq = [](C& c) { return c.get() == N; };
 
+
 int main() {
   // 5要素分のCの領域を確保
-  C* p1 = static_cast<C*>(::operator new(sizeof(C[5])));
-  C* p2 = static_cast<C*>(std::malloc(sizeof(C[5])));
+  C* p1 = static_cast<C*>(::operator new( sizeof(C[5]) ));
+  C* p2 = static_cast<C*>(   std::malloc( sizeof(C[5]) ));
 
-  // UB!! p1,p2の指す領域は未初期化
+  // UB!! p1,p2の指す領域にオブジェクトが構築されていない
   //std::cout << p1->get();
   //std::cout << p2->get();
 
@@ -4462,7 +4496,7 @@ true
 true
 ```
 
-この例では、値初期化でもデフォルト初期化でも`C`のデフォルトコンストラクタが呼ばれ、デフォルトメンバ初期化の`10`で`C::n`は初期化されています。
+この例では、値初期化でもデフォルト初期化でも`C`のデフォルトコンストラクタが呼ばれ、デフォルトメンバ初期化の`10`で`C::n`は初期化されています。クラス`C`のメンバ`n`のデフォルトメンバ初期化子（`= 10`）を消すと、デフォルト初期化の場合に値が不定になります。
 
 ただし、*implicit-lifetime types*と呼ばれる型のオブジェクトはこのような場合でも暗黙的に構築されます（詳細は「C++20 言語機能」を参照）。組み込み型は少なくともその型のグループに含まれています。
 
@@ -4474,7 +4508,7 @@ true
 
 C++20で解禁されたコンパイル時動的メモリ確保は、言語仕様の変更と一部のライブラリ機能の特別扱いによって達成されています。その詳細は「C++20 言語機能」を参照してください。ここではライブラリの変更のみを扱います。
 
-まず、グローバルな置換可能な（非ユーザー定義）`operator new`と`operator delete`が定数式で呼び出し可能になりますが、これは特別扱いされており特に`constexpr`指定されているわけではありません。
+まず、グローバルな置換可能な（非ユーザー定義の）`operator new`と`operator delete`が定数式で呼び出し可能になりますが、これは特別扱いされており特に`constexpr`指定されているわけではありません。
 
 次に、これを標準コンテナなどで利用するために、アロケータクラスが`constexpr`対応します。次のクラスとそのメンバ関数が`constexpr`指定されるようになります
 
@@ -4507,7 +4541,7 @@ C++20で解禁されたコンパイル時動的メモリ確保は、言語仕様
     - `std::ranges::destroy()`
     - `std::ranges::destroy_n()`
 
-`ranges::construct_at()`と`ranges::destroy_at()`はADLを無効化するという性質を持つ点だけが`std`名前空間にあるものと異なり、範囲を受け取って一括処理するものではありません。`destroy`系関数については前節を参照。
+`ranges::construct_at()`と`ranges::destroy_at()`はADLを無効化するという性質を持つ点だけが`std`名前空間にあるものと異なり、範囲を受け取って一括処理するものではありません。`destroy`系関数については前節を参照してください。
 
 これらのものはユーザーが直接使用することもできますが、その時でもコンパイル時動的メモリ確保のルールに従っている必要があります。最も、多くの場合は`std::string`と`std::vector`を介して使用することになるかと思われます。
 
@@ -4537,7 +4571,7 @@ constexpr int f() {
 
 `std::assume_aligned()`は、メモリ領域のアライメントについての仮定をコンパイラに伝える関数です。この目的はより積極的な最適化にあります。`std::assume_aligned<N>(ptr)`のように使用して、`ptr`のメモリ領域が`N`アライメントでアラインされていることをコンパイラに伝達します。なお、`N`は２のべき乗の正の整数値である必要があります。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   template<size_t N, class T>
   [[nodiscard]]
@@ -4609,7 +4643,7 @@ add(float*, float*):
 
 まずやたら長いので少なくともコードが変わっていることが分かります。ここで行われているのは、まず入力配列のアライメントをチェックして8バイトアライメントよりも大きければ`movups`命令（アライメント要求が無い`movaps`）によって先程とほぼ同様にSSE命令によって処理されます。8バイトアライメント以下である場合、ループ（展開されてはいますが）によって1要素づつ足しています。
 
-`std::assume_aligned()`を使用しない場合でもコンパイラは相当頑張った最適化をしていますが、`std::assume_aligned()`によってアライメント仮定が伝わることでアライメントの考慮をしなくて済むようになり、最適化が促進されています。
+`std::assume_aligned()`を使用しない場合でもコンパイラは相当頑張った最適化をしていますが、`std::assume_aligned()`によってアライメント仮定が伝わることでアライメントの考慮をしなくて済むようになり、最適化が促進されていることが分かります。
 
 このように、適切に使用すると最適化を促進できる可能性がありますが、`std::assume_aligned()`を通したポインタが本当に仮定したアライメント通りにアラインされていることはプログラマが保証しなければなりません。そうでない場合未定義動作です。例えば、上記の`std::assume_aligned()`を使用する`add()`に、何も考えずに作成した`float`配列を渡すとアライメント違反の例外によってプログラムが終了するでしょう。
 
@@ -4648,10 +4682,7 @@ uses-allcator構築における`std::pair`のハンドリングと、標準のus
 ```cpp
 #include <memory>
 
-using pair = std::pair<
-                std::pmr::string,
-                int
-             >;
+using pair = std::pair<std::pmr::string, int>;
 
 int main() {
   std::pmr::monotonic_buffer_resource mr{};
@@ -4694,7 +4725,7 @@ true
 
 そのため、C++20からはテンプレートパラメータのデフォルト引数として`std::byte`が指定されるようになり、`std::pmr::polymorphic_allocator<>`の形で利用できるようになります。
 
-```cpp
+```{style=cpp_stddecl}
 // <memory_resource>で定義
 namespace std::pmr {
 
@@ -4708,14 +4739,21 @@ namespace std::pmr {
 
 また、この変更によって`std::allocator_traits`を介さない利用がより促進されたため、単体でアロケータクラスとして活用できるように便利なアロケーション関数が追加されます。
 
-|関数|戻り値|意味|
-|---|---|---|
-|`allocate_bytes(n, al)`|確保領域のポインタ|`al`アライメントで`n`バイトのメモリを確保する|
-|`deallocate_bytes(p, n, al)`|なし|`allocate_bytes()`で確保した領域を解放する|
-|`allocate_object<T>(n)`|確保領域のポインタ|`T[n]`を配置するのに十分なメモリを確保する|
-|`deallocate_object<T>(p, n)`|なし|`allocate_object()`で確保した領域を解放する|
-|`new_object<T>(args...)`|構築したオブジェクトのポインタ|メモリを確保し`T`のオブジェクトを構築する|
-|`delete_object<T>(p)`|なし|`new_object()`で構築したオブジェクトを破棄しメモリを解放する|
+1. `allocate_bytes(n, al)`
+    - `al`アライメントで`n`バイトのメモリを確保する
+    - 戻り値は確保領域のポインタ
+2. `deallocate_bytes(p, n, al)`
+    - `allocate_bytes()`で確保した領域を解放する
+3. `allocate_object<T>(n)`
+    - `T[n]`を配置するのに十分なメモリを確保する
+    - 戻り値は確保領域のポインタ
+4. `deallocate_object<T>(p, n)`
+    - `allocate_object()`で確保した領域を解放する
+5. `new_object<T>(args...)`
+    - メモリを確保し`T`のオブジェクトを構築する
+    - 戻り値は構築したオブジェクトのポインタ
+6. `delete_object<T>(p)`
+    - `new_object()`で構築したオブジェクトを破棄しメモリを解放する
 
 ```cpp
 #include <memory_resource>
@@ -4790,6 +4828,8 @@ C++17まで、型特性`std::remove_reference`と`std::remove_cv`はそれぞれ
 この問題は標準ライブラリにおいても同様であり、利便性と標準ライブラリ規定の簡略化と適切な指定のために、CV修飾と参照修飾の除去だけを行う型特性として`std::remove_cvref`が用意されます。
 
 ```cpp
+#include <type_traits>
+
 static_assert(std::same_as<
   std::remove_cvref_t<const volatile int&>,
   int
@@ -4805,6 +4845,7 @@ static_assert(std::same_as<
   std::remove_cvref_t<int&&>,
   int
 >);
+
 
 // 関数型を減衰しない
 static_assert(std::same_as<
@@ -4941,6 +4982,8 @@ struct wrap {
 };
 ```
 
+これ以外のところでは`std::is_convertible`で十分だと思われるため、条件付き`noexcept`以外ではあまり使用することはないでしょう。
+
 ## 配列型の要素数の有無の検出
 
 `std::make_shared()`や`std::make_unique()`では、配列型がその要素数が既知かどうかで振る舞いが変わっていました。このように、配列型では要素数が既知かどうかでほぼ別の型として扱う必要が出てくることがあります。しかし、標準ライブラリにはこれを検出する方法が用意されていませんでした。
@@ -4963,12 +5006,14 @@ static_assert(std::is_unbounded_array_v<int[]>);
 static_assert(not std::is_unbounded_array_v<int[1]>);
 ```
 
+\clearpage
+
 ## `unwrap_reference`
 
 `std::unwrap_reference`は`std::reference_wrapper<T>`から`T&`を取得するための型特性です。
 
 ```cpp
-#include <functional>
+#include <type_traits>
 
 template<typename T>
 auto f(T t) {
@@ -4981,10 +5026,12 @@ auto f(T t) {
 }
 ```
 
+`std::unwrap_reference<T>`の`T`が`std::reference_wrapper<U>`ならばその`::type`は`U&`となり、そうではない場合はその`::type`は`T`となります。この例のように、結果に`&`をつけておくとどちらにせよ参照型が得られます。
+
 同時に、`std::unwrap_reference` + `std::decay`（参照外しや配列からポインタへの変換など）を行う`std::unwrap_ref_decay<T>`も追加されます。
 
 ```cpp
-#include <functional>
+#include <type_traits>
  
 template<typename T>
   requires std::constructible_from<std::unwrap_ref_decay_t<T>, int>
@@ -5026,7 +5073,7 @@ static_assert(std::same_as<
 
 `std::common_reference`は`std::common_type`と似たような感じで力技によって共通の参照型を求めているため、共通の基底クラスや共通で変換できる型など、直接2つの型の間に現れないような共通の参照型を求めることができません。その場合にそれを手動でアダプトするために、`std::basic_common_reference`が用意されています。
 
-```cpp
+```{style=cpp_stddecl}
 // <type_traits>で定義
 namespace std {
   template<class T, class U, template<class> class TQual, template<class> class UQual>
@@ -5093,7 +5140,7 @@ static_assert(std::same_as<
 
 クラスのレイアウトにまつわるいくつかの事を判定するための型特性が4つ追加されます。
 
-```cpp
+```{style=cpp_stddecl}
 namespace std {
   
   // 2つの型のレイアウト互換性を判定する
@@ -5116,7 +5163,9 @@ namespace std {
 
 `std::is_pointer_interconvertible_with_class()`と`std::is_corresponding_member()`は、他の型特性と異なり`constexpr`な関数です。
 
-これらの型特性はクラスのレイアウト（メモリ上にどのように配置されているか）に関連するものであり、レイアウトに互換性があればオブジェクトの型と異なる型として値の読み出しが可能となる場合があり、それによってポインタの相互変換が可能となることがあります。これらのものが必要になるケースはあまり多くなさそうですが、クラスのレイアウトに直接触れる場合やポインタの変換を行う場合などにこれらの型特性によって対象の型に静的なチェックをかけておくことができます。ただし、クラス型の場合にこれらのことが可能となるのは殆どの場合にスタンダードレイアウト型に限られています。スタンダードレイアウト型とは、とても簡単に言えばCの構造体のようなクラス型のことです（トリビアル型でなくても良いため、コンストラクタ等を定義することはできます）。
+これらの型特性はクラスのレイアウト（メモリ上にどのように配置されているか）に関連するものであり、レイアウトに互換性があればオブジェクトの型と異なる型として値の読み出しが可能となる場合があり、それによってポインタの相互変換が可能となることがあります。これらのものが必要になるケースはあまり多くなさそうですが、クラスのレイアウトに直接触れる場合やポインタの変換を行う場合などにこれらの型特性によって対象の型に静的なチェックをかけておくことができます。
+
+ただし、クラス型の場合にこれらのことが可能となるのは殆どの場合にスタンダードレイアウト型に限られています。スタンダードレイアウト型とは、とても簡単に言えばCの構造体のようなクラス型のことです（トリビアル型でなくても良いため、コンストラクタ等を定義することはできます）。
 
 以下、いくつかの例。
 
@@ -5137,6 +5186,7 @@ struct D2 : B {
 static_assert(
   std::is_pointer_interconvertible_base_of_v<B, D1>;
 );
+
 
 // 派生クラスがメンバを持っているとfalseになる
 static_assert(
@@ -5192,7 +5242,7 @@ void test(U & u) {
 }
 ```
 
-これらの例のように、これらの型特性を使用した`static_assert`によるチェックを入れておくことでコンパイル毎にチェックが自動化され、後から型の定義を変更して期待する性質が失われた場合にもコンパイルエラーとして早期発見することができます。これらの型特性によって指定される性質は非常に難解であり、思わぬ変更によって容易に失われてしまう可能性があるため、このような静的なチェックを行っておくと安心感が増します。
+これらの例のように、これらの型特性を使用した`static_assert`によるチェックを入れておくことでコンパイル毎にチェックが自動化され、後から型の定義を変更して期待する性質が失われた場合にもコンパイルエラーとして早期発見することができます。これらの型特性によって指定される性質は非常に難解であり、思わぬ変更によって容易に失われてしまう可能性があるため、このような静的なチェックを行っておくと確実です。
 
 \clearpage
 
@@ -5267,21 +5317,21 @@ namespace fs = std::filesystem;
 int main() {
   std::error_code ec;
 
-  if(fs::create_directory(“a/b/c”, ec) == false) {
+  if(fs::create_directory("a/b/c", ec) == false) {
     // ここに来るのはどんな時？
     assert(bool(ec)); // ecの状態は??
   }
 
-  if (fs::create_directories(“d/e/f”, ec) == false) {
+  if (fs::create_directories("d/e/f", ec) == false) {
     // ここに来るのはどんな時？
     assert(bool(ec)); // ecの状態は??
   }
 }
 ```
 
-`create_directory()`は指定されたディレクトリだけを作成し、`create_directories()`はそのパス中に含まれる存在していないディレクトリも作成するものです。`create_directories()`は`create_directory()`をパスの先頭から順番に試行していくものなので、`create_directory()`だけに注目することにします。
+`create_directory()`は指定されたディレクトリだけを作成し、`create_directories()`はそのパス中に含まれる存在していないディレクトリも作成するものです。`create_directories()`は`create_directory()`をパスの先頭から順番に試行していくものなので、本質的な問題は`create_directory()`にあります。
 
-この戻り値とエラー状態に関しては紆余曲折がありましたが、最終的な`create_directory("path", ec)`の呼び出しに対する、事後状態と戻り値及びエラー（`ec`）状態の組み合わせは次のようになります。
+この戻り値とエラー値の状態に関しては紆余曲折がありましたが、最終的な`create_directory("path", ec)`の呼び出しに対する、事後状態と戻り値及びエラー（`ec`）状態の組み合わせは次のようになります。
 
 |状態|戻り値|`ec`|
 |---|---|---|
@@ -5292,6 +5342,8 @@ int main() {
 |その他のディレクトリ作成失敗|`false`|エラー|
 
 `ec`のエラー状態とは、`bool(ec) == true`となる状態です。
+
+振る舞いとしては、とにかくディレクトリを作成した場合にのみ`true`を返し、ディレクトリを作成せず関数が戻った後もディレクトリが存在しない場合にエラーとして通知されます。
 
 これはC++17に対する欠陥報告なので、一部の実装では以前からこうなっていた可能性があります。
 
@@ -5338,7 +5390,7 @@ void f(std::vector<int> vec) {
 
 これらの問題に対処するために、安全な整数値の比較を行う関数が追加されます。
 
-```cpp
+```{style=cpp_stddecl}
 // <utility>で定義
 namespace std {
   // t == u
@@ -5417,13 +5469,13 @@ true
 
 `std::stop_token`の導入に伴って、`std::condition_variable_any`の待機系関数に`std::stop_token`を取るオーバーロードが追加されます。対象となる関数は、`.wait()`、`.wait_until()`、`.wait_for()`の3つです。
 
-これらの関数における条件変数の待機では、条件変数に対する起床シグナル（`.notify()`）に加えて`std::stop_token`に対する停止要求（`std::stop_source::request_stop()`）でも待機が解除されます。
+これらの関数における条件変数の待機では、条件変数に対する起床シグナル（`.notify_all()`）に加えて`std::stop_token`に対する停止要求（`std::stop_source::request_stop()`）でも待機が解除されます。
 
 これによって、条件変数使用時に待機の解除よりも先に処理が完了（キャンセル）される場合の後処理を簡易化できるようになります。
 
 ```cpp
 #include <condition_variable>
-using namespace std::chrono_literals;
+
 using namespace std::chrono_literals;
 
 int main() {
@@ -5479,7 +5531,7 @@ int main() {
 
 このように、条件変数によって待機するスレッドにおいても`stop_token`による安全な協調的キャンセルの恩恵を受けることができます。
 
-3つの関数すべてで、`std::stop_token`を取るオーバーロードが追加されるのは述語を取るオーバーロードに対してで、`std::stop_token`は第2引数（ロックオブジェクトの後）で受け取ります。
+3つの関数すべてで、`std::stop_token`を取るオーバーロードが追加されるのは述語を取るオーバーロードに対してで、`std::stop_token`は第2引数（ロックオブジェクトの後）で受け取ります。述語が必須となっているのは、*Spurious Wakeup*と呼ばれる現象（通知も停止要求も起きていないのに待機が解除される現象）が起きてしまった場合に判定がややこしくなるのを回避するためだと思われます。
 
 なお、これらのものは`std::condition_variable`の同名関数群には用意されていません。事情は複雑ですがどうやら、安全に実装しようとすると余計なオーバーヘッドがかかってしまい、本来`std::condition_variable`の提供する効率性が（静かに）失われてしまうためのようです。
 
@@ -5488,6 +5540,8 @@ int main() {
 `std::variant<Ts...>`に対する`std::visit(f, v)`は`std::variant`オブジェクト`v`の状態に応じて`f`の適切なオーバーロードを呼び分けてくれる関数で、`std::variant`を扱う時にとても便利な関数です。ただし、この関数は`std::variant<Ts...>`の型`Ts...`毎に呼ばれる関数の全てが同じ戻り値型を返すことを要求しており、戻り値型が異なる場合でも変換してくれたりはせずにコンパイルエラーになります。
 
 暗黙変換せずにコンパイルエラーにするという挙動は安全に倒した設計であるため問題があるわけではありませんが、意図的に戻り値型を集約したい場合などに少し不便でした。そのため、明示的に戻り値型を指定することで暗黙変換による戻り値型の集約を行うオーバーロード、`std::visit<R>()`が追加されます。
+
+　
 
 ```cpp
 #include <variant>
@@ -5633,8 +5687,8 @@ int main() {
 int main() {
   std::stack<int> s1;       // ok
   std::stack<int> s2{};     // ok
-  std::stack<int> s2 = {};  // ng
-  s1 = {};                  // ng
+  std::stack<int> s2 = {};  // ng、空リストによるコピーリスト初期化
+  s1 = {};                  // ng、空リストによるコピーリスト初期化
 }
 ```
 
