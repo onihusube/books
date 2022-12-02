@@ -64,7 +64,7 @@ hello world!
 
 標準ライブラリ中での宣言を例示する際、コードブロックの見た目を分けて表示しています（上と左の線が二重線 + 角丸）。例えば次のようになっています
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // std::vectorの宣言例
 namespace std {
   template<class T, class Allocator = allocator<T>>
@@ -203,7 +203,7 @@ static_assert(std::same_as<
 
 `std::iter_reference_t`は次のように定義されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template<dereferenceable I>
   using iter_reference_t = decltype(*declval<I&>());
@@ -272,7 +272,7 @@ static_assert(std::same_as<
 
 `std::iter_common_reference_t`は次のように定義されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template<indirectly_readable I>
   using iter_common_reference_t = common_reference_t<iter_reference_t<I>, iter_value_t<I>&>;
@@ -319,7 +319,7 @@ C++20より、イテレータという概念はコンセプトによって定義
 
 `std::indirectly_readable`は間接参照によって値を読み出す事ができることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   // 説明専用コンセプト
   template<class In>
@@ -334,7 +334,7 @@ namespace std {
 
 `indirectly-readable-impl`は次のように定義される説明専用のコンセプトで、これを経由しているのは入力の型`In`を`remove_cvref_t`に通すためです。なお、`remove_cvref_t`はC++20から導入された型特性で、型から参照と`const`を取り除くものです（型特性の章で紹介しています）。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class In>
 concept indirectly-readable-impl =
   requires(const In in) {
@@ -361,7 +361,7 @@ concept indirectly-readable-impl =
 
 `std::indirectly_writable`は間接参照先に値を書き込む事ができることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template<class Out, class T>
   concept indirectly_writable = 
@@ -394,7 +394,7 @@ namespace std {
 
 `std::weakly_incrementable`は、インクリメント操作が可能であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept weakly_incrementable =
   movable<I> &&
@@ -428,7 +428,7 @@ concept weakly_incrementable =
 
 `std::incrementable`は、`weakly_incrementable`な型が`regular`であり、インクリメント操作が副作用を持たないことを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept incrementable =
   regular<I> &&
@@ -461,7 +461,7 @@ concept incrementable =
 
 `std::input_or_output_iterator`はC++におけるイテレータの最小の要件を表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept input_or_output_iterator =
   requires(I i) {
@@ -478,7 +478,7 @@ concept input_or_output_iterator =
 
 `std::sentinel_for`はイテレータ型に対する番兵型であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class S, class I>
 concept sentinel_for =
   semiregular<S> &&
@@ -508,7 +508,7 @@ concept sentinel_for =
 
 `std::sized_sentinel_for`はイテレータ型に対して距離を定義可能な番兵型であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class S, class I>
 concept sized_sentinel_for =
   sentinel_for<S, I> &&
@@ -534,7 +534,7 @@ concept sized_sentinel_for =
 
 `std::input_iterator`は入力イテレータであることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept input_iterator =
   input_or_output_iterator<I> &&
@@ -575,7 +575,7 @@ concept input_iterator =
 
 3番目のケースはフォールバックのためのもので、イテレータタグ型が取得できない場合はとりあえずランダムアクセスイテレータと思っておいて、実際のインターフェースからイテレータの性質を決定します。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept input_iterator =
   ...
@@ -593,7 +593,7 @@ concept input_iterator =
 
 `std::output_iterator`は出力イテレータであることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I, class T>
 concept output_iterator =
   input_or_output_iterator<I> &&
@@ -624,7 +624,7 @@ concept output_iterator =
 
 `std::forward_iterator`は前方向イテレータであることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept forward_iterator =
   input_iterator<I> &&
@@ -651,7 +651,7 @@ concept forward_iterator =
 
 `std::bidirectional_iterator`は双方向イテレータであることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept bidirectional_iterator =
   forward_iterator<I> &&
@@ -688,7 +688,7 @@ concept bidirectional_iterator =
 
 \clearpage
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept random_access_iterator =
   bidirectional_iterator<I> &&
@@ -733,7 +733,7 @@ concept random_access_iterator =
 
 `std::contiguous_iterator`は隣接イテレータであることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept contiguous_iterator =
   random_access_iterator<I> &&
@@ -807,7 +807,7 @@ C++20のコード（`new_iter_alg()`）からはイテレータの性質は主�
 
 その際に重要なのが、`iterator_cateogry`と`iterator_concept`の2種類のメンバ型です。`iterator_cateogry`が以前からそうであるように、この2つのメンバ型はイテレータのタグ型を指定しておくことでそのイテレータ型がどの種類のイテレータなのかを表明するものです。そして、イテレータコンセプトは常に`iterator_concept`を優先して見に行き、`std::iterator_traits`は`iterator_cateogry`しか見に行きません。これによって、C++20コードから利用された時とC++17コードから利用された時で取得されるイテレータタグ型を切り替えることができるわけです。例えばそれはポインタ型に対する`std::iterator_traits`特殊化に見ることができます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template<class T>
     requires is_object_v<T>
@@ -843,7 +843,7 @@ int main() {
 
 `<ranges>`の`view`型では、`iterator_category`を常に`input_iterator_tag`にしておくことでC++17コードに対する後方互換性を確保する、と言うことがよく行われています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
 
   // split_viewのイテレータ定義（細部は省略）
@@ -871,7 +871,7 @@ namespace std::ranges {
 
 例えば、C++20で追加されたイテレータラッパである`std::counted_iterator<I>`では、これを利用してラップするイテレータ型が`contiguous_iterator`である場合にC++17以前のコードに向けて`pointer`型を提供するようにしています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
 
   template<input_iterator I>
@@ -895,7 +895,7 @@ namespace std {
 
 `std::indirectly_unary_invocable`はイテレータの要素型による単項（1引数）呼び出しが可能であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class F, class I>
 concept indirectly_unary_invocable =
   indirectly_readable<I> &&
@@ -933,7 +933,7 @@ void f(F&& f, I i) {
 
 このような要件を必要とするイテレータアルゴリズムには`std::for_each()`があり、そのRange版ではこのコンセプトが使用されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   // ranges::for_each()の宣言
   template<input_range R, 
@@ -949,7 +949,7 @@ namespace std::ranges {
 
 `std::indirectly_regular_unary_invocable`はイテレータの要素型による単項呼び出しが可能であり、それが副作用を持たないことを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class F, class I>
 concept indirectly_regular_unary_invocable =
   indirectly_readable<I> &&
@@ -970,7 +970,7 @@ concept indirectly_regular_unary_invocable =
 
 `std::indirect_unary_predicate`は、イテレータの要素型による単項述語（*unary predicate*）であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class F, class I>
 concept indirect_unary_predicate =
   indirectly_readable<I> &&
@@ -986,7 +986,7 @@ concept indirect_unary_predicate =
 
 このような要件を必要とするイテレータアルゴリズムには`std::find_if()`があり、そのRange版ではこのコンセプトが使用されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<input_range R, 
            class Proj = identity,
@@ -1001,7 +1001,7 @@ namespace std::ranges {
 
 `std::indirect_binary_predicate`は、イテレータの要素型による2項述語（*binary predicate*）であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class F, class I1, class I2>
 concept indirect_binary_predicate =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1017,7 +1017,7 @@ concept indirect_binary_predicate =
 
 このような要件を必要とするイテレータアルゴリズムには`std::find()`があり、そのRange版ではこのコンセプトが使用されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<input_range R,
            class T,
@@ -1033,7 +1033,7 @@ namespace std::ranges {
 
 `std::indirect_equivalence_relation`は、イテレータの要素型による同値関係を表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class F, class I1, class I2 = I1>
 concept indirect_equivalence_relation =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1053,7 +1053,7 @@ concept indirect_equivalence_relation =
 
 `std::indirect_strict_weak_order`は、イテレータの要素型による狭義弱順序関係を表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class F, class I1, class I2 = I1>
 concept indirect_strict_weak_order =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1187,7 +1187,7 @@ auto example(I i1, I i2) {
 
 `std::projected<I, P>`はイテレータ型`I`と射影操作`P`を渡して、イテレータに対して射影を適用した結果を`indirectly_readable`な型として扱うためのクラステンプレートです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
 
   template<indirectly_readable I, indirectly_regular_unary_invocable<I> Proj>
@@ -1203,7 +1203,7 @@ namespace std {
 
 そのような利用はRangeアルゴリズムにおいて頻出します。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<input_iterator I, 
            sentinel_for<I> S,
@@ -1221,7 +1221,7 @@ namespace std::ranges {
 
 `std::identity`は引数をそのまま返す関数オブジェクトのクラス型です。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <functional>内で定義される
 namespace std {
   struct identity {
@@ -1237,7 +1237,7 @@ namespace std {
 
 これは主に、Rangeアルゴリズムにおける射影操作のデフォルトとして利用されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<input_iterator I, 
            sentinel_for<I> S,
@@ -1259,7 +1259,7 @@ namespace std::ranges {
 
 `std::indirectly_movable`は、イテレータの要素型を別のイテレータへムーブしつつ出力することができることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class In, class Out>
 concept indirectly_movable =
   indirectly_readable<In> &&
@@ -1272,7 +1272,7 @@ concept indirectly_movable =
 
 `std::indirectly_movable_storable`は、`indirectly_movable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class In, class Out>
   concept indirectly_movable_storable =
     indirectly_movable<In, Out> &&
@@ -1306,7 +1306,7 @@ std::iter_value_t<In> obj(std::ranges::iter_move(i));
 
 `std::indirectly_copyable`は、イテレータの要素型を別のイテレータへコピーしつつ出力することができることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class In, class Out>
 concept indirectly_copyable =
   indirectly_readable<In> &&
@@ -1319,7 +1319,7 @@ concept indirectly_copyable =
 
 `std::indirectly_copyable_storable`は、`indirectly_copyable`の操作が中間オブジェクトを介しても可能であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class In, class Out>
 concept indirectly_copyable_storable =
   indirectly_copyable<In, Out> &&
@@ -1356,7 +1356,7 @@ std::iter_value_t<In> obj(*i);
 
 `std::indirectly_swappable`は、2つのイテレータの間でその要素の`swap`が行えることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I1, class I2 = I1>
 concept indirectly_swappable =
   indirectly_readable<I1> && indirectly_readable<I2> &&
@@ -1376,7 +1376,7 @@ concept indirectly_swappable =
 
 `std::indirectly_comparable`は、2つのイテレータの間でその要素の比較が行えることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I1, class I2, class R, class P1 = identity, class P2 = identity>
 concept indirectly_comparable =
   indirect_binary_predicate<R, projected<I1, P1>, projected<I2, P2>>;
@@ -1390,7 +1390,7 @@ concept indirectly_comparable =
 
 `std::permutable`は、イテレータ範囲の要素をムーブや`swap`によってin-placeで並べ替えできることを表すコンセプトです
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I>
 concept permutable =
   forward_iterator<I> &&
@@ -1406,7 +1406,7 @@ concept permutable =
 
 `std::mergeable`は、2つのソート済みイテレータ範囲をマージしつつコピーして別のイテレータに出力可能であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I1, class I2,
          class Out, class R = ranges::less,
          class P1 = identity, class P2 = identity>
@@ -1423,7 +1423,7 @@ concept mergeable =
 
 非常に複雑ですが、`std::merge()`が可能であるための最小の要求を表しており、実際に`std::ranges::merge`で使用されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<input_iterator I1, sentinel_for<I1> S1, 
            input_iterator I2, sentinel_for<I2> S2,
@@ -1440,7 +1440,7 @@ namespace std::ranges {
 
 `std::sortable`はイテレータ範囲がソート可能であることを表すコンセプトです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 template<class I, class R = ranges::less, class P = identity>
 concept sortable =
   permutable<I> &&
@@ -1453,7 +1453,7 @@ concept sortable =
 
 これは`std::sort()`を行うための最小の要求であり、実際に`std::ranges::sort`で使用されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<random_access_iterator I, sentinel_for<I> S, 
            class Comp = ranges::less, class Proj = identity>
@@ -1472,7 +1472,7 @@ namespace std::ranges {
 
 この関数にはオーバーロードが3つあります。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // ranges::advance() 1
 template<input_or_output_iterator I>
 constexpr void advance(I& i, iter_difference_t<I> n);
@@ -1509,7 +1509,7 @@ int main() {
 
 このように、コンセプトによってそのイテレータに最適な方法で入力イテレータを進めます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // ranges::advance() 2
 template<input_or_output_iterator I, sentinel_for<I> S>
 constexpr void advance(I& i, S bound);
@@ -1546,7 +1546,7 @@ int main() {
 
 注意としては、3つ目の処理が行われる場合は`bound`まで戻るのようなことはできない点で、したがってジェネリックな文脈でこのオーバーロードを後退のために使用するのは不適切です。これは、上2つの処理に該当しない場合は`bound`が`i`の前後どちらにあるかを判定することができないためで、この場合は後ろにあるものとみなして進行させています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // ranges::advance() 3
 template<input_or_output_iterator I, sentinel_for<I> S>
 constexpr iter_difference_t<I>
@@ -1591,7 +1591,7 @@ int main() {
 
 この関数にはオーバーロードが4つあります。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   // iを1つ進める
   template<input_or_output_iterator I>
@@ -1632,7 +1632,7 @@ int main() {
 
 この2つはこれまでの`std::next()`とほぼ同様の振る舞いをします。`n`には負数を渡しても意図通りになりますが、この関数の意味的には常に正の値を渡すべきで、イテレータの後退をしたい場合は次の項の`std::ranges::prev()`を使用した方が良いでしょう。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   // iをboundまで進める
   template<input_or_output_iterator I, sentinel_for<I> S>
@@ -1677,7 +1677,7 @@ int main() {
 
 この関数にはオーバーロードが3つあります。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   // iを1つ戻す
   template<bidirectional_iterator I>
@@ -1720,7 +1720,7 @@ int main() {
 
 \clearpage
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   // iをboundまでの間でn戻す
   template<input_or_output_iterator I, sentinel_for<I> S>
@@ -1754,7 +1754,7 @@ int main() {
 
 この関数にはオーバーロードが3つあります。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<input_or_output_iterator I, sentinel_for<I> S>
     requires (!sized_sentinel_for<S, I>)
@@ -1801,7 +1801,7 @@ int main() {
 
 `std::ranges::distance()`にはもう一つオーバーロードがあり、`range`オブジェクトを直接渡してその長さを得ることができます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std::ranges {
   template<range R>
   constexpr range_difference_t<R> distance(R&& r);
@@ -1856,7 +1856,7 @@ C++20では終端イテレータが番兵としてイテレータとは別に扱
 
 `std::default_sentinel`は、汎用的に使用可能な番兵です。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   struct default_sentinel_t {};
 
@@ -1939,7 +1939,7 @@ int main() {
 
 `std::unreachable_sentinel`の`operator==`は任意のイテレータとの比較が可能になっており、それは常に`false`を返します。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   struct unreachable_sentinel_t {
     
@@ -1992,7 +1992,7 @@ int main() {
 
 　
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   // common_iteratorの定義例
   template<input_or_output_iterator I, sentinel_for<I> S>
@@ -2054,7 +2054,7 @@ int main() {
 
 `std::counted_iterator`に対する番兵は`std::default_sentinel`であるため、終端イテレータを計算したり取得する必要がありません。元の範囲から部分範囲を得たい場合に、イテレータを取得してコピーして足して・・・のようなことをやるよりも簡易に同じことを達成できます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   // counted_iteratorの宣言例
   template<input_or_output_iterator I>
@@ -2332,7 +2332,7 @@ int main() {
 
 コンテナ型を`C`とすると、おおよそ次のように宣言されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template<class T, class U>
   constexpr typename C::size_type
@@ -2521,7 +2521,7 @@ C++17までは、これら削除操作の前にコンテナの要素数（`.size
 
 `std::shift_left/std::shift_right`アルゴリズムは、範囲の要素を左/右に指定した数だけシフトさせる（ずらす）ものです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // 宣言例
 namespace std {
   template<class ForwardIterator>
@@ -2602,7 +2602,7 @@ shift_right(0)  : [1, 2, 3, 4, 5]
 
 `std::lexicographical_compare_three_way`は2つの範囲を辞書式順序（*lexicographical order*）によって三方比較するアルゴリズムです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template<class InputIterator1, class InputIterator2, class Cmp>
   constexpr auto
@@ -2713,7 +2713,7 @@ int main() {
 
 `std::midpoint()`は2つの数値の中点を求めるものです。これは`<numeric>`に配置されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <numeric>内
 namespace std {
   template <class T>
@@ -2807,7 +2807,7 @@ int main() {
 
 `std::lerp()`は、2つの浮動小数点数値間の値の線形補完を行う関数です。これは、`<cmath>`に配置されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   constexpr double lerp(double a, double b, double t) noexcept;
 }
@@ -2985,7 +2985,7 @@ int main() {
 
 `.starts_with()`は文字列の前方が指定された文字列と一致しているかを調べる関数です。これは`std::string`と`std::string_view`（他の文字型/アロケータ型特殊化も含めて）の両方で利用可能です。`.ends_with()`はその逆に、文字列の前方が指定された文字列と一致しているかを調べます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template <class CharT, class Traits = char_traits<CharT>>
   class basic_string_view {
@@ -3104,7 +3104,7 @@ C++23ではさらに、`explicit`ではあるものの、`range`オブジェク�
 
 言語機能としてUTF-8文字を表す`char8_t`が追加されたのに伴って、`char8_t`によって特殊化された文字列型（`std::string`, `std::string_view`）が追加されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   // <string>内
   using u8string  = basic_string<char8_t>;
@@ -3132,7 +3132,7 @@ int main() {
 
 また、文字列型を生成するリテラル（`""s`、`""sv`）にも`char8_t`オーバーロードが追加されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   inline namespace literals {
     // <string>内
@@ -3315,7 +3315,7 @@ int main() {
 
 C++20で追加された`char8_t`型についても同様に明示的特殊化が定義され、その名前付き型とロックフリープロパティも用意されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <atomic>で定義
 
 // char8_tのアトミックロックフリープロパティ
@@ -3404,7 +3404,7 @@ void f() {
 
 このようなAPIは間違えやすく、意図通りに使用することが難しかったため、C++20にて`std::shared_ptr`に対する`std::atomic`の部分的特殊化を追加することによって置き換えられました。`std::weak_ptr`も所有権を必要としないだけで同様に扱うことができるため（こちらにはアトミックアクセスAPIすらなかった）、同時に`std::weak_ptr`に対する`std::atomic`の部分的特殊化も追加されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <memory>で定義
 namespace std {
 
@@ -3784,7 +3784,7 @@ public:
 
 \clearpage
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // ロックフリーな整数型のatomic特殊化の宣言例
 namespace std {
   using atomic_signed_lock_free   = std::atomic<...>;
@@ -3863,7 +3863,7 @@ bool zap() {
 
 C++20から、`std::memory_order`列挙型とその値の定義が変更されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   // C++17までの定義
   typedef enum memory_order {
@@ -3914,7 +3914,7 @@ int main() {
 
 ただし、これはバッファオーバーフローの危険性がありました。なぜなら、ここで使用されている`>>`は次のように宣言されているポインタを受け取るもので、配列長を考慮していないからです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // C++17まで、配列等バッファへの入力演算子
 namespace std {
   template<class CharT, class Traits>
@@ -3932,7 +3932,7 @@ namespace std {
 
 そこで、上記のような有用なユースケースを保護しつつ危険な使用を削除するために、これらポインタを受けるオーバーロードを配列を受けるように変更します。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // C++20から、生配列への入力演算子
 namespace std {
   template<class CharT, class Traits, std::size_t N>
@@ -4109,7 +4109,7 @@ int main() {
 
 文字列ストリームクラスおよび文字列バッファクラスは内部バッファとして実質的に`std::string`を使用しており、どちらのクラスもそのアロケータ型を自身のクラステンプレートのテンプレート引数として受け取ります。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // 文字列ストリーム関連クラスの宣言例
 namespace std {
   template< 
@@ -4221,7 +4221,7 @@ void f(sstream<Alloc>& strm) {
 
 `std::make_shared<T>()`は`std::shared_ptr<T>`を作成するヘルパ関数であり、その作成にあたって例外安全性や効率性を提供してくれる優れものです。ただ、`std::shared_ptr`の配列版サポートはあるのに、この関数はなぜか`T`が配列型である場合のサポートがありませんでした。そのため、`T`が配列型の場合のためのオーバーロードが追加されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <memory>で定義
 namespace std {
   
@@ -4250,7 +4250,7 @@ namespace std {
 
 これはまた、`std::allocate_shared()`にも同様に追加されます。この関数は、指定されたアロケータを用いてメモリを確保しオブジェクトを初期化しつつ適切に解放を行うカスタムデリータを仕込み、尚且つそれらを1回のメモリ確保で行ってくれるものです。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <memory>で定義
 namespace std {
 
@@ -4327,7 +4327,7 @@ true
 
 確保するメモリ量が大きくなるとこのオーバーヘッドは無視できなくなり、パフォーマンス低下の可能性があります。そのため、これらのスマートポインタ生成ヘルパ関数に対してサフィックスに`for_overwrite`と付く、確保した領域に何もしない関数が追加されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <memory>で定義
 namespace std {
 
@@ -4571,7 +4571,7 @@ constexpr int f() {
 
 `std::assume_aligned()`は、メモリ領域のアライメントについての仮定をコンパイラに伝える関数です。この目的はより積極的な最適化にあります。`std::assume_aligned<N>(ptr)`のように使用して、`ptr`のメモリ領域が`N`アライメントでアラインされていることをコンパイラに伝達します。なお、`N`は２のべき乗の正の整数値である必要があります。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   template<size_t N, class T>
   [[nodiscard]]
@@ -4725,7 +4725,7 @@ true
 
 そのため、C++20からはテンプレートパラメータのデフォルト引数として`std::byte`が指定されるようになり、`std::pmr::polymorphic_allocator<>`の形で利用できるようになります。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <memory_resource>で定義
 namespace std::pmr {
 
@@ -5073,7 +5073,7 @@ static_assert(std::same_as<
 
 `std::common_reference`は`std::common_type`と似たような感じで力技によって共通の参照型を求めているため、共通の基底クラスや共通で変換できる型など、直接2つの型の間に現れないような共通の参照型を求めることができません。その場合にそれを手動でアダプトするために、`std::basic_common_reference`が用意されています。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <type_traits>で定義
 namespace std {
   template<class T, class U, template<class> class TQual, template<class> class UQual>
@@ -5140,7 +5140,7 @@ static_assert(std::same_as<
 
 クラスのレイアウトにまつわるいくつかの事を判定するための型特性が4つ追加されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 namespace std {
   
   // 2つの型のレイアウト互換性を判定する
@@ -5390,7 +5390,7 @@ void f(std::vector<int> vec) {
 
 これらの問題に対処するために、安全な整数値の比較を行う関数が追加されます。
 
-```{style=cpp_stddecl}
+```{style=cppstddecl}
 // <utility>で定義
 namespace std {
   // t == u
