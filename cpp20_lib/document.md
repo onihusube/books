@@ -151,12 +151,10 @@ struct D4 : B, D1 {};
 template<std::derived_from<B> T>
 void f();
 
-int main() {
-  f<D1>();  // ok
-  f<D2>();  // ng
-  f<D3>();  // ng
-  f<D4>();  // ng
-}
+f<D1>();  // ok
+f<D2>();  // ng
+f<D3>();  // ng
+f<D4>();  // ng
 ```
 
 これ以外の場合（仮想継承や継承の継承など）は意図通りに判定することができます。
