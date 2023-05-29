@@ -78,6 +78,10 @@ jump-statement:
   goto identifier ;
 ```
 
+これはC++の規格にある文法定義のEBNFを少し改変（下付き文字の`opt`を`(opt)`に変更）したものです。
+
+`statement`とは文の定義を指しており、`return`は文（*statement*）であり式（*expression*）ではありません。
+
 この`jump-statement`が直接参照される規則はなく、常に`statement`を介して参照されます。`statement`は直接参照されるか`compound-statement`を介して参照されます
 
 ```
@@ -138,9 +142,7 @@ handler:
 
 ## `return`の構文と効果
 
-前節の`statement`とは文の定義を指しており、`return`は文（*statement*）であり式（*expression*）ではありません。
-
-`return`文の文法定義（`return expr-or-braced-init-list(opt);`）を少し解いてみると、その構文は次のいずれかの形式になります
+`return`文の文法定義（`return expr-or-braced-init-list(opt);`）を少し解いてみると、その構文は次のいずれかの形になります
 
 ```
 return;
@@ -148,7 +150,11 @@ return expr;
 return {...};
 ```
 
-なお、`statement`中の`jump-statement`参照箇所の定義より、属性指定を`return`文に行う場合は`return`の前で行います（現在のところ標準の属性にはそのような属性は存在しませんが）。
+一番上の形式は戻り値型が`void`の関数における`return`文の書き方で、残りは何かしら戻り値を返す場合の`return`文の書き方です。
+
+`return`文の効果は、実行がそこに到達すると現在呼び出し中の関数からその呼び出し側に戻る、というものです。
+
+`statement`中の`jump-statement`参照箇所の定義より、属性指定を`return`文に行う場合は`return`の前で行います（現在のところ標準の属性にはそのような属性は存在しませんが）。
 
 ```cpp
 auto f() {
