@@ -386,6 +386,22 @@ decltype(auto) f4() {
 
 `decltype(n)`のオペランドは変数名を指定する式ですが、`decltype((n))`のオペランドはかっこに囲まれた式であり、前者は変数の型を取得し、後者は式の型と値カテゴリを取得します。これによって、結果に左辺値参照修飾が含まれるかどうかが違ってきます。
 
+とても単純な見方としては、`decltype(auto)`による戻り値型推論は`return`文のオペランドを`decltype(auto)`の`auto`に突っ込んで推論される、と見ることができます。
+
+```cpp
+decltype(auto) f() { return expr; }
+//        ^                 ~~~~
+//        |__________________|
+```
+
+なお、プレースホルダ型指定に`decltype(auto)`を使用する場合は`const`や参照修飾などを付加することはできず、ちょうど`decltype(auto)`だけが使用可能です。
+
+```cpp
+decltype(auto) & ng();        // ng
+const decltype(auto) ng();    // ng
+const decltype(auto) & ng();  // ng
+```
+
 ### `auto`（+修飾）の場合
 
 `auto`の場合は仕組み的には関数テンプレートの実引数推論と同じ推論が行われます。そこでは、戻り値型指定内の`auto`をテンプレートパラメータ`T`に置換した形の引数を持つ1引数関数テンプレートを作成し、その仮の関数テンプレートに`return`文のオペランド（`expr`）を渡した時に`T`に推論される型が戻り値型となります。
@@ -520,7 +536,86 @@ auto* f5() {
 // エラー、void*にはならない
 ```
 
+### 初期化子リストからの戻り値型推論
+
+`return`文のオペランドが初期化子リスト（`{...}`）である場合、戻り値型推論は常に失敗します。
+
+```cpp
+auto f1() {
+  return {1}; // ng、戻り値型が推論できない
+}
+
+auto&& f2() {
+  return {1, 2};  // ng、戻り値型が推論できない
+}
+
+decltype(auto) f3() {
+  return {1, 2, 3}; // ng、戻り値型が推論できない
+}
+```
+
+これは初期化子リストの要素数や`auto`の修飾に関わらず常に失敗します。`initializer_list`には推論されません。
+
+変数宣言の場合、`auto`は初期化子リストから`initializer_list`を推論できますが`decltype(auto)`はできないという違いがあり、戻り値型推論では挙動を`decltype(auto)`に合わせた振る舞いになっていると思われます。
+
+```cpp
+int main() {
+  auto           il1 = {1, 2, 3};  // ok、initializer_list<int>
+  decltype(auto) il2 = {1, 2, 3};  // ng
+}
+```
+
 ### `return`文が複数ある場合
+
+戻り値型推論を行う関数に複数の`return`文があるとき、戻り値型は`return`文それぞれに対して個別に推論され、最後に推論された全ての戻り値型が一致している場合にのみその型を戻り値型として採用します。もしも、`return`文の間で推論された戻り値型が異なる場合、推論は失敗します。
+
+```cpp
+auto f1(bool b) {
+  if (b) {
+    return 10;    // ng、推論結果はint
+  } else {
+    return 10.0;  // ng、推論結果はdouble
+  }
+}
+
+auto f2(bool b) {
+  int n = 10;
+  const int& r = n;
+
+  if (b) {
+    return n; // ok、推論結果はint
+  } else {
+    return r; // ok、推論結果はint
+  }
+}
+
+auto& f3(bool b) {
+  int n = 10;
+  const int& r = n;
+
+  if (b) {
+    return n; // ng、推論結果はint&
+  } else {
+    return r; // ng、推論結果はconst int&
+  }
+}
+
+// 危険なので真似しないこと！！
+decltype(auto) f4(bool b) {
+  int n = 10;
+  int& r = n;
+
+  if (b) {
+    return (n); // ok、推論結果はint&
+  } else {
+    return r;   // ok、推論結果はint&
+  }
+}
+```
+
+この一致は修飾等も含めて正確に同じ型でなければならず、暗黙変換などは考慮されません。そして、この例の`f2`と`f3`のように`auto`に付加する修飾によって推論結果が一致するかどうかが変化する場合があります。
+
+`f4`の例はあくまでどういう推論がなされて一致するかの例を示しているものに過ぎません。このような関数を実際書くことは大変危険なのでやめましょう。
 
 ### 例
 
