@@ -391,11 +391,11 @@ template<class T, class U>
 }
 ```
 
-`std::swappable<T>`は`T`の2つのオブジェクト間で`std::ragens::swap`を用いて`swap`可能である場合に`true`となり、`std::swappable_with<T, U>`は`T, U`のオブジェクト間で`std::ragens::swap`を用いて`swap`可能である場合に`true`となります。
+`std::swappable<T>`は`T`の2つのオブジェクト間で`std::ranges::swap`を用いて`swap`可能である場合に`true`となり、`std::swappable_with<T, U>`は`T, U`のオブジェクト間で`std::ranges::swap`を用いて`swap`可能である場合に`true`となります。
 
 `std::swappable_with`は組み込み型の中には満たすものがなく（おそらく標準ライブラリの型の中にもなく）、特別に定義されたユーザー定義型でのみ満たすことができます。
 
-このコンセプトのほとんどの部分は`std::ragens::swap`によって定義されています。`std::ragens::swap`はカスタマイゼーションポイントオブジェクト（CPO）という事前定義関数オブジェクトであり、`ragens::swap(a, b)`の様な呼び出しに対して次のいずれかの方法によって`swap`操作を実行するものです。
+このコンセプトのほとんどの部分は`std::ranges::swap`によって定義されています。`std::ranges::swap`はカスタマイゼーションポイントオブジェクト（CPO）という事前定義関数オブジェクトであり、`ranges::swap(a, b)`の様な呼び出しに対して次のいずれかの方法によって`swap`操作を実行するものです。
 
 - `a`および`b`の型に対して定義されている非メンバ`swap()`をADLで発見し使用する
 - 配列の`a, b`に対して要素ごとに再帰的に`ranges::swap`する
@@ -403,7 +403,7 @@ template<class T, class U>
 
 このいずれでも`swap`できない場合は呼び出しはエラーとなり、実行された`swap`操作が実際には値を`swap`しない場合は未定義動作（診断不要のill-formed）となります。その場合、それらの型は`swappable(_with)`コンセプトのモデルとなりません。
 
-ちなみに、`std::ragens::swap`も`<concepts>`ヘッダ内に定義されています。
+ちなみに、`std::ranges::swap`も`<concepts>`ヘッダ内に定義されています。
 
 ### `destructible`
 
