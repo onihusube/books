@@ -1135,6 +1135,24 @@ const auto& f(int n) {
 // C++20/23で戻り値型はconst int&
 ```
 
+また、C++23において、戻り値型の`decltype`に`return`文のオペランドと同じ式を手動で指定した場合の結果が`auto`を指定した場合と異なることもあります。
+
+```cpp
+auto f1(int n) -> decltype(auto) {
+  return (n);
+}
+// C++20までは戻り値型はint&
+// C++23では、戻り値型はint&&
+
+auto f2(int n) -> decltype((n)) {
+  return (n);
+}
+// C++20/23で戻り値型はint&
+// ただし、C++23ではエラー
+```
+
+ムーブする資格のある式が*xvalue*となるのは`return`文のオペランドにおいてのみなので、同じ式を手動で`decltype()`に指定すると異なる結果となります。C++20までは、`decltype(auto)`に対する戻り値型推論は`auto`の部分を`return`文のオペランドで置き換えた結果として考えることができましたが、C++23からは必ずしも一致しなくなります。
+
 \clearpage
 
 # コピー省略
