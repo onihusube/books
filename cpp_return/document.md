@@ -370,6 +370,8 @@ using R = decltype(expr);
 
 式の値カテゴリがどれになるかは式によりますが、式の種類によって細かく規定されているので少し複雑です。多くの場合、即値ではなく一時オブジェクトを生成しないような式（代入演算子や左辺値オブジェクト経由のメンバアクセス、左辺値参照型戻り値の関数呼び出しなど）の場合はほぼ左辺値（*lvalue*）になります。即値（リテラル、一時オブジェクト）や非参照型を返す式（二項演算子や非参照戻り値型の関数呼び出し）、組み込みの値を生成する式（アドレス取得やラムダ式、`this`など）の場合は*prvalue*というカテゴリになり、*xvalue*となるのは明示的に`std::move`のようなキャストをしているかそのようなものを返す式（右辺値参照戻り値型の関数呼び出しや*xvalue*オブジェクト経由のメンバアクセスなど）等の場合です。
 
+\clearpage
+
 ```cpp
 int n = 0;
 
@@ -414,7 +416,7 @@ decltype(auto) f4() {
 
 `decltype(n)`のオペランドは変数名を指定する式ですが、`decltype((n))`のオペランドはかっこに囲まれた式であり、前者は変数の型を取得し、後者は式の型と値カテゴリを取得します。これによって、結果に左辺値参照修飾が含まれるかどうかが違ってきます。
 
-とても単純な見方としては、`decltype(auto)`による戻り値型推論は`return`文のオペランドを`decltype(auto)`の`auto`に突っ込んで推論される、と見ることができます。
+とても単純な見方としては、`decltype(auto)`による戻り値型推論は`return`文のオペランドを`decltype(auto)`の`auto`に突っ込んで推論される、と見ることもできます。
 
 ```cpp
 decltype(auto) f() { return expr; }
@@ -472,21 +474,37 @@ void hf(T*);
 
 実際にこのような関数テンプレートで推論される型というのは非常に複雑なルールで決まります。その詳細はあまりに複雑なので（書いてる人も雰囲気でしかわかってないので）踏み込まず、`return`文のオペランド（`expr`）の型（値カテゴリを含む）と戻り値型のプレースホルダ指定の組み合わせ毎に戻り値型がどうなるのかをまとめておきます
 
-|`expr`の型|`auto`|`auto&`|`const auto&`|`auto&&`|`auto*`|
-|---|---|---|---|---|---|
-|`T`|`T`|×|`const T&`|`T&&`|×|
-|`T&`|`T`|`T&`|`const T&`|`T&`|×|
-|`T&&`|`T`|×|`const T&`|`T&&`|×|
-|`const T`|`T`|×|`const T&`|`T&&`|×|
-|`const T&`|`T`|`const T&`|`const T&`|`const T&`|×|
-|`const T&&`|`T`|`const T&`|`const T&`|`const T&&`|×|
-|`T*`|`T*`|×|`T const *&`|`T*&&`|`T*`|
-|`T const *`|`T const *`|×|`T const * const &`|`T const *&&`|`T const *`|
-|`T * const`|`T*`|×|`T const *&`|`T*&&`|`T*`|
-|`T const * const`|`T const *`|×|`T const * const &`|`T const *&&`|`T const *`|
-|`T(&)[N]`|`T*`|`T(&)[N]`|`const T(&)[N]`|`T(&)[N]`|`T*`|
-|`R(*)(Args)`|`R(*)(Args)`|×|`R(* const &)(Args)`|`R(*&)(Args)`|`R(*)(Args)`|
-|`R(&)(Args)`|`R(*)(Args)`|`R(&)(Args)`|`R(const &)(Args)`|`R(&)(Args)`|`R(*)(Args)`|
+|`expr`の型|`auto`|`auto&`|`auto&&`|
+|---|---|---|---|
+|`T`|`T`|×|`T&&`|
+|`T&`|`T`|`T&`|`T&`|
+|`T&&`|`T`|×|`T&&`|
+|`const T`|`T`|×|`T&&`|
+|`const T&`|`T`|`const T&`|`const T&`|
+|`const T&&`|`T`|`const T&`|`const T&&`|
+|`T*`|`T*`|×|`T*&&`|
+|`T const *`|`T const *`|×|`T const *&&`|
+|`T * const`|`T*`|×|`T*&&`|
+|`T const * const`|`T const *`|×|`T const *&&`|
+|`T(&)[N]`|`T*`|`T(&)[N]`|`T(&)[N]`|
+|`R(*)(Args)`|`R(*)(Args)`|×|`R(*&)(Args)`|
+|`R(&)(Args)`|`R(*)(Args)`|`R(&)(Args)`|`R(&)(Args)`|
+
+|`expr`の型|`const auto&`|`auto*`|
+|---|---|---|
+|`T`|`const T&`|×|
+|`T&`|`const T&`|×|
+|`T&&`|`const T&`|×|
+|`const T`|`const T&`|×|
+|`const T&`|`const T&`|×|
+|`const T&&`|`const T&`|×|
+|`T*`|`T const *&`|`T*`|
+|`T const *`|`T const * const &`|`T const *`|
+|`T * const`|`T const *&`|`T*`|
+|`T const * const`|`T const * const &`|`T const *`|
+|`T(&)[N]`|`const T(&)[N]`|`T*`|
+|`R(*)(Args)`|`R(* const &)(Args)`|`R(*)(Args)`|
+|`R(&)(Args)`|`R(const &)(Args)`|`R(*)(Args)`|
 
 表中の×は推論不可、すなわち戻り値型が定まらないためコンパルエラーとなる組み合わせです。`T`には任意の型をはめてください。`Args`は関数引数型を表すパラメータパックだと思ってください。
 
