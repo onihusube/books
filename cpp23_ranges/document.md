@@ -61,11 +61,61 @@ C++20における`<ranges>`、特にRangeアダプタまわりに関してはC++
 
 C++20 ranges本でも執筆時点で把握していたものに関しては修正を適用していましたが、執筆後にもいくつかの修正が加えられたため完全ではありません。ここではその区別をせずに修正をまとめているため、一部の修正はC++20 ranges本で適用済みのものもあります。
 
-## 条件付き`borrowed_range`
+## いくつかのアダプタの`borrowed_range`への対応
 
-## `iterator_category`の提供
+当初のRangeアダプタの一部のものには`enable_borrowed_range`の特殊化が用意されておらず、入力の`view`が`borrowed_range`であってもそれを継承できない場合がありました。それによって、それらのアダプタを適用した後の`view`が一部のRangeアルゴリズム（`borrowed_iterator_t`や`borrowed_subrange_t`を戻り値として使うもの）で使用できなくなっていました。
 
-P2259R1
+それを解消すべく、設計の大きな変更なしで`borrowed_range`となれるRangeアダプタについて、入力の`view`が`borrowed_range`ならばそれを継承するように修正されました。対象は次の6つのものです
+
+- `views::take` (`take_view`)
+- `views::drop` (`drop_view`)
+- `views::drop_while` (`drop_while_view`)
+- `views::common` (`common_view`)
+- `views::reverse` (`reverse_view`)
+- `views::elements` (`elements_view`)
+
+これらのRangeアダプタの結果`view`型に対しては、入力`view`の`borrowed_range`性を受け継ぐように`enable_borrowed_range`の特殊化が用意されます。その実装はおおよそ次のようになります
+
+```cpp
+// take_viewにおける実装例
+namespace std::ranges {
+
+  template<view V>
+  class take_view;
+
+  // take_viewのenable_borrowed_range特殊化
+  // 入力view型Tのenable_borrowed_range特殊化を利用する
+  template<class T>
+  inline constexpr bool enable_borrowed_range<take_view<T>> = enable_borrowed_range<T>; 
+}
+```
+
+## `iterator_category`の提供基準の変更
+
+当初のRangeアダプタの一部のものには`iterator_category`（イテレータ型と`iterator_traits`から取得される）を提供しないものがある一方で、`iterator_category`を提供するものもありました。`iterator_category`を提供する場合は入力`view`の`iterator_category`（そのイテレータ型を`I`とすると`iterator_traits<I>::iterator_category`）からそれを取得していたため、それらのアダプタが混ざってパイプで接続されると`iterator_category`を取得できないことからコンパイルエラーとなっていました。
+
+```cpp
+int main() {
+  std::vector<int> vec = {0, 1, 2, 3, 4};
+
+  auto r = vec | std::views::transform([](int c) { return std::views::single(c);})
+               | std::views::join
+               | std::views::filter(...); // 当初のC++20仕様ではng
+}
+```
+
+この例の場合、`views::join`の結果`join_view`のイテレータは`iterator_category`を提供していない一方で、`views::filter`の結果`filter_view`のイテレータは常に`iterator_category`を提供しようとしまずが、`join_view`のイテレータからはそれが取得できないためコンパイルエラーとなっています。
+
+`iterator_category`はC++17までのイテレータとしてイテレータカテゴリを表明するためのものであり、これはC++20イテレータコンセプトからは使用されずC++17のイテレータを扱うコードからのみ使用されます。C++20のイテレータはC++17イテレータとして使用可能である場合にのみ`iterator_category`を用意する（`iterator_traits`から取得できるようにする）ことで後方互換性を確保しています。後方互換性を確保する必要がない（できない）場合、`iterator_category`は用意されません。
+
+このような仕組みが用意されていることから分かるように、C++20のイテレータ（イテレータコンセプトによって定義される）とC++17のイテレータ（名前付き要件によって定義される）の間には同じイテレータカテゴリ間でも互換性がない場合があります。特に、C++20の`input_iterator`はC++17基準だとイテレータとして扱えません。そのため、Rangeアダプタは結果の`view`が`input_range`となる場合には`iterator_category`を提供することは適切ではありません。
+
+これらのことを踏まえつつも`iterator_category`があったり無かったりすることから生じる問題を回避するために、Rangeアダプタ（の結果`view`型）のイテレータ型における`iterator_category`は次のような基準で提供されるようになります
+
+- 自身が`forward_range`とならない場合は`iterator_category`は定義されない
+- `forward_range`である場合、自身の性質に応じて適切なカテゴリの`iterator_category`を定義する
+
+`iterator_category`が実際にどのカテゴリになるのかはそのイテレータ型（とアダプタの入力`view`型）によります。
 
 ## `views::join`の修正
 
