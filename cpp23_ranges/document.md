@@ -168,14 +168,16 @@ auto filter(F f) {
   return std::views::filter(f);
 }
 
-std::vector<int> v = {1, 2, 3, 4};
+int main() {
+  std::vector<int> v = {1, 2, 3, 4};
 
-// 状態を持つ述語を渡す
-auto f = filter([i = std::vector{4}] (auto x) { return x == i[0]; });
+  // 状態を持つ述語を渡す
+  auto f = filter([i = std::vector{4}] (auto x) { return x == i[0]; });
 
-// GCCの場合、fにダングリング参照が含まれている
-// MSVCは無問題
-auto x = v | f;
+  // GCCの場合、fにダングリング参照が含まれている
+  // MSVCは無問題
+  auto x = v | f;
+}
 ```
 
 このため、Rangeアダプタオブジェクトが追加の引数を受け取る際にすることは`std::bind_front`と同等になるように修正されました。どちらのものも、受け取った引数は返されたオブジェクト（Rangeアダプタクロージャオブジェクト）内部にコピーまたはムーブして保存され、参照で保持されることは無くなります。
@@ -195,7 +197,55 @@ rng | t;            // tから再度fをコピーする
 rng | std::move(t); // tからfをムーブする
 ```
 
-## `split_view`と`lazy_split_view`
+## `views::split`と`views::lazy_split`
+
+当初の`views::split`（`split_view`）は文字列分割に特化したものではなく、より一般的な`range`を`range`によって分割することができるものでした。そのため、主たる用途である文字列分割でむしろ使いづらくなっている部分がありました。
+
+```cpp
+int main() {
+  using namespace std::string_view_literals;
+  using namespace std::views;
+
+  const auto str = "split_view takes a view and a delimiter"sv;
+
+  for (auto strv : str | split(' ')
+                       | transform([](auto subrng) {
+                           // どちらもできない・・・
+                           return std::string_view{subrng};
+                           return std::string_view{subrng.begin(), subrng.end()};
+                         })
+  ) {
+    std::cout << strv << '\n';
+  }
+}
+```
+
+この例では、`views::split`によって入力文字列からホワイトスペースを区切りとして切り出した部分文字列を`views::transform`によって`string_view`に変換しようとしています。しかし、当初の`views::split`の分割後の部分範囲（内側`range`）は`forward_range`でしかなく`std::string_view`にはそのまま変換可能ではありません。ただし、遅延評価によって内側`range`の参照する各要素（この例では部分文字列）は入力の`range`のものを参照しておりコピーされたりしてはいません。そのため、それを`std::string_view`で参照しようとするのはとても自然な発想でしょう。
+
+これはまた、この例のように`views::split`の後段の`views::transform`内で文字列を対象とした他の操作（`std::from_chars`や`std::regex`など）を行おうとした時にもそれを妨げます。`std::regex`等標準ライブラリ内で文字列を受け取るところでは少なくとも`bidirectional_iterator`でなければならず、`std::from_chars`のようにより厳しいところではポインタでなければなりません。
+
+しかし当初の`views::split`の出力の内側`range`は最も強くても`forward_range`にしかならず、それを文字列として扱おうとすると非自明で面倒な変換を行わなければなりません。
+
+この問題の解消のため、文字列分割に特化したRangeアダプタとして`views::split`が追加され、当初の`views::split`は`views::lazy_split`（`lazy_split_view`）にリネームされました。`views::split`の出力の内側`range`は入力文字列のイテレータをそのまま利用した`ranges::subrange`となり、これは`contiguous_range`となるためかなり扱いやすくなります。
+
+```cpp
+int main() {
+  using namespace std::string_view_literals;
+  using namespace std::views;
+
+  const auto str = "split_view takes a view and a delimiter"sv;
+
+  for (auto strv : str | split(' ')
+                       | transform([](auto subrng) {
+                           return std::string_view{subrng.begin(), subrng.end()}; // ok
+                         }))
+  {
+    std::cout << strv << '\n';
+  }
+}
+```
+
+当初の`views::split`の提供していたより汎用的な`range`の分割が行いたい場合は`views::lazy_split`を利用します。
 
 ## `istream_view`の修正
 
@@ -228,6 +278,82 @@ rng | std::move(t); // tからfをムーブする
 # その他の関連する変更
 
 ## `std::string_view`の`range`コンストラクタ
+
+`std::string_view`に`range`コンストラクタが追加されることによって、文字列の範囲となっているものをより簡易に`std::string_view`に変換できるようになります。ただし、入力の`range`は`contiguous_range`でなければならずいくつかの追加の制約（後述）を満たす必要があります。
+
+```cpp
+int main() {
+  using namespace std::string_view_literals;
+  using namespace std::views;
+
+  const auto str = "split_view takes a view and a delimiter"sv;
+
+  for (auto strv : str | split(' ')
+                       | transform([](auto subrng) {
+                           // C++20だと例えばこう書いていた
+                           return std::string_view{subrng.begin(), subrng.end()};
+                           // C++23はそのまま渡せる
+                           return std::string_view{subrng}; // ok
+                         }))
+  {
+    std::cout << strv << '\n';
+  }
+}
+```
+
+ただし、この`range`コンストラクタは無条件で`explicit`指定されているため暗黙変換はできず、どこかで明示的変換が必要になります。
+
+```cpp
+int main() {
+  using namespace std::string_view_literals;
+  using namespace std::views;
+
+  const auto str = "split_view takes a view and a delimiter"sv;
+
+  // 暗黙変換は禁止されるため、これはできない
+  for (std::string_view strv : str | split(' ')) {
+    std::cout << strv << '\n';
+  }
+}
+```
+
+このコンストラクタの宣言及び制約はおおよそ次のようになっています
+
+```cpp
+template <class charT, class traits = char_traits<charT>>
+class basic_string_view {
+  ...
+
+  // 追加されるコンストラクタの制約例
+  template <ranges::contiguous_range R>
+    requires (not same_as<remove_cvref_t<R>, basic_string_view>) && 
+             ranges::sized_range<R> &&
+             is_same_v<ranges::range_value_t<R>, charT> &&
+             (not is_convertible_v<R, const charT*>) &&
+             (not requires(remove_cvref_t<R> d) {
+               d.operator ::std::basic_string_view<charT, traits>();
+             })
+  constexpr explicit basic_string_view(R&& r);
+
+  ...
+};
+```
+
+複雑ですが、`R`が`std::string_view`そのものや`std::string`等`std::string_view`への変換演算子を備えているもの、文字列ポインタへ変換できるものなどを弾いています。これらは`std::string_view`の他のコンストラクタ及び既存の変換と競合するのでそれを回避するための制約です。残ったものは、文字型の一致と`ranges::size()`、`ranges::data()`を使用可能であるかをチェックしています。
+
+このコンストラクタが受けた`range`オブジェクトを`r`とすると、文字列先頭ポインタを`ranges::data(r)`から、文字列長を`ranges::size(r)`から取得し`std::string_view`を初期化します。すなわち、このコンストラクタは受けた文字範囲全体を文字列として参照する`std::string_view`を構築します。
+
+```cpp
+int main() {
+  const char str[] = "test";
+  std::span<const char> spn{str};
+
+  std::string_view sv1{str};  // length : 4
+  std::string_view sv2{spn};  // length : 5
+}
+```
+
+これは選択されるコンストラクタによって終端`\0`の位置判定が異なることから生じており、このことはこのコンストラクタに`explicit`が付加されている理由でもあります。`char`の配列は単なるバイト配列としても広く利用されているため、その全体を常に文字列として見做すのは正しくない場合があるため、`range`からの変換はプログラマの意図を確認するために`explicit`指定されています。
 
 ## `std::format`の`range`対応
 
