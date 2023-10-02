@@ -51,6 +51,18 @@ int main() {
 hello world!
 ```
 
+　
+
+標準ライブラリ中での宣言を例示する際、コードブロックの見た目を分けて表示しています（上と左の線が二重線 + 角丸）。例えば次のようになっています
+
+```{style=cppstddecl}
+// std::vectorの宣言例
+namespace std {
+  template<class T, class Allocator = allocator<T>>
+  class vector;
+}
+```
+
 \clearpage
 
 # C++20 欠陥の修正
@@ -76,7 +88,7 @@ C++20 ranges本でも執筆時点で把握していたものに関しては修�
 
 これらのRangeアダプタの結果`view`型に対しては、入力`view`の`borrowed_range`性を受け継ぐように`enable_borrowed_range`の特殊化が用意されます。その実装はおおよそ次のようになります
 
-```cpp
+```cpp{style=cppstddecl}
 // take_viewにおける実装例
 namespace std::ranges {
 
@@ -248,6 +260,99 @@ int main() {
 当初の`views::split`の提供していたより汎用的な`range`の分割が行いたい場合は`views::lazy_split`を利用します。
 
 ## `istream_view`の修正
+
+当初の`istream_view`は`ranges::basic_istream_view`という`view`クラス型とそれを生成するための`ranges::istream_view`という関数テンプレートとして用意されていました。使用する際は`ranges::istream_view<T>(istrm)`のように`T`に読み込むデータ型、`istrm`に読み込み元の入力ストリームオブジェクトを渡します。
+
+```cpp
+int main() {
+  // 標準入力にからint値を1つづつ読み込む
+  for (int n : std::ranges::istream_view<int>(std::cin)) {
+    std::cout << n;
+  }
+}
+```
+
+他のRangeファクトリおよびRangeアダプタが`ranges::xxx_view`に対して`views::xxx`というRangeアダプタ/ファクトリオブジェクトを用意しているのに対して、このAPIは微妙に異なっていたため他の`view`の使用法から類推される使用法が`istream_view`には通用しませんでした。
+
+```cpp
+int main() {
+  std::istringstream mystream{"0 1 2 3 4"};
+
+  // istream_viewはクラスではなく関数
+  std::ranges::istream_view<int> v{mystream}; // ng
+
+  // 関数なので{}を使用できない
+  for (int n : std::ranges::istream_view<int>{std::cin}) {  // ng
+    std::cout << n;
+  }
+
+  // views::istreamはない
+  for (int n : std::views::istream<int>(std::cin)) {  // ng
+    std::cout << n;
+  }
+}
+```
+
+C++20当初の`istream_view`のAPI構造は次のようになっていました
+
+```cpp{style=cppstddecl}
+namespace std::ranges {
+
+  // basic_istream_viewクラス
+  template<movable Val, class CharT, class Traits>
+    requires default_initializable<Val> && stream-extractable<Val, CharT, Traits>
+  class basic_istream_view : public view_interface<basic_istream_view<Val, CharT, Traits>>;
+
+  // ranges::istrem_view関数
+  template<class Val, class CharT, class Traits>
+  basic_istream_view<Val, CharT, Traits> istream_view(basic_istream<CharT, Traits>& s);
+}
+```
+
+この`istream_view`のAPI構造を他の`view`と一貫させるために、最終的にAPIは次のように変更されました
+
+```cpp{style=cppstddecl}
+namespace std::ranges {
+
+  // basic_istream_viewクラスはそのまま
+  template<movable Val, class CharT, class Traits>
+    requires default_initializable<Val> && stream-extractable<Val, CharT, Traits>
+  class basic_istream_view : public view_interface<basic_istream_view<Val, CharT, Traits>>;
+
+  // charとwchar_tの型エイリアスを追加
+  // ranges::istrem_viewは型名になった
+  template<class Val> 
+  using istream_view = basic_istream_view<Val, char>;
+
+  template<class Val> 
+  using wistream_view = basic_istream_view<Val, wchar_t>; 
+
+  namespace views {
+
+    // views::istream<T>を追加
+    template<typename T>
+    inline constexpr /*unspecified*/ istream = /*unspecified*/;
+  }
+}
+```
+
+これによって、`ranges::istream_view`に対して`views::istream`が存在するという他の`view`と同様の命名規則となり、他の`view`のAPIと一貫した利用法ができるようになりました。
+
+```cpp
+int main() {
+  std::istringstream mystream{"0 1 2 3 4"};
+
+  std::ranges::istream_view<int> v{mystream}; // ok
+
+  for (int n : std::ranges::istream_view<int>{std::cin}) {  // ok
+    std::cout << n;
+  }
+
+  for (int n : std::views::istream<int>(std::cin)) {  // ok
+    std::cout << n;
+  }
+}
+```
 
 ## `owning_view`
 
