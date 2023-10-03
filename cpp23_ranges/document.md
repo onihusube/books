@@ -162,11 +162,61 @@ auto flat_map(R&& r, F&& f) {
 
 当初の`view`コンセプトは`std::default_initializable`を包摂しており、`view`の要件としてデフォルト構築可能であることを要求していました。同様に、`std::input_iterator`コンセプト（が包摂している`std::weakly_incrementable`コンセプト）も入力イテレータ（と出力イテレータ）に対してデフォルト構築可能であることを要求していました。
 
+```cpp
+// C++20当初のviewコンセプトの定義
+template<class T>
+concept view =
+  range<T> &&
+  movable<T> &&
+  default_initializable<T> && // これ
+  enable_view<T>;
+
+// C++20当初のweakly_incrementableコンセプトの定義
+template<class I>
+concept weakly_incrementable =
+  default_initializable<I> && // これ
+  movable<I> &&
+  requires(I i) {
+    typename iter_difference_t<I>;
+    requires is-signed-integer-like<iter_difference_t<I>>;
+    { ++i } -> same_as<I&>;
+    i++;
+  };
+
+// input_or_output_iteratorはweakly_incrementableを包摂する
+template<class I>
+concept input_or_output_iterator =
+  requires(I i) {
+    { *i } -> can-reference;
+  } &&
+  weakly_incrementable<I>; // これ
+```
+
 これは`view`/イテレータを実装する際に問題となり、実際にC++20のRangeアダプタの一部の`view`型ではこれを満足するために余計な複雑性を導入していました（`semiregular-box`の使用など）。
 
 この要件は緩和され、`view`及び`input_iterator`/`output_iterator`はデフォルト構築可能である必要が無くなりました。また、これに伴って標準の`view`型やイテレータラッパの要件や実装も修正されています。
 
-この修正に関しては機能テストマクロ`__cpp_lib_ranges`が`201911L`から`202106L`にバンプアップされています。
+```cpp
+// 修正後のviewコンセプトの定義
+template<class T>
+concept view =
+  range<T> && 
+  movable<T> &&
+  enable_view<T>;
+
+// 修正後のweakly_incrementableコンセプトの定義
+template<class I>
+concept weakly_incrementable =
+  movable<I> &&
+  requires(I i) {
+    typename iter_difference_t<I>;
+    requires is-signed-integer-like<iter_difference_t<I>>;
+    { ++i } -> same_as<I&>;
+    i++;
+  };
+```
+
+どちらのコンセプトも意味論要件には変更がなく、この修正に関しては機能テストマクロ`__cpp_lib_ranges`が`201911L`から`202106L`にバンプアップされています。
 
 ## Rangeアダプタの引数受け取りの修正
 
@@ -354,8 +404,65 @@ int main() {
 }
 ```
 
-## `owning_view`
+## `view`コンセプトの意味論要件変更と`owning_view`
 
+入力の型を`T`として、当初の`view`コンセプトの意味論要件は次のようなものでした
+
+- `T`のムーブ構築/代入は定数時間（`O(1)`）
+- `T`のデストラクトは定数時間
+- `T`はコピー不可であるか、`T`のコピー構築/代入は定数時間
+
+これらの要件は`view`が範囲を所有しない軽量な型であることを表現しています。
+
+このうち、一部の`view`型では2つ目のデストラクタ呼び出しが定数時間という要件が満たせない場合があることがわかりました（`std::generator`がそれに該当していました）。そのため、`view`コンセプトの意味論要件が再考され、次のように修正されました
+
+- `T`のムーブ構築は定数時間（`O(1)`）
+- `T`のムーブ代入の計算量は、デストラクタとムーブ構築を続けて実行した時の計算量よりも複雑ではない
+- `M`個の要素を含む`T`のオブジェクトが`N`回コピー/ムーブされた時、それら`N`個のオブジェクトのデストラクタの計算量は`O(N+M)`
+    - ムーブ後オブジェクトの破棄は定数時間
+- `T`はコピー構築不可であるか、`T`のコピー構築は定数時間
+- `T`はコピー代入不可であるか、`T`のコピー代入の計算量は、デストラクタとコピー構築を続けて実行した時の計算量よりも複雑ではない
+
+複雑になりましたが`view`が軽量の型であることを表現しているのは変化しておらず、主にムーブやコピーした際に残った元のオブジェクトのことを考慮に入れるようになっています。
+
+以前に`view`だったものはこの要件の下でも`view`であり続けますが、この要件の下では`view`は範囲を所有することができるようになっています。ただし、範囲を所有している`view`であってもそれは通常のコンテナのように振る舞うのではなく、コピーはその要素をコピーするものであってはならないことを要求しており、ムーブによって所有している範囲の所有権は別のオブジェクトへ移行しなければなりません。
+
+そして、この`view`コンセプトの変更によって許可された範囲を所有するタイプの`view`として`ranges::owning_view`が追加されました。`owning_view`は渡された右辺値のRangeを所有してその寿命を延長させる`view`で、`views::all`に右辺値のRangeを渡したときに`owning_view`にラップされて返されます。これによって、パイプラインにおいて右辺値のRangeの取り扱いが安全になりました。
+
+```cpp
+using namespace std::views;
+using namespace std::ranges::view;
+
+// 右辺値の範囲を返す
+auto rv() -> std::vector<int>;
+// 左辺値の範囲を返す
+auto lv() -> std::vector<int>&;
+
+int main() {
+  // パイプライン処理の事前組み立て
+  auto pipe = drop(2)
+            | filter(...)
+            | transform(...)
+            | take(5);
+  
+  // rv()の戻り値はowning_viewによって保存されている
+  view auto rvpipe = rv() | pipe;
+  // lv()の戻り値はref_viewによって保存されている
+  view auto lvpipe = lv() | pipe;
+
+  // rv()の戻り値はrvpipe内部で生存している
+  for(auto n : rvpipe) {
+    ...
+  }
+
+  // lv()の戻り値の参照元が生存していれば、安全
+  for(auto n : lvpipe) {
+    ...
+  }
+}
+```
+
+この例の場合、`lv()`の戻り値の参照元の寿命が十分に長いとすると、どちらのパイプライン処理も安全に実行可能となります。また、`views::all`はパイプラインにおいて自動適用されるため、`owning_view`や`ref_view`の存在をユーザーは気にする必要がなく、おそらく直接使用することはほとんど無いでしょう。
 
 # Rangeアダプタ
 
