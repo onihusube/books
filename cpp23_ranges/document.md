@@ -569,6 +569,50 @@ int main() {
 
 ## `std::format`の`range`対応
 
+C++20で追加された`std::format()`では、組み込み型に対してのみフォーマットサポートが提供されていました。C++23では、一般の`range`に対するサポートが加わることで、標準コンテナをはじめとした各種の`range`オブジェクトを`std::format()`で直接文字列化できるようになります。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+  std::map<int, const char*> map = {{1, "1"}, {2, "2"}, {3, "3"}};
+
+  std::cout << std::format("{}\n", vec);
+  std::cout << std::format("{}\n", map);
+}
+```
+```
+[1, 2, 3, 4]
+{1: "1", 2: "2", 3: "3"}
+```
+
+`range`は基本的に`[]`に囲まれてその要素がカンマ区切りで出力されます。この時、標準の連想コンテナだけは`{}`に囲まれ、要素のキーと値が`: `で区切られた上でカンマ区切りで出力されます。`set`系の場合は各要素は単にカンマ区切りで出力されます。
+
+```cpp
+int main() {
+  std::set<int> set = {4, 3, 10, 5, 9};
+
+  std::cout << std::format("{}\n", set);
+}
+```
+```
+{3, 4, 5, 9, 10}
+```
+
+ただし、いずれの場合でも`range`の要素型が`std::format`で出力可能でなければ出力できません。
+
+```cpp
+int main() {
+  // std::optionalはstd::format非対応
+  std::vector<std::optional<int>> vec = {1, std::nullopt, 2};
+
+  std::cout << std::format("{}\n", vec);  // ng
+}
+```
+
+### `formattable`コンセプト
+
+### `range`フォーマットのオプション
+
 ## 範囲for文における一時オブジェクトの寿命延長
 
 ## `std::generator`
