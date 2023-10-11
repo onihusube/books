@@ -611,6 +611,68 @@ int main() {
 
 ### `formattable`コンセプト
 
+`std::format`で出力可能な型というのを識別する方法はC++20では提供されていませんでしたが、C++23ではそれは`std::formattable`コンセプトとして提供されるようになります。
+
+```cpp
+// 説明専用formattable-withコンセプト
+template<class T, class Context,
+         class Formatter = typename Context::template formatter_type<remove_const_t<T>>>
+concept formattable-with =
+  // formatter特殊化はsemiregularであること
+  semiregular<Formatter> &&
+  requires(Formatter& f, const Formatter& cf, T&& t, Context fc,
+           basic_format_parse_context<typename Context::char_type> pc)
+  {
+    // formatterの2つのメンバ関数の要求
+    { f.parse(pc) } -> same_as<typename decltype(pc)::iterator>;
+    { cf.format(t, fc) } -> same_as<typename Context::iterator>;
+  };
+
+// formattableコンセプト定義
+template<class T, class charT>
+concept formattable =
+  formattable-with<remove_reference_t<T>, basic_format_context<fmt-iter-for<charT>, charT>>;
+```
+
+`std::formattable<T, charT>`は、フォーマット対象の型`T`が`charT`でフォーマットできるように`std::formatter<remove_cvref_t<T>, charT>`が用意されている場合に`true`となります。
+
+`fmt-iter-for<charT>`は`output_iterator<const charT&>`のモデルとなる出力イテレータ型です。`formattable-with`の定義内での`Formatter`は`std::formatter`の特殊化であり、`formattable-with`コンセプトはそれに対して`semiregular`であることを求めていたり、`.parse()`と`.format()`がライブラリの想定する形で存在していることを要求しています。
+
+なお、`formattable-with`を介しているのは定義の簡略化のためだと思われ、`T`の修飾を取り除いたり`Formatter`を導出したりといったことをユーザー側に露出させないように行っています。
+
+`std::formattable`コンセプトは、例えば`std::formatter`を特殊化する際に使用します。例えば`std::optional<T>`に対する`std::formatter`を特殊化する際に`T`についてチェックするようにします
+
+```cpp
+// std::optional<T>のためのフォーマッター
+template<std::formattable<char> T>
+struct std::formatter<std::optional<T>, char> {
+  // Tのフォーマッターを利用する
+  std::formatter<T, char> tf;
+
+  constexpr auto parse(std::format_parse_context& pc) {
+    // パースは丸投げ
+    return tf.parse(pc);
+  }
+
+  auto format(const std::optional<T>& opt, auto& fc) {
+    // 文字列化実装
+    ...
+  }
+};
+```
+
+他には、`std::format()`をラップする関数のインターフェースで使用することもできます。
+
+```cpp
+// 日付時刻と一緒に値をログ出力する関数
+void print_log(std::formattable<char> auto const& v) {
+  using namespace std::chrono;
+  const auto now = time_point_cast<seconds>(system_clock::now());
+
+  std::clog << std::format("{:%F %T} : {}\n", now, v);
+}
+```
+
 ### `range`フォーマットのオプション
 
 ## 範囲for文における一時オブジェクトの寿命延長
