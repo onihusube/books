@@ -580,7 +580,7 @@ int main() {
   std::cout << std::format("{}\n", map);
 }
 ```
-```
+```{style=planetext}
 [1, 2, 3, 4]
 {1: "1", 2: "2", 3: "3"}
 ```
@@ -594,7 +594,7 @@ int main() {
   std::cout << std::format("{}\n", set);
 }
 ```
-```
+```{style=planetext}
 {3, 4, 5, 9, 10}
 ```
 
@@ -650,8 +650,8 @@ struct std::formatter<std::optional<T>, char> {
   std::formatter<T, char> tf;
 
   constexpr auto parse(std::format_parse_context& pc) {
-    // パースは丸投げ
-    return tf.parse(pc);
+    // フォーマット文字列のパース
+    ...
   }
 
   auto format(const std::optional<T>& opt, auto& fc) {
@@ -671,9 +671,133 @@ void print_log(std::formattable<char> auto const& v) {
 
   std::clog << std::format("{:%F %T} : {}\n", now, v);
 }
+
+int main() {
+  int n = 10;
+  std::any a = 20;
+
+  print_log(n); // ok
+  print_log(a); // ng
+}
 ```
 
 ### `range`フォーマットのオプション
+
+`range`のためのフォーマット文字列は基本的には組み込み型のものと同じなのですが、使用可能なフォーマットオプションが少し異なります。
+
+指定可能なオプションの全体像は次のようになっています
+
+```
+{ index : fill align width (n) range-type range-underlying-spec }
+```
+
+基本的に全てのオプションが省略可能ですが、並べ替えはできません。
+
+#### index 及び fill align と width
+
+*index*及び*fill align width*は組み込み型の時と同じように動作します。ただし注意点として、これらのオプションはすべて1つの`range`オブジェクトに対しての指定であって、その要素型に対するものではないということです。そのため、幅や寄せの指定は範囲を表す文字列全体に対して作用します。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+
+  // fill align widthの例
+  std::cout << std::format("|{:*>16}|\n", vec);
+  std::cout << std::format("|{:*<16}|\n", vec);
+  std::cout << std::format("|{:*^16}|\n", vec);
+}
+```
+```{style=planetext}
+|****[1, 2, 3, 4]|
+|[1, 2, 3, 4]****|
+|**[1, 2, 3, 4]**|
+```
+
+*fill*には`{`と`}`を除く任意の1文字が指定可能であり、*fill*が指定されている場合は*align*は省略できません。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+
+  std::cout << std::format("|{:*16}|\n", vec);  // ng
+}
+```
+
+これらのオプションに関わる細かいことは組み込み型のフォーマットオプションと共通していますので、ここでは深入りしません（拙著「C++20 ライブラリ機能 1」で説明されています）。
+
+### n
+
+次の*n*オプション以降は`range`のフォーマット特有のオプションです。
+
+*n*オプションは丁度`n`のみが指定可能で、指定されている場合に範囲文字列の先頭と末尾の囲み文字（`std::vector`の場合`[ ]`）を出力しないようにします。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+  
+  std::cout << std::format("{:}\n"  , vec);
+  std::cout << std::format(" {:n}\n", vec);
+}
+```
+```{style=planetext}
+[1, 2, 3, 4]
+ 1, 2, 3, 4
+```
+
+連想コンテナのフォーマットの場合も同様に、囲む`{ }`が出力されなくなります。
+
+### range-type
+
+*range-type*オプションは、`range`の範囲文字列としての表現方法を変更するオプションです。`range`の要素型を`T`として、指定可能なものは次のものです
+
+|*type*|要件|意味|
+|:-:|---|---|
+|`m`|`T`は`std::pair`か2要素の`std::tuple`|連想コンテナのフォーマットを使用する|
+|`s`|`T`は文字型|文字列として出力|
+|`?s`|`T`は文字型|デバッグ文字列として出力|
+
+表中の要件とは各オプションが有効となる条件のことで、これが満たされない場合はコンパイルエラーになります。また、要件における文字型とはフォーマット文字列の文字型のことです。
+
+まず、`m`の指定は非連想コンテナの`range`に対して、連想コンテナと同じ形式でフォーマットするものです。
+
+```cpp
+int main() {
+  std::vector<std::pair<int, const char*>> vec = {{1, "1"}, {2, "2"}, {3, "3"}};
+  
+  std::cout << std::format("{:}\n", vec);
+  std::cout << std::format("{:m}\n", vec);
+
+  // 参考
+  std::map<int, const char*> map = {{1, "1"}, {2, "2"}, {3, "3"}};
+  std::cout << std::format("{:}\n", map);
+}
+```
+```{style=planetext}
+[(1, "1"), (2, "2"), (3, "3")]
+{1: "1", 2: "2", 3: "3"}
+{1: "1", 2: "2", 3: "3"}
+```
+
+そのため、`range`の要素型は`std::pair`の特殊化であるか、2要素の`std::tuple`でなければなりません。
+
+```cpp
+int main() {
+  std::vector<std::tuple<int, double>> vec1 = {...};
+  std::vector<std::array<int, 2>> vec2 = {...};
+  std::vector<int> vec3 = {...};
+  
+  std::cout << std::format("{:m}\n", vec1); // ok、2要素tuple
+  std::cout << std::format("{:m}\n", vec2); // ng、2要素tuple-like
+  std::cout << std::format("{:m}\n", vec3); // ng、非tuple
+}
+```
+
+なお、連想コンテナに対して`m`を指定しても出力は変化しません（無視されます）。
+
+
+*range-type*オプションとして`?`もしくは`?s`が指定されている場合、`n`及び後続の*range-underlying-spec*を同時に指定することはできません。
+
+### range-underlying-spec
 
 ## 範囲for文における一時オブジェクトの寿命延長
 
