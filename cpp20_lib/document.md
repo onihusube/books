@@ -1531,7 +1531,7 @@ int main() {
 { index : fill align width .precision type(s) }
 ```
 
-*sing*とか*alt*などは文字列型では指定可能ではなく、文字列型の*type*オプションは`s`のみです。
+*sign*とか*alt*などは文字列型では指定可能ではなく、文字列型の*type*オプションは`s`のみです。
 
 ```cpp
 #include <format>
