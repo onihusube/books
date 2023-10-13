@@ -852,7 +852,6 @@ int main() {
 
   std::cout << std::format("{::+#x}\n", vec);
   std::cout << std::format("({:n:#06b})\n", vec);
-  std::cout << std::format("{::^16:+#x}\n", vec);
 }
 ```
 ```{style=planetext}
