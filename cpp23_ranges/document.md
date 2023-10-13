@@ -713,7 +713,7 @@ int main() {
 |**[1, 2, 3, 4]**|
 ```
 
-*fill*には`{`と`}`を除く任意の1文字が指定可能であり、*fill*が指定されている場合は*align*は省略できません。
+*fill*には`{`、`}`と`:`を除く任意の1文字が指定可能であり、*fill*が指定されている場合は*align*は省略できません。
 
 ```cpp
 int main() {
@@ -748,7 +748,7 @@ int main() {
 
 ### range-type
 
-*range-type*オプションは、`range`の範囲文字列としての表現方法を変更するオプションです。`range`の要素型を`T`として、指定可能なものは次のものです
+*range-type*オプションは、`range`出力時の範囲文字列としての表現方法を変更するオプションです。`range`の要素型を`T`として、指定可能なものは次のものです
 
 |*type*|要件|意味|
 |:-:|---|---|
@@ -794,10 +794,108 @@ int main() {
 
 なお、連想コンテナに対して`m`を指定しても出力は変化しません（無視されます）。
 
+`s`及び`?s`オプションはどちらも、文字の範囲を文字列として出力するオプションです。そのため、要素型は文字型（フォーマット文字列の文字型と同じ）である必要があります。
 
-*range-type*オプションとして`?`もしくは`?s`が指定されている場合、`n`及び後続の*range-underlying-spec*を同時に指定することはできません。
+```cpp
+int main() {
+  std::vector<char> vec = {'h', 'e', 'l', 'l', 'o', '.'};
+  
+  std::cout << std::format("{:}\n", vec);
+  std::cout << std::format("{:s}\n", vec);
+  std::cout << std::format("{:?s}\n", vec);
+}
+```
+```{style=planetext}
+['h', 'e', 'l', 'l', 'o', '.']
+hello.
+"hello."
+```
+
+どちらも文字列として出力するものですが、`?`が付いていると、その文字列をC++コード上で再現可能な文字列リテラルとして有効な文字列を出力します。このため、特にエスケープシーケンスの扱いが異なります。
+
+```cpp
+int main() {
+  std::vector<char> vec = {'h', 'e', 'l', '\n', 'l', 'o', '.'};
+  
+  std::cout << std::format("{:}\n", vec);
+  std::cout << std::format("{:s}\n", vec);
+  std::cout << std::format("{:?s}\n", vec);
+}
+```
+```{style=planetext}
+['h', 'e', 'l', '\n', 'l', 'o', '.']
+hel
+lo.
+"hel\nlo."
+```
+
+`?s`で出力される文字列はそれをコピペしてC++ソースコードに貼り付けると、文字列リテラルとして元の文字列を得ることができます。`?`オプションはデバッグ出力オプションとしてC++23で追加されたオプションであり、単体で文字型及び文字列型の*type*オプションでも使用できます。
+
+なお、*range-type*オプションとして`s`もしくは`?s`が指定されている場合、`n`及び後続の*range-underlying-spec*を同時に指定することはできません。
+
+```cpp
+int main() {
+  std::vector<char> vec = {'h', 'e', 'l', 'l', 'o', '.'};
+  
+  std::cout << std::format("{:ns}\n", vec);   // ng
+  std::cout << std::format("{:?s:c}\n", vec); // ng
+}
+```
 
 ### range-underlying-spec
+
+*range-underlying-spec*オプションは要素型に対するオプションを指定するものです。要素型が`formattable`であれば、その型で利用可能なオプションをそのまま指定することができます。*range-underlying-spec*を指定する場合は、`:`から始まっている必要があります。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+
+  std::cout << std::format("{::+#x}\n", vec);
+  std::cout << std::format("({:n:#06b})\n", vec);
+  std::cout << std::format("{::^16:+#x}\n", vec);
+}
+```
+```{style=planetext}
+[+0x1, +0x2, +0x3, +0x4]
+(0b0001, 0b0010, 0b0011, 0b0100)
+```
+
+*range-underlying-spec*オプションが指定される場合、`{::}`のように置換フィールド内では`:`が複数現れます。この場合、1つ目の`:`は`range`そのものへのオプション指定の開始記号であり、2つ目の`:`はその`range`の要素型へのオプション指定の開始記号となります。このために、`range`型のフォーマットオプションでは*fill*での`:`の使用が禁止されているわけです。
+
+`range`の要素が`range`である場合でも、*range-underlying-spec*オプションで`range`型のフォーマットオプションが使用できます。つまりは、`:`は3つ以上現れる場合もあります。
+
+```cpp
+int main() {
+  std::vector<std::deque<int>> deqvec = { {1, 2}, {3}, {4, 5}};
+  
+  std::cout << std::format("{::n:+#x}\n", deqvec);
+
+  std::vector<std::deque<std::array<double, 2>>> advec{ { {1, 2}, {3, 4} }, { {5, 6} } };
+
+  std::cout << std::format("{::::.1e}\n", advec);
+}
+```
+```{style=planetext}
+[+0x1, +0x2, +0x3, +0x4, +0x5]
+[[[1.0e+00, 2.0e+00], [3.0e+00, 4.0e+00]], [[5.0e+00, 6.0e+00]]]
+```
+
+この場合、`{::n:+#x}`の1つ目の`:`は`std::vector<std::deque<int>>`への指定で、2つ目の`:n`は`std::deque<int>`への指定、3つ目の`:+#x`は`int`への指定となっています。以降、間に`range`が1つ増えると`:`も1つ増えます。
+
+これらのオプションは全て必要ないなら省略することができるため、`range`の`range`を出力する際に必ずその個数分の`:`が必要になるわけではありません。ただし、より内側のもの（特に要素型）に対してオプションを指定する場合はその外側のものに対する`:`は省略できなくなります。
+
+```cpp
+int main() {
+  std::vector<std::deque<std::array<double, 2>>> advec{...};
+
+  std::cout << std::format("{}\n", advec);      // ok、オプションなし
+  std::cout << std::format("{::::}\n", advec);  // ok、オプションなし
+  std::cout << std::format("{::n}\n", advec);   // ok、dequeに対するオプションのみ
+  std::cout << std::format("{:::n}\n", advec);  // ok、arrayに対するオプションのみ
+
+  std::cout << std::format("{:.1e}\n", advec);  // ng、vectorに対するオプションとしては不正
+}
+```
 
 ## 範囲for文における一時オブジェクトの寿命延長
 
