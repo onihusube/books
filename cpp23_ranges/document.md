@@ -681,6 +681,8 @@ int main() {
 }
 ```
 
+`std::format()`で`range`を出力する場合、その要素型が`formattable`である必要があります。
+
 ### `range`フォーマットのオプション
 
 `range`のためのフォーマット文字列は基本的には組み込み型のものと同じなのですが、使用可能なフォーマットオプションが少し異なります。
@@ -844,7 +846,7 @@ int main() {
 
 ### range-underlying-spec
 
-*range-underlying-spec*オプションは要素型に対するオプションを指定するものです。要素型が`formattable`であれば、その型で利用可能なオプションをそのまま指定することができます。*range-underlying-spec*を指定する場合は、`:`から始まっている必要があります。
+*range-underlying-spec*オプションは要素型に対するオプションを指定するもので、要素型で利用可能なオプションをそのまま指定することができます。*range-underlying-spec*を指定する場合は、`:`から始まっている必要があります。
 
 ```cpp
 int main() {
@@ -897,6 +899,89 @@ int main() {
 ```
 
 ## 範囲for文における一時オブジェクトの寿命延長
+
+範囲`for`文には当初から、イテレート対象範囲の初期化式内で生成される一時オブジェクトの扱いについての問題がありました。
+
+```cpp
+// 右辺値を返す関数
+auto f() -> std::vector<std::string>;
+
+int main() {
+  // これはok
+  for (auto&& str : f()) {
+    std::cout << str << '\n';
+  }
+
+  // これはUB
+  for (auto&& c : f().at(0)) {
+    std::cout << c << ' ';
+  }
+}
+```
+
+`f()`は右辺値の`std::vector`を返す関数で、`f().at(0)`はそこから左辺値の`std::string`を取り出しています。この時、`f()`の直接の戻り値である`std::vector`オブジェクトはどこにも保存されず、範囲`for`のループ開始前に破棄されます。すると、そこから取り出した`std::string`への参照はダングリング参照となり、範囲`for`ループは未定義動作に陥ります。
+
+この直接の原因は範囲`for`文の裏側に隠蔽されており、表面からでは問題が分かりづらくなっています。
+
+範囲`for`文はシンタックスシュガーであり、その実体はイテレータを用いた通常の`for`文へ展開される形で実行されます。例えば、規格においては範囲`for`の構文は次のように規定されています
+
+```
+for ( init-statement(opt) for-range-declaration : for-range-initializer ) statement
+```
+
+`init-statement`は`for`の初期化式で`(opt)`は省略可能であることを表します。`for-range-declaration`は`for(auto&& v : r)`の`auto&& v`の部分で、`for-range-initializer`は`r`の部分、残った`statement`は`for`文の本体です。
+
+そして、これは次のように展開されてコンパイルされます
+
+```cpp
+{
+	init-statement(opt)
+
+	auto &&range = for-range-initializer ;  // イテレート対象オブジェクトの保持
+	auto begin = begin-expr ; // std::ranges::begin(range)相当
+	auto end = end-expr ;     // std::ranges::end(range)相当
+	for ( ; begin != end; ++begin ) {
+		for-range-declaration = * begin ;
+		statement
+	}
+}
+```
+
+問題は展開後ブロック内の3行目にあります。
+
+```cpp
+auto &&range = for-range-initializer ;
+```
+
+先ほどのサンプルから`for-range-initializer`を当てはめてみると
+
+```cpp
+// 1つ目のforから
+auto &&range = f() ;  // ok
+
+// 2つ目のforから
+auto &&range = f().at(0) ;  // UB
+```
+
+`auto&&`による変数宣言では初期化式が右辺値ならばその寿命を延長するため、1つ目の場合は`f()`の直接の戻り値はループの間生存しています。しかし、2つ目の場合、`auto&&`が受けているのは`f().at(0)`であり、`f()`の直接の戻り値はどこにも受け止められていません。このため、`f()`の直接の戻り値の寿命はこの初期化式の完了後に終了し、そこから取り出した参照はダングリング参照となります。
+
+この例は恣意的かもしれませんが、`std::optional`で範囲を返し`*/.value()`から取得しようとする場合や、`std::tuple`に含まれる範囲を`std::get`で取り出そうとする場合などにも同じ問題があります。しかもこのことは範囲`for`の構文に隠蔽されているため、問題を知っていてもそれが起きていることに気づくのは困難です。
+
+この問題はC++11発行前から認識されていたものの解決されず、緩和のためにC++20で範囲`for`に初期化式（`init-statement`）を書けるようになりましたが、本質的な問題は解決されていませんでした。C++23にてこの問題は解決され、範囲`for`の初期化式（`for-range-initializer`）内で作成されたすべての一時オブジェクトの寿命は範囲`for`文の完了（ループ終了）まで延長される、と規定されるようになります。
+
+実際にどのように寿命延長が図られるのかは実装定義となりますが、これは同種の問題についてのより一般的な解決策を妨げないようにするためのことで、利用側から見れば範囲`for`の安全性は確実に向上します。
+
+```cpp
+// 右辺値を返す関数
+auto f() -> std::vector<std::string>;
+
+int main() {
+  // C++20まではUB、C++23からはok
+  for (auto&& c : f().at(0)) {
+    std::cout << c << ' ';
+  }
+}
+```
 
 ## `std::generator`
 
