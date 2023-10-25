@@ -1110,7 +1110,101 @@ int main() {
 
 ### アロケータのカスタマイズ
 
-`std::generator`は3番目のテンプレートパラメータでアロケータ型を受け取ります。これによって、コルーチンの初期化時（一番最初の関数呼び出し時）に確保されるコルーチンステートを保存しておくためのメモリ領域の確保方法をカスタマイズすることができます。
+`std::generator`はアロケータをカスタマイズすることができます。この場合のアロケータはコルーチンの最初の呼び出し時にコルーチンステートを動的確保する部分のメモリ確保方法をカスタマイズするためのものです。デフォルトでは`std::allocator<void>`が使用されています。
+
+基本的なカスタマイズ方法は、`std::generator`によるコルーチンの引数の先頭で`std::allocator_arg_t`とアロケータを受け取るようにしておくことです。
+
+```cpp
+// アロケータをカスタマイズするコルーチン宣言
+template <class Allocator>
+auto gen_coro(std::allocator_arg_t, Allocator alloc, auto&&... args) -> std::generator<int>;
+
+int main() {
+  std::pmr::synchronized_pool_resource mr{};
+  std::pmr::polymorphic_allocator<> alloc{&mr};
+
+  // アロケータはallocator_argとともに引数の先頭で渡す
+  gen_coro(std::allocator_arg, std::move(alloc), ...);
+}
+```
+
+この方法はアロケータを型に出現させることなくアロケータのカスタマイズを行えますが、`std::generator`を使用した関数では`std::allocator_arg_t`とアロケータを受け取るようにしておかなければなりません。オーバーロードを提供すればユーザーの使用負担は減らせるかもしれませんが、少し手間かもしれません。
+
+そこで、`std::generator`の3番目の引数にアロケータ型（デフォルト構築可能であること）を指定することで、追加のアロケータ専用引数を省略してカスタマイズすることもできます。
+
+```cpp
+// オリジナルのアロケータ（ステートレスであること）
+template<typename T>
+struct my_stateless_allocator {
+  my_stateless_allocator() = default;
+  ...
+};
+
+// アロケータをカスタムしたstd::generator
+template<typename T, typename V = void>
+using my_generator = std::generator<T, V, my_stateless_allocator<T>>;
+
+// アロケータをカスタマイズするコルーチン宣言
+auto gen_coro(auto&&... args) -> my_generator<int>;
+
+int main() {
+  // アロケータを渡す必要がない
+  gen_coro(...);
+}
+```
+
+ただしこの方法は、指定したアロケータ型をデフォルト構築することでアロケータを取得しているため、基本的にステートレスなアロケータ型の場合に使用します。
+
+`std::generator`の3番目の引数にアロケータ型を指定した場合でも、コルーチン引数先頭でアロケータを渡すことはできます。
+
+```cpp
+// オリジナルのアロケータ
+template<typename T>
+struct my_allocator {
+  ...
+};
+
+template<typename T, typename V = void>
+using my_generator = std::generator<T, void, my_allocator<T>>;
+
+// アロケータをカスタマイズするコルーチン宣言
+auto gen_coro(auto&&... args) -> my_generator<int>;
+
+int main() {
+  std::pmr::synchronized_pool_resource mr{};
+  std::pmr::polymorphic_allocator<> alloc{&mr};
+
+  // アロケータはallocator_argとともに引数の先頭で渡す
+  gen_coro(std::allocator_arg, std::move(alloc), ...);
+
+  // デフォルト構築可能な場合はアロケータを渡さなくても良い
+  gen_coro(...);
+}
+```
+
+最初の方法との違いは`std::generator`の型にアロケータ型が出るか出ないかだけです。
+
+まとめると、`std::generator`の3番目のテンプレート引数を`A`として、`std::generator`のアロケータのカスタマイズ方法には次の4パターンがあります
+
+1. `A`を指定しない（`A = void`）
+    1. コルーチン引数でアロケータを受け取る
+        - 受け取ったアロケータを使用
+        - 受け取ったアロケータはコルーチンステートに保存（コピーされる）
+    2. コルーチン引数でアロケータを受け取らない
+        - デフォルトアロケータの使用（アロケータカスタマイズしない）
+        - アロケータは保存されない（オンデマンドで構築）
+2. `A`を指定する
+    1. コルーチン引数でアロケータを受け取る
+        - 受け取ったアロケータを使用
+        - 受け取ったアロケータはコルーチンステートに保存（コピーされる）
+    2. コルーチン引数でアロケータを受け取らない
+        - `A`をデフォルト構築してアロケータを取得
+        - アロケータはステートレスであること
+        - アロケータは保存されない（オンデマンドで構築）
+
+アロケータを保存しなくてよい場合、コルーチンステートはそれに応じて小さくなります。
+
+### `pmr::generator`
 
 ### `elements_of`
 
