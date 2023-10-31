@@ -1214,7 +1214,7 @@ int main() {
 
 ### `pmr::generator`
 
-C++20以降、`std::pmr::polymorphic_allocator`はC++のライブラリ機能として基本的なものとして扱われており、アロケータカスタマイズをサポートする標準ライブラリ機能は`polymorphic_allocator`のサポートを含むようになっています。それは型エイリアスを定義することで行われており、そのエイリアスは`std::pmr`名前空間に配置されるようになっています。
+C++20以降、`std::pmr::polymorphic_allocator`はC++のライブラリ機能のうちで基本的なものとして扱われており、アロケータカスタマイズをサポートする標準ライブラリ機能は`polymorphic_allocator`のサポートを含むようになっています。それは型エイリアスを定義することで行われており、そのエイリアスは`std::pmr`名前空間に配置されます。
 
 `std::generator`にも、3番目のアロケータパラメータに`polymorphic_allocator`が事前に指定された`std::pmr::generator`が用意されています。
 
@@ -1242,6 +1242,52 @@ int main() {
 ただし、どちらの場合でも、使用するメモリリソースはそれを渡しているコルーチンの動作期間（戻り値`std::generator`オブジェクトの生存期間）よりも長くなるように管理する必要があります。
 
 ### `elements_of`
+
+`std::ranges::elements_of`は、`std::generator`によるコルーチン内で`range`を展開しながら順次生成（`co_yiled`）するためのユーティリティです。
+
+```cpp
+auto gen_coro(auto&&... args) -> std::pmr::generator<int> {
+  co_yield 1; // ok、1を生成
+
+  std::array<int, 5> arr = {2, 3, 4, 5, 6};
+
+  co_yield arr; // ng、std::array<int, 5>を生成しようとする
+
+  co_yield std::ranges::elements_of(arr); // ok、要素を順番に生成していく
+}
+```
+
+パイプラインで`range`を`views::join`するのと同じことをコルーチンジェネレータ内で行ってくれます。
+
+`elements_of`を使用しない場合、範囲`for`で展開して順次`co_yiled`していくコードを書かなければなりませんが、`elements_of`を使用することでそれを簡略化することができます。
+
+なお、この例では`std::array`を`elements_of`に渡していますが、`std::array`に限らず任意の`range`を渡すことができます。ただし、`std::generator<T>`に対して`T`に変換可能な型を要素とする`range`でなければなりません。
+
+これだけだと範囲`for`で展開するコードを書いてもさほど変わりはないような気もしますが、`elements_of`が重要なのはコルーチンジェネレータをネストさせた場合においてです。ジェネレータのネストは自身の再帰呼び出しや他のコルーチンジェネレータの呼び出しなどによって発生し、`elements_of`の引数でネストしたコルーチンを呼び出すことで先ほどの`range`の場合と同様にコルーチン起動と要素の展開および順次生成を行えます。
+
+```cpp
+// 単純な二分木
+struct tree {
+  tree* left;
+  tree* right;
+  int value;
+};
+
+// コルーチンジェネレータによるtreeのトラバーサル（深さ優先）
+auto dfs_traverse(tree& node) -> std::generator<int> {
+  if (node.left) {
+    co_yield std::ranges::elements_of(dfs_traverse(*node.left));
+  }
+
+  co_yield node.value;
+  
+  if (node.right) {
+    co_yield std::ranges::elements_of(dfs_traverse(*node.right));
+  }
+}
+```
+
+ネストしたコルーチンジェネレータにおいて`elements_of`を使用する際に重要なのは、ネストしたコルーチンジェネレータを手動で呼び出して要素ごとに`co_yield`するよりも効率的に呼び出すことができる点です。
 
 ## `view`の２引数コンストラクタの`explicit`化
 
