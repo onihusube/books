@@ -1253,7 +1253,12 @@ auto gen_coro(auto&&... args) -> std::pmr::generator<int> {
 
   co_yield arr; // ng、std::array<int, 5>を生成しようとする
 
-  co_yield std::ranges::elements_of(arr); // ok、要素を順番に生成していく
+  for (int n : arr) {
+    co_yield n; // ok
+  }
+  // 2, 3, 4, 5, 6と生成
+
+  co_yield std::ranges::elements_of(arr); // ok、2, 3, 4, 5, 6と生成
 }
 ```
 
@@ -1287,7 +1292,55 @@ auto dfs_traverse(tree& node) -> std::generator<int> {
 }
 ```
 
-ネストしたコルーチンジェネレータにおいて`elements_of`を使用する際に重要なのは、ネストしたコルーチンジェネレータを手動で呼び出して要素ごとに`co_yield`するよりも効率的に呼び出すことができる点です。
+この時、`elements_of`によって展開するとネストしたコルーチンジェネレータを手動で呼び出して要素ごとに`co_yield`するよりも効率的に各要素を生成していくことができます。むしろ、`elements_of`の本領はこちらです。
+
+例えば、上記例の`dfs_traverse()`において、ネストしたコルーチンジェネレータを手動展開すると次のようになります
+
+```cpp
+// elements_ofを使用しないtreeのトラバーサル
+auto dfs_traverse(Tree& tree) -> std::generator<int> {
+  if (tree.left) {
+    for (int x : dfs_traverse(*tree.left)) {
+      co_yield x;
+    }
+  }
+
+  co_yield tree.value;
+  
+  if (tree.right) {
+    for (int x : dfs_traverse(*tree.right)) {
+      co_yield x;
+    }
+  }
+}
+```
+
+最初に`dfs_traverse()`を呼び出した側（一番外側）から見ると、`dfs_traverse()`を再開すると各`for`では、外側の`dfs_traverse()`の中断とネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）の再開がループの度に行われます。この例がそうですが、ネストが深くなると一番外側の1回のループでその深さの分だけ中断と再開が連鎖することになります（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って`N`回中断と再開が再帰的に行われる）。
+
+`elements_of`を使用すると、`co_yield elements_of(...);`の評価で一番外側の`dfs_traverse()`が中断し、ネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）が起動され、以降外側のコルーチンへの再開はこのネストしたコルーチンを直接再開するようになります。これは何段ネストしていたとしても、大元のコルーチンの制御が直接一番深いところのコルーチンを制御するようになります。このため、ネストの深さによらず、一番外側の1回のループで中断と再開は一回だけ発生します（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って1回だけ中断と再開が行われる）。
+
+また、このようにコルーチンがネストして呼ばれている時に対称転送（*symmetric transfer*）を適切に行うことで、ネストしたコルーチンが相互再起呼び出しを行ってスタック消費量が増えてしまう問題を回避しています。
+
+`elements_of`はこれらの最適化を単一の`std::generator`型のみで実現するためにそのネスト構造を検出するためのマーカーであり、実のところ関数ではなく構造体（集成体）です（そのため、`elements_of{...}`としても使用できます）。
+
+```cpp
+namespace std::ranges {
+
+  // elements_ofの実装例
+  template<range R, class Allocator = allocator<byte>>
+  struct elements_of {
+    [[no_unique_address]]
+    R range;
+    
+    [[no_unique_address]]
+    Allocator allocator = Allocator();
+  };
+
+  // 推論補助
+  template<class R, class Allocator = allocator<byte>>
+  elements_of(R&&, Allocator = Allocator()) -> elements_of<R&&, Allocator>;
+}
+```
 
 ## `view`の２引数コンストラクタの`explicit`化
 
