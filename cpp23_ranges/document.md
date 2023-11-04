@@ -1344,9 +1344,92 @@ namespace std::ranges {
 
 ## `view`の２引数コンストラクタの`explicit`化
 
+C++20の各種Rangeアダプタの`view`型の中には、コンストラクタで2引数以上を受け取るものがあり、そのコンストラクタは`explicit`指定されていませんでした。一方、C++23で追加された新しい`view`型では、2引数以上を受け取るコンストラクタは`explicit`指定がデフォルトになっています。
+
+これによる差異は、コピーリスト初期化と呼ばれる形の初期化（`= {...};`の形の初期化）ができるかどうかの一点のみです。
+
+```cpp
+int main() {
+  std::vector v = {1, 2, 3, 4};
+
+  // C++20時点
+  std::ranges::take_view r1 = {v, 1}; // ok
+  std::ranges::filter_view r2 = {v, [](int) { return true; }};  // ok
+
+  // C++23
+  std::ranges::chunk_view r3 = {v, 1}; // ng
+  std::ranges::chunk_by_view r4 = {v, [](int, int) { return true; }}; // ng
+  
+  std::ranges::chunk_view r5{v, 1}; // ok
+  std::ranges::chunk_by_view r6{v, [](int, int) { return true; }}; // ok
+}
+```
+
+この場合にコンストラクタに`explicit`が付加されていたとしても、特に何か利益があるわけではありません。しかし、このことはC++20と23の間で一貫していなかったため、最終的に`view`型の2引数以上のコンストラクタには`explicit`を付加することをデフォルトとすることに決定されました。
+
+これによって、C++20の`view`型ではコピーリスト初期化ができなくなります。これは一応は快適変更ではありますが、標準ライブラリの`view`型は全てRangeアダプタ/ファクトリオブジェクトを通して取得することがデフォルトかつ推奨されているため`view`型を直接初期化することは稀であり、また、この変更の影響を受けたとしても`=`を削除する（リスト初期化に変更する）だけで問題を解決できるため、影響は小さいだろうと判断されたようです。
+
 ## *stashing iterator*の修正
 
-P2770R0
+*stashing iterator*は標準で定義されたものではありませんがイテレータカテゴリの一つで、イテレータが参照するものがそのイテレータ内部に保存されているイテレータの事です。従って、イテレータの間接参照結果が左辺値を返している時、その生存期間は取得元のイテレータの生存期間とリンクしています。
+
+この性質のため*stashing iterator*は`input_iterator`にしかならず、そこから取得したものの扱いには注意が必要です。
+
+Rangeライブラリの`view`型のものを除くと、C++20時点の標準ライブラリの*stashing iterator*としてカテゴライズされるイテレータとしては`std::regex_iterator`と`std::regex_token_iterator`の2つがありました。しかしこれらのイテレータのカテゴリは`forward_iterator`となっており、*stashing iterator*を考慮するとカテゴリ指定が間違っていました。
+
+C++23のRangeアダプタは遅延評価を行うためにイテレータをやりくりしているため、このカテゴリの間違いが深刻な問題を引き起こす場合がありました。特に、`views::join`でそれが顕著でした。
+
+```cpp
+using std::ranges;
+
+int main() {
+  char const text[] = "Hello";
+  std::regex regex{"[a-z]"};  // 小文字アルファベット1文字にマッチング
+
+  // 範囲（sub_match）の範囲（match_results）
+  subrange regex_range(std::cregex_iterator(
+                          begin(text),
+                          end(text),
+                          regex
+                       ),
+                       std::cregex_iterator{}
+                      );
+
+    // string_viewの範囲
+  auto lower = regex_range
+    | views::join  // sub_matchの範囲へと平坦化
+    | views::transform([](auto const& sm) {
+        // sub_matchオブジェクトが参照する文字列範囲をstring_viewへ変換
+        return std::string_view(sm.first, sm.second);
+      });
+
+  // elloを1文字づつ改行して出力する（はず
+  for (auto const& sv : lower) {
+    std::cout << sv << '\n';
+  }
+}
+```
+
+この例は`text`にある文字列から小文字だけを取り出すものです。
+
+`std::cregex_iterator`は1つのマッチングについて（`std::match_results`）を列挙し、`std::match_results`はサブマッチ（`std::sub_match`、`()`による1つのグループを表す）を列挙する`range`です。この例では1つのマッチングにつきサブマッチは1つになりますが、構造としては範囲の範囲になっています。`regex_range`は`ranges::subrange`でそのイテレータペアをラップすることで`range`としてまとめたものです。
+
+範囲の範囲に対して`views::join`によって平坦化を試みるのは自然なことで、これによってサブマッチ（`std::sub_match`）の範囲に変換されます。あとは、`views::transform`によってサブマッチ結果からマッチング文字列（この例では1文字ですが）を取り出して`std::string_view`に変換しています。結局、`lower`は`std::string_view`の範囲になっています。
+
+一見問題なさそうなこのコードは、`views::transform`の処理内部でダングリングイテレータを発生させています。`regex_range`のイテレータは外側（`std::cregex_iterator`）も内側も*stashing iterator*ですが前述のようにイテレータカテゴリは`forward_iterator`となっています。本当に`forward_iterator`であればマルチパス保証によってイテレータのコピーが問題なく行えるため、`views::join`は入力Rangeの内外イテレータをコピーして保持して処理を行おうとします。まだこの時点では問題が無く、`views::transform`がその処理のために内部で`join_view`のイテレータをコピーしてしまうタイミングがあり、そこで`std::cregex_iterator`とそこから取り出されたものとの生存期間が分離し、ダングリングイテレータを発生させます。
+
+この問題は複雑であり、規格の規定や実装のコードを詳しく追わないと何が起きているか分からないものがありますが、問題の主要因は次の2つです
+
+1. `std::regex_iterator`（`std::cregex_iterator`）と`std::regex_token_iterator`のイテレータカテゴリの間違い
+2. `join_view`（`join_with_view`も）が*stashing iterator*を正しく扱えていない
+
+この問題の解決のため、それぞれ次のように修正されます
+
+1. `std::regex_iterator`（`std::cregex_iterator`）と`std::regex_token_iterator`の`iterator_concept`を`input_itetaror`として定義
+2. `join_view`（`join_with_view`も）は`input_range`の入力時に、外側イテレータを`view`オブジェクト内部にキャッシュする
+    - *stashing iterator*を検出できないため、`input_range`全般に対して適用
+
+これによって、上記の例を含めた標準ライブラリでの*stashing iterator*の扱いが改善されます。
 
 ## P2609R3?
 
