@@ -464,7 +464,179 @@ int main() {
 
 この例の場合、`lv()`の戻り値の参照元の寿命が十分に長いとすると、どちらのパイプライン処理も安全に実行可能となります。また、`views::all`はパイプラインにおいて自動適用されるため、`owning_view`や`ref_view`の存在をユーザーは気にする必要がなく、おそらく直接使用することはほとんど無いでしょう。
 
-# Rangeアダプタ
+# Rangeアダプタ/ファクトリ
+
+Rangeライブラリの主役であるRangeアダプタ/RangeファクトリはC++23でさらに拡充されており、パイプラインによるより多彩な範囲操作が可能になっています。
+
+## `views::repeat`
+
+`views::repeat`は与えられた値を指定された回数の繰り返しによる範囲を生成する`view`です。これは、Rangeに対して作用するRangeアダプタではなく範囲を生成するRangeファクトリです。
+
+```cpp
+int main() {
+  for (int n : std::views::repeat(23) | std::views::take(4)) {
+    std::cout << std::format("{}, ", n);
+  }
+}
+```
+```{style=planetext}
+23, 23, 23, 23, 
+```
+
+`views::repeat(value)`のように呼び出すと、`value`を要素とする無限列が生成されます。`views::repeat(value, N)`のように、2つ目の引数に整数値を指定して要素数を指定することもできます。
+
+```cpp
+int main() {
+  for (int n : std::views::repeat(23, 4)) {
+    std::cout << std::format("{}, ", n);
+  }
+}
+```
+```{style=planetext}
+23, 23, 23, 23, 
+```
+
+`views::repeat`そのものはRangeファクトリオブジェクトであり、1つか2つの引数を受けてそれをそのまま転送して`repeat_view`を構築して返します。
+
+### `repeat_view`
+
+`repeat_view`は`views::repeat`の実装詳細であり、`views::repeat`は常にこの`view`型を返します。
+
+```cpp
+namespace std::ranges {
+
+  // repeat_viewの宣言例
+  template<move_constructible T, semiregular Bound = unreachable_sentinel_t>
+    requires (is_object_v<T> && same_as<T, remove_cv_t<T>> &&
+              (integer-like-with-usable-difference-type<Bound> ||
+               same_as<Bound, unreachable_sentinel_t>))
+  class repeat_view : public view_interface<repeat_view<T, Bound>> {
+    ...
+  };
+}
+```
+
+要素型である`T`はオブジェクト型でありCV修飾がないことの他には`move_constructible`であることだけが求められています。`Bound`は要素数を抑える型で、デフォルト時は`unreachable_sentinel`が使用され、要素数を指定する場合はほぼ整数型を求めています。
+
+要素数を指定しない場合（`Bound = unreachable_sentinel_t`の場合）には`.end()`から得られる番兵として`unreachable_sentinel`が使用され、`unreachable_sentinel`は任意のイテレータとの比較に常に`true`を返す番兵であるため、イテレータの終端判定を最適化によって除去しやすくなっています。ただし、これによって`.begin()`と`.end()`の型が異なってしまうため、`common_range`ではなくなります（要素数を指定する場合は同じイテレータ型が使用されます）。
+
+要素数が指定されている（`Bound`が`unreachable_sentinel_t`ではない）場合にのみ、`repeat_view`は`sized_range`かつ`common_range`になります。
+
+`repeat_view`はその内部に`T`の値（要素）を保存していて、`repeat_view`のコンストラクタは渡された`T`の左辺値をコピーもしくは`T`の右辺値をムーブすることでそのただ一つの要素を初期化します。
+
+### 動作詳細
+
+`repeat_view`の生成する範囲は、当然のことながら、その構築時にその要素の全てがどこかの領域に敷き詰められて保持されているものではなく、実際には`repeat_view`が保存している同じ1つの値を異なるイテレータが参照することによって構成されています。
+
+そのため、そのイテレータの間接参照で得られるものは`repeat_view`に渡されて内部で保持されている`T`の値の`const`左辺値参照（`const T&`）となります。これによって、`repeat_view`はその要素としてムーブオンリーな型の値からなる範囲を生成することができます。
+
+```cpp
+int main() {
+  for (int n : std::views::repeat(23, 4)) {
+    std::cout << std::format("{:p}, ", &n);
+  }
+  // 全て同じアドレスが出力される
+
+  std::ranges::repeat_view rv{std::make_unique<int>(23), 4};  // ok
+
+  for (const auto& up : rv) {
+    std::cout << std::format("{:p}, ", &up);
+  }
+  // 全て同じアドレスが出力される
+}
+```
+
+また、この性質によって`repeat_view`は要素型などに関係なく常に`random_access_range`となります。`contiguous_range`ではないのは、イテレータの進行と要素のメモリ配置が同期しない（動かない）ためです。要素数を指定しない場合でも`repeat_view`は`random_access_range`であるため、その場合の`repeat_view`は進行/後退の両方向について無限列となります。
+
+### `views::take`と`views::drop`の特殊対応
+
+`repeat_view`は内部に格納している値をその範囲の全ての要素としていることと`repeat_view`そのものに要素数を指定可能であることから、指定された個数の要素を切り出す/スキップするような処理はかなり単純化できる可能性があり、実際に`views::take`と`views::drop`ではそれが行われています。
+
+`views::take`の場合は、`views::take(r, n)`のように呼ばれた時に、`r`の素の型`R`が`repeat_view`であれば、次のように`repeat_view`を調整して返します
+
+- `R`が`sized_range`である（要素数が指定されている）場合
+    - `r`の内包する値を`value`、`ranges::distance(r)`と`n`の短い方を`l`として
+    - `views::repeat(value, l)`を返す
+- `repeat_view`の要素数が指定されていない場合
+    - `r`の内包する値を`value`として
+    - `views::repeat(value, n)`を返す
+
+`views::drop`の場合は、`views::drop(r, n)`のように呼ばれた時に、`r`の素の型`R`が`repeat_view`であれば、次のように`repeat_view`を調整して返します
+
+- `R`が`sized_range`である（要素数が指定されている）場合
+    - `r`の内包する値を`value`、`ranges::distance(r)`を`m`、`m`と`n`の短い方を`l`として
+    - `views::repeat(value, m - l)`を返す
+- `repeat_view`の要素数が指定されていない場合
+    - `r`をdecay-copyして返す
+
+どの場合でも、元の`repeat_view`オブジェクト`r`から取り出された値（`value`）は`r`の値カテゴリによって適切にムーブorコピーされます。
+
+```cpp
+int main() {
+  auto inf_rep = std::views::repeat(23);
+  
+  // 無限`repeat_view`に対するtake/drop
+  auto t1 = inf_rep | std::views::take(10);
+  // t1 = std::views::repeat(23, 10) と等価
+  auto d1 = inf_rep | std::views::drop(10);
+  // d1 = auto(inf_rep) と等価
+  
+  auto fin_rep = std::views::repeat(23, 10);
+  
+  // 有限`repeat_view`に対するtake/drop、元の長さに収まる場合
+  auto t2 = fin_rep | std::views::take(5);
+  // t2 = std::views::repeat(23, 5) と等価
+  auto d2 = fin_rep | std::views::drop(5);
+  // d2 = std::views::repeat(23, 10 - 5) と等価
+  
+  // 有限`repeat_view`に対するtake/drop、元の長さを超える場合
+  auto t3 = fin_rep | std::views::take(15);
+  // t3 = std::views::repeat(23, 10) と等価
+  auto d2 = fin_rep | std::views::drop(15);
+  // d3 = std::views::repeat(23, 10 - 10) と等価
+}
+```
+
+### `views::repeat`(`repeat_view`)の諸特性
+
+- `reference` : `const T&`
+- `range`カテゴリ : `random_access_range`
+- `common_range` : 要素数を指定した（有限長の）場合
+- `sized_range` : 要素数を指定した（有限長の）場合
+- `const-iterable` : 〇
+- `borrowed_range` : ×
+
+これらはそれぞれ次のような意味です
+
+- `reference` : イテレータの関節参照の結果型
+    - `ranges::range_reference_t<R>`の型
+- `range`カテゴリ : モデルとなる最も強い`range`コンセプト
+- `common_range` : `begin()`の戻り値型と`end()`の戻り値型が同じであるか
+    - `common_range`コンセプトのモデルとなるか
+- `sized_range` : `ranges::size()`によって定数時間で要素数を得られる
+    - `sized_range`コンセプトのモデルとなるか
+- `const-iterable` : `const`修飾されているときでも`range`となるか
+- `borrowed_range` : 範囲の寿命とそこから取得したイテレータの寿命が切り離されている
+    - `borrowed_range`コンセプトのモデルとなるか
+
+〇は常にその性質が有効であることを、×は常に無効であることを、特定の型やコンセプトが指定されている場合は常にそれを示すことを、条件が指定されている場合はその条件を満たす場合にその性質が有効になることを、それぞれ表しています。
+
+　
+
+C++23で追加されたRangeファクトリはこの`views::repeat`のみなので、以降のものは全てRangeアダプタになります。
+
+## `views::as_rvalue`
+## `views::as_cosnt`
+## `views::enumrate`
+## `views::zip`
+## `views::zip_transform`
+## `views::adjacent`
+## `views::adjacent_transform`
+## `views::chunk`
+## `views::slide`
+## `views::chunk_by`
+## `views::stride`
+## `views::cartesian_product`
 
 ## `ranges::range_adaptor_closure`
 
@@ -1430,6 +1602,8 @@ int main() {
     - *stashing iterator*を検出できないため、`input_range`全般に対して適用
 
 これによって、上記の例を含めた標準ライブラリでの*stashing iterator*の扱いが改善されます。
+
+## P2494R2
 
 ## P2609R3?
 
