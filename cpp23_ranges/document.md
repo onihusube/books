@@ -627,7 +627,138 @@ C++23で追加されたRangeファクトリはこの`views::repeat`のみなの�
 
 ## `views::as_rvalue`
 ## `views::as_cosnt`
-## `views::enumrate`
+## `views::enumerate`
+
+`views::enumerate`は入力範囲の各要素にそのインデックスを紐付けた要素からなる範囲を生成する`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 3, 5, 7, 11, 13};
+
+  for (auto [index, value] : vec | std::views::enumerate) {
+    std::cout << std::format("{}: {}\n", index, value);
+  }
+}
+```
+```{style=planetext}
+0: 1
+1: 3
+2: 5
+3: 7
+4: 11
+5: 13
+```
+
+C++11で導入されて以降、範囲`for`文でイテレーション中のカウンタ、すなわち要素のインデックスが欲しいケースは多々ありました。しかしそのための簡易な方法は提供されておらず、手動でカウンタを実行するしかありませんでした。
+
+```cpp
+int main() {
+  std::vector vec = {1, 3, 5, 7, 11, 13};
+
+  for (auto index = 0u; auto value : vec) {
+    std::cout << std::format("{}: {}\n", index, value);
+    ++index;
+  }
+}
+```
+
+このようなコードはカウンタを手動で管理する異常インクリメント忘れや間違ったカウンタの変更などのバグの可能性がつきまといます。C++17以前だと、範囲`for`に初期化子を置けなかったためカウンタのスコープが広くなってしまう問題もありました。そして何より、このような手動カウンタはRangeアダプタと相性が悪いです。
+
+`views::enumerate`を使用することで追加の手間なしでカウンタを導入でき、他のRangeアダプタとも自然に合成できます。
+
+`views::enumerate`そのものはRangeアダプタオブジェクトであり、1つの引数を受け取ってそれを`views::all`で包みながら`enumerate_view`を構築して返します。
+
+### `enumerate_view`
+
+`enumerate_view`は`views::enumerate`の実装詳細であり、`views::enumerate`は常にこの`view`型を返します。
+
+```cpp
+namespace std::ranges {
+
+  // enumerate_viewの宣言例
+  template<view V>
+    requires range-with-movable-references<V>
+  class enumerate_view : public view_interface<enumerate_view<V>> {
+    ...
+  };
+}
+```
+
+`range-with-movable-references`は入力範囲`V`が`input_range`でありその参照型に対してムーブ構築可能であることを要求しています。
+
+### 動作詳細
+
+`enumerate_view`は入力範囲を保持するだけで動作のほとんどはそのイテレータが担っています。そのため、`enumerate_view`を初期化した段階ではまだ何も行われていません。
+
+`enumerate_view`のイテレータは入力範囲のイテレータ（`current`）と現在のインデックス値（`pos`）を保持しており、`enumerate_view`からイテレータを取得すると最初は`pos`は`0`に初期化されています。`pos`の型は入力の範囲`R`の距離型（`ranges::range_difference_t<R>`）が使用されます。
+
+その後、`enumerate_view`のイテレータのインクリメント等による進行に伴って`current`を進行させますが、同時に移動量を`pos`メンバに加算していくことでインデックス計算を行います。
+
+間接参照では、`pos`の値と`*current`（参照）を`std::tuple`にラップして返します。
+
+```cpp
+std::vector vec = {1, 3, 5, 7, 11, 13};
+
+// enumerate_view構築時は何もしない
+std::ranges::enumerate_view ev{vec};
+
+// イテレータ取得時、内部カウンタ（インデックス）が0に初期化
+auto it = vec.begin();
+
+// 進行に伴って、同じだけ内部カウンタも増減する
+++it;
+--it;
+it+=3;
+it-=1;
+
+// 現在のカウンタ値と元の要素をtupleにラップして返す
+auto elem = *it;
+
+// 1つ目の要素がインデックス
+auto index = std::get<0>(elem);
+// 2つ目の要素が元の範囲の要素
+auto&& value = std::get<1>(elem);
+```
+
+間接参照結果の`std::tuple`は`std::tuple<range_difference_t<R>, range_reference_t<R>>`のようになり、元のイテレータの間接参照結果をそのまま（参照なら参照のまま）保持しています。そのため、間接参照結果の`std::tuple`の2つ目の要素は入力範囲の参照型が参照型なら参照型、*prvalue*なら*prvalue*になります。通常ここで要素のコピーは発生せず、元の参照型が*prvalue*の場合にのみ要素はムーブ構築されます。
+
+### イテレータの`.index()`
+
+`enumerate_view`のイテレータは他のイテレータとは異なった`.index()`メンバ関数を備えています。これは要素を取得することなく現在のインデックス値を取得するもので、要素の生成（元のイテレータの間接参照）が重くなる場合にインデックス値だけが欲しい場合に使用できます。
+
+```cpp
+int main() {
+  std::vector vec = {1, 3, 5, 7, 11, 13};
+
+  auto heavy_map = [](int n) {
+    // 何か重い変換処理
+    ...
+  };
+
+  auto ev = vec | std::views::transform(heavy_map)
+                | std::views::enumerate;
+
+  for (auto it = ev.begin(); it != ev.end(); ++it) {
+    auto index = it.index();  // 元のイテレータの間接参照を避け、インデックスのみを取得する
+
+    ...
+  }
+}
+```
+
+間接参照のコストが気にならなくても、インデックス値だけが先に欲しい場合などにも利用できるかもしれません。ただし、この場合はイテレータのループを自分で管理しなければならなくなるので、書き間違いなどに注意が必要です。
+
+### `enumerate_view`(`views::enumerate`)の諸特性
+
+入力範囲を`R`とすると次のようになります。
+
+- `reference` : `std::tuple<range_difference_t<R>, range_reference_t<R>>`
+- `range`カテゴリ : `R`のカテゴリに従う
+- `common_range` : `R`が`common_range`かつ`sized_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : `const R`も`range-with-movable-references`を満たす場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
 ## `views::zip`
 ## `views::zip_transform`
 ## `views::adjacent`
