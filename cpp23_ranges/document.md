@@ -640,8 +640,6 @@ C++23で追加されたRangeファクトリはこの`views::repeat`のみなの�
 
 ## `ranges::range_adaptor_closure`
 
-## Rangeアダプタのムーブオンリータイプへの対応
-
 # Rangeアルゴリズム
 
 ## `find_last/find_last_if/find_last_if_not`
@@ -658,6 +656,365 @@ C++23で追加されたRangeファクトリはこの`views::repeat`のみなの�
 ## 非Rangeアルゴリズムでのコンセプトの使用
 
 # `ranges::to`
+
+# `std::generator`
+
+C++20でコルーチンの言語サポートと、コルーチンユーによる機能作成のための最低限のライブラリ機能が用意されましたが、ユーザーが気軽に利用できるコルーチンアプリケーションは一切用意されていませんでした。
+
+C++23では、その第一弾として範囲をオンデマンドで生成していくためのコルーチンジェネレータクラスである`std::generator`が`<generator>`ヘッダに用意されます。
+
+```cpp
+// 新設の<generator>ヘッダに追加される
+import <generator>;
+
+auto random_number_sequence() -> std::generator<std::uint64_t> {
+  std::mt19937_64 engine(std::random_device{}());
+
+  while (true) {
+    co_yield engine();
+  }
+}
+
+int main() {
+  // 乱数を10個出力
+  for (auto rnd : random_number_sequence() | std::views::take(10))
+  {
+    std::cout << rnd << '\n';
+  }
+}
+```
+
+拙著「C++20 ライブラリ機能1」では簡易的ながらもこれと同等のクラスを例として作成していましたが、それよりも洗練されたものが標準ライブラリ機能として利用できるようになります。この例のように、`std::generator`はそれそのものが`range`（常に`input_range`）となるため、範囲`for`文や`<ranges>`の各種アダプタ、Rangeアルゴリズムなどと容易に組み合わせて使用できます
+
+`std::generator`を返す関数内で`co_yield value;`とすると`value`を呼び出し元に返し、この関数（コルーチン）の実行はそこで中断します。コルーチンの中断中はその実行は中断箇所で停止しており、関数の状態（自動変数やスタック）等は保持されています。コルーチンの直接の戻り値である`std::generator`オブジェクトをイテレートするごとに（より正確にはそのイテレータをインクリメントするごとに）、コルーチンの実行が再開され、関数の実行は次の`co_yield`まで進行し、そこでまた値を返して中断します。
+
+値の生成は常に`co_yield`で行う必要があり、`std::generator`によるコルーチンでは`co_await`を使用できません。`std::generator`によるコルーチンはそのコルーチンの末尾に到達するか`co_return`に到達することで終了（中断ではなく）します。
+
+実のところ、`std::generator`を使用しようと思って思いつく単純な例の多くは、RangeファクトリとRangeアダプタを組み合わせることでより効率的に実現可能だったりします。ある処理を`range`とその反復で表現することができる場合で新しいイテレータを作成しないとそれを達成できそうもない場合に、`std::generator`を利用することでイテレータを作成することなくそのような処理を単純な関数（コルーチン）の形で記述して`range`化することができます。
+
+## 生成する値などの型の決定
+
+`std::generator<T>`を利用する際、テンプレートパラメータ`T`には生成したい値の型を指定します。ほとんどの場合はこれは修飾なしの素の方を指定すれば事足りるはずですが、稀に参照を返したい場合もあるかもしれません。そういう場合でも`T`には参照型や`const`参照型を渡すことができます。ただ、その場合に`std::generator<T>`は`T`に応じて`co_yield`に渡せる型（正確には、プロミス型の`.yield_value()`の引数型）や、それらに応じてコルーチン呼び出し側で生成される値の型（イテレータの間接参照の結果型）を調整します。
+
+```cpp
+namespace std {
+  // std::generatorの宣言例
+  template<class Ref, class V = void, class Allocator = void>
+  class generator : public ranges::view_interface<generator<Ref, V, Allocator>> {
+    ...
+  };
+}
+```
+
+`std::generator`の第一テンプレートパラメータに指定する型を`Ref`、任意の修飾なしの型を`T`、`std::generator`のイテレータの間接参照の結果型を`reference`とすると、3種類の型の関係性は次のようになります
+
+|`Ref`|`co_yield`に渡せる型|`reference`|
+|---|---|---|
+|`T`|`T&&, const T&`|`T&&`|
+|`T&`|`T&`|`T&`|
+|`T&&`|`T&&, const T&`|`T&&`|
+|`const T&`|`const T&`|`const T&`|
+
+`const T`とか`const T&&`は実用的ではないので省略しています。
+
+`std::generator`はさらに、2つ目のテンプレートパラメータ`V`でそのイテレータの値型（`value_type`）を明示的に指定することができます。`V`が指定されない場合は`std::remove_cv_ref_t<Ref>`がデフォルトの値型として使用されます。
+
+値型`V`が明示的に指定されている場合、`Ref`が修飾なしの`T`の場合のみ先ほどの表は若干変化します
+
+|`Ref`|`co_yield`に渡せる型|`reference`|
+|---|---|---|
+|`T`|`const T&`|`T`|
+|`T&`|`T&`|`T&`|
+|`T&&`|`T&&, const T&`|`T&&`|
+|`const T&`|`const T&`|`const T&`|
+
+どちらの場合も、表にない組み合わせはコンパイルエラーとなります。
+
+ほとんどの場合、`V`を明示的に指定する必要はありません。指定が必要なのは、イテレータの参照型（`reference`）と値型（`value_type`）の関係性が特殊となり、それが問題となる場合のみです。おそらくそれは、`Ref`としてプロキシ型のようなものを使用し、なおかつ一部のイテレータ/Rangeアルゴリズムを使用しているような場合が該当するでしょう。
+
+例えば、`Ref`として`std::tuple<T&, U&>`を指定して`std::tuple<T&, U&>`のオブジェクトを生成しているとき、その値型も`std::tuple<T&, U&>`となりますが、おそらくこの場合に正しいのは`std::tuple<T, U>`であると思われます。これが問題となる場合、`V`に`std::tuple<T, U>`を明示的に指定することでイテレータの値型を直接指定することができるようになっています。
+
+## `co_yield`から`operator*`までの経路について
+
+`std::generator`を使用したコルーチン内部で`co_yield`してから、呼び出し側のイテレータの間接参照（`operator*`）の結果を受けるまでの間は、コルーチン仕様に隠蔽されているため自明ではありません。そこで何回コピーが起こりうるのかは当然気になってくるでしょう。
+
+`std::generator`は基本的に、`co_yield`に渡された値をコピーもムーブもすることなく、そのポインタだけをプロミス型内部に格納します。先ほどの表の「`co_yield`に渡せる型」は全て参照型であるため、`co_yield expr;`（及び`.yield_value()`）に渡しているオブジェクト（`expr`）が例え右辺値であったとしても、そこの`co_yield`式で中断している間は`expr`のオブジェクトは生存し続けています。その状態で呼び出し側でイテレータの間接参照を通してその値を取得する場合、ポインタを通して取得したその参照を`reference`型にキャストして返すことでコピーを回避します。
+
+ただし、`reference`が右辺値（`T`もしくは`T&&`）である場合に`co_yield`に左辺値を渡すと、`const T&`をとる`.yield_value()`が呼ばれます。この場合、`co_yield expr;`の呼び出しは、`expr`をコピーします。この場合、`co_yield(const T&)`が返す`awaitable`型オブジェクト内部に`expr`はコピーされており、プロミス型はそのオブジェクトへのポインタを保持します。この場合もその後すぐコルーチンを中断させることでこの`awaitable`型オブジェクトは次に再開されるまで生存しており、呼び出し側でイテレータの間接参照を通してその値を取得する場合には同じようにそのオブジェクトへの参照を`reference`にキャストするだけです。そのため、この経路ではコピーが1回だけ発生します。
+
+まとめると
+
+- `Ref`に右辺値（`T`/`T&&`）を指定していて`co_yield`に左辺値を渡している場合
+    - `std::generator`の機構内部でコピーが1回発生する
+    - `Ref`の素の型`T`は`copy_constructible`である必要がある
+- それ以外の場合
+    - `co_yield`から`operator*`まででコピーは発生しない
+    - `Ref`の素の型`T`はムーブオンリーでもコピー/ムーブ不可でも良い
+
+のようになっています。ただし、`co_yield`に`T`に変換可能な型の値を渡した場合は変換されてから同様の経路（おそらく2つ目の経路）を辿るため、変換に伴う処理は発生します。
+
+なお、ここまでのことはあくまで`std::generator`のイテレータの`operator*`がリターンするところまでの話です。その結果を受ける場所での受け方によっては、そこでコピーが発生する可能性があります。いずれの場合でも参照型で受けておけばコピーは発生せず、非参照型（ちょうど`T`）で受けるとコピーが発生します。
+
+```cpp
+auto gen_coro() -> std::generator<...>;
+
+int main() {
+  auto gen = gen_coro();
+  auto it = gen.begin();
+
+  auto   v1 = *it;  // ok、コピー（ムーブ）される
+  auto&  v2 = *it;  // ng、右辺値を受けられない
+  auto&& v3 = *it;  // ok、コピーなし、寿命に注意
+  const auto& v4 = *it;  // ok、コピーなし、寿命に注意
+}
+```
+
+とりあえず`auto&&`で受けておけばジェネリックかるゼロコピーになるのですが、それは参照で取得されており右辺値に対しても寿命の延長は行われていません（正確にはある1経路だけは行われます）。そのため、取得後にコルーチンを再開すると、その参照（上記例の`v3, v4`）はダングリング参照となります。とはいえこれを気にする必要があるのは、この例のように`std::generator`のイテレータを直接触ってる場合のみです。範囲`for`で使用する分には、要素を受ける変数宣言は常に`auto&&`にしておいても危険性はありません。
+
+```cpp
+auto gen_coro() -> std::generator<...>;
+
+int main() {
+  // 常にゼロコピーで受けられ、かつ安全
+  for (auto&& elem : gen_ven()) {
+    ...
+  }
+}
+```
+
+## アロケータのカスタマイズ
+
+`std::generator`はアロケータをカスタマイズすることができます。この場合のアロケータはコルーチンの最初の呼び出し時にコルーチンステートを動的確保する部分のメモリ確保方法をカスタマイズするためのものです。デフォルトでは`std::allocator<void>`が使用されています。
+
+基本的なカスタマイズ方法は、`std::generator`によるコルーチンの引数の先頭で`std::allocator_arg_t`とアロケータを受け取るようにしておくことです。
+
+```cpp
+// アロケータをカスタマイズするコルーチン宣言
+template <class Allocator>
+auto gen_coro(std::allocator_arg_t, Allocator alloc, auto&&... args) -> std::generator<int>;
+
+int main() {
+  std::pmr::synchronized_pool_resource mr{};
+  std::pmr::polymorphic_allocator<> alloc{&mr};
+
+  // アロケータはallocator_argとともに引数の先頭で渡す
+  gen_coro(std::allocator_arg, std::move(alloc), ...);
+}
+```
+
+この方法はアロケータを型に出現させることなくアロケータのカスタマイズを行えますが、`std::generator`を使用した関数では`std::allocator_arg_t`とアロケータを受け取るようにしておかなければなりません。オーバーロードを提供すればユーザーの使用負担は減らせるかもしれませんが、少し手間です。
+
+そこで、`std::generator`の3番目の引数にアロケータ型（デフォルト構築可能であること）を指定することで、追加のアロケータ専用引数を省略してカスタマイズすることもできます。
+
+```cpp
+// オリジナルのアロケータ（ステートレスであること）
+template<typename T>
+struct my_stateless_allocator {
+  my_stateless_allocator() = default;
+  ...
+};
+
+// アロケータをカスタムしたstd::generator
+template<typename T, typename V = void>
+using my_generator = std::generator<T, V, my_stateless_allocator<T>>;
+
+// アロケータをカスタマイズするコルーチン宣言
+auto gen_coro(auto&&... args) -> my_generator<int>;
+
+int main() {
+  // アロケータを渡す必要がない
+  gen_coro(...);
+}
+```
+
+ただしこの方法は、指定したアロケータ型をデフォルト構築することでアロケータを取得しているため、基本的にステートレスなアロケータ型の場合に使用します。
+
+また、`std::generator`の3番目の引数にアロケータ型を指定した場合でもコルーチン引数先頭でアロケータを渡すことができます。
+
+```cpp
+// オリジナルのアロケータ
+template<typename T>
+struct my_allocator {
+  ...
+};
+
+template<typename T, typename V = void>
+using my_generator = std::generator<T, void, my_allocator<T>>;
+
+// アロケータをカスタマイズするコルーチン宣言
+auto gen_coro(auto&&... args) -> my_generator<int>;
+
+int main() {
+  std::pmr::synchronized_pool_resource mr{};
+  std::pmr::polymorphic_allocator<> alloc{&mr};
+
+  // アロケータはallocator_argとともに引数の先頭で渡す
+  gen_coro(std::allocator_arg, alloc, ...);
+
+  // デフォルト構築可能な場合はアロケータを渡さなくても良い
+  gen_coro(...);
+}
+```
+
+最初の方法との違いは`std::generator`の型にアロケータ型が出るか出ないかだけです。
+
+まとめると、`std::generator`の3番目のテンプレート引数を`A`として、`std::generator`のアロケータのカスタマイズ方法には次の4パターンがあります
+
+1. `A`を指定しない（`A = void`）
+    1. コルーチン引数でアロケータを受け取る
+        - 受け取ったアロケータを使用
+        - 受け取ったアロケータはコルーチンステートに保存（コピーされる）
+    2. コルーチン引数でアロケータを受け取らない
+        - デフォルトアロケータの使用（アロケータカスタマイズしない）
+        - アロケータは保存されない（オンデマンドで構築）
+2. `A`を指定する
+    1. コルーチン引数でアロケータを受け取る
+        - 受け取ったアロケータを使用
+        - 受け取ったアロケータはコルーチンステートに保存（コピーされる）
+    2. コルーチン引数でアロケータを受け取らない
+        - `A`をデフォルト構築してアロケータを取得
+        - アロケータはステートレスであること
+        - アロケータは保存されない（オンデマンドで構築）
+
+アロケータを保存しなくてよい場合、確保されるコルーチンステートの領域はそれに応じて小さくなります。
+
+これらいずれかの方法によって渡したアロケータは、コルーチンの最初の呼び出し時のコルーチン初期化処理中にコルーチンステートのための領域を確保するために使用されますが、その経路は明確ではありません（コード上からは見えない）。
+
+コルーチンステートを保存するための領域が必要な場合は、コルーチン初期化の一番最初、プロミス型のオブジェクトを構築するよりも前に、`operator new`を使用することで領域を確保します。その際、使用する`operator new`はまずプロミス型のコンテキストで検索され、見つからなかったらグローバルのものを使用します。どちらの場合にせよ、見つかった`operator new`は確保する領域のサイズに続いてコルーチンの引数列を渡して呼び出されます。呼び出し（オーバロード解決）が失敗した場合、確保する領域のサイズのみを渡して呼び出します（グローバルの`operator new`が使用される場合は常にこの経路による）。
+
+`std::generator`の場合はそのプロミス型（`std::generator<...>::promise_type`）が`operator new`オーバーロードを3つ定義しており、常にこちらがメモリ確保のために使用されます。3つのうちの1つは確保サイズのみをとるデフォルトのもので、残りの2つはコルーチン引数列も取るものです。どれが使用されたとしても、上記3つの方法のいずれかで渡したアロケータがこれらの`operator new`オーバーロードに適切に伝播されて使用されることで、ユーザーが指定したアロケータによってメモリ確保が行われるようになっています。
+
+オリジナルのコルーチンアプリケーションを自作する場合でも、この`std::generator`がやっていることを参考にしてアロケータサポートを追加することができます。
+
+## `pmr::generator`
+
+C++20以降、`std::pmr::polymorphic_allocator`はC++のライブラリ機能のうちで基本的なものとして扱われており、アロケータカスタマイズをサポートする標準ライブラリ機能は`polymorphic_allocator`のサポートを含むようになっています。それは型エイリアスを定義することで行われており、そのエイリアスは`std::pmr`名前空間に配置されます。
+
+`std::generator`にも、3番目のアロケータパラメータに`polymorphic_allocator`が事前に指定された`std::pmr::generator`が用意されています。
+
+前述のように、この場合は2つの方法でアロケータの動作（使用するメモリリソース）をカスタマイズすることができます。
+
+```cpp
+// polymorphic_allocatorを使用するコルーチン宣言
+auto gen_coro(auto&&... args) -> std::pmr::generator<int>;
+
+int main() {
+  std::pmr::synchronized_pool_resource mr{};
+  std::pmr::polymorphic_allocator<> alloc{&mr};
+
+  // アロケータをコルーチンに渡して指定
+  gen_coro(std::allocator_arg, alloc, ...);
+
+  // デフォルトリソースを変更
+  std::pmr::set_default_resource(&mr);
+  gen_coro(...);
+}
+```
+
+`polymorphic_allocator`はデフォルトコンストラクタで`std::pmr::get_default_resource()`からデフォルトのメモリリソースを取得しますが、このデフォルトは`std::pmr::set_default_resource()`で変更することができます。そのため、アロケータを明示的に渡さず内部でデフォルト構築して使用されている場合でも、アロケータの動作をカスタマイズすることが可能です。
+
+ただし、どちらの場合でも、使用するメモリリソースはそれを渡しているコルーチンの動作期間（戻り値`std::generator`オブジェクトの生存期間）よりも長くなるように管理する必要があります。
+
+## `elements_of`
+
+`std::ranges::elements_of`は、`std::generator`によるコルーチン内で`range`を展開しながら順次生成（`co_yiled`）するためのユーティリティです。
+
+```cpp
+auto gen_coro(auto&&... args) -> std::pmr::generator<int> {
+  co_yield 1; // ok、1を生成
+
+  std::array<int, 5> arr = {2, 3, 4, 5, 6};
+
+  co_yield arr; // ng、std::array<int, 5>を生成しようとする
+
+  for (int n : arr) {
+    co_yield n; // ok
+  }
+  // 2, 3, 4, 5, 6と生成
+
+  co_yield std::ranges::elements_of(arr); // ok、2, 3, 4, 5, 6と生成
+}
+```
+
+パイプラインで`range`を`views::join`するのと同じことをコルーチンジェネレータ内で行ってくれます。
+
+`elements_of`を使用しない場合、範囲`for`で展開して順次`co_yiled`していくコードを書かなければなりませんが、`elements_of`を使用することでそれを簡略化することができます。
+
+なお、この例では`std::array`を`elements_of`に渡していますが、`std::array`に限らず任意の`range`を渡すことができます。ただし、`std::generator<T>`に対して`T`に変換可能な型を要素とする`range`でなければなりません。
+
+これだけだと範囲`for`で展開するコードを書いてもさほど変わりはないような気もしますが、`elements_of`が重要なのはコルーチンジェネレータをネストさせた場合においてです。ジェネレータのネストは自身の再帰呼び出しや他のコルーチンジェネレータの呼び出しなどによって発生し、`elements_of`の引数でネストしたコルーチンを呼び出すことで先ほどの`range`の場合と同様にコルーチン起動と要素の展開および順次生成を行えます。
+
+```cpp
+// 単純な二分木
+struct tree {
+  tree* left;
+  tree* right;
+  int value;
+};
+
+// コルーチンジェネレータによるtreeのトラバーサル（深さ優先）
+auto dfs_traverse(tree& node) -> std::generator<int> {
+  if (node.left) {
+    co_yield std::ranges::elements_of(dfs_traverse(*node.left));
+  }
+
+  co_yield node.value;
+  
+  if (node.right) {
+    co_yield std::ranges::elements_of(dfs_traverse(*node.right));
+  }
+}
+```
+
+この時、`elements_of`によって展開するとネストしたコルーチンジェネレータを手動で呼び出して要素ごとに`co_yield`するよりも効率的に各要素を生成していくことができます。むしろ、`elements_of`の本領はこちらです。
+
+例えば、上記例の`dfs_traverse()`において、ネストしたコルーチンジェネレータを手動展開すると次のようになります
+
+```cpp
+// elements_ofを使用しないtreeのトラバーサル
+auto dfs_traverse(Tree& tree) -> std::generator<int> {
+  if (tree.left) {
+    for (int x : dfs_traverse(*tree.left)) {
+      co_yield x;
+    }
+  }
+
+  co_yield tree.value;
+  
+  if (tree.right) {
+    for (int x : dfs_traverse(*tree.right)) {
+      co_yield x;
+    }
+  }
+}
+```
+
+最初に`dfs_traverse()`を呼び出した側（一番外側）から見ると、`dfs_traverse()`を再開すると各`for`では、外側の`dfs_traverse()`の中断とネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）の再開がループの度に行われます。この例がそうですが、ネストが深くなると一番外側の1回のループでその深さの分だけ中断と再開が連鎖することになります（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って`N`回中断と再開が再帰的に行われる）。
+
+`elements_of`を使用すると、`co_yield elements_of(...);`の評価で一番外側の`dfs_traverse()`が中断し、ネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）が起動され、以降外側のコルーチンへの再開はこのネストしたコルーチンを直接再開するようになります。これは何段ネストしていたとしても、大元のコルーチンの制御が直接一番深いところのコルーチンを制御するようになります。このため、ネストの深さによらず、一番外側の1回のループで中断と再開は一回だけ発生します（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って1回だけ中断と再開が行われる）。
+
+また、このようにコルーチンがネストして呼ばれている時に対称転送（*symmetric transfer*）を適切に行うことで、ネストしたコルーチンが相互再起呼び出しを行ってスタック消費量が増えてしまう問題を回避しています。
+
+`elements_of`はこれらの最適化を単一の`std::generator`型のみで実現するためにそのネスト構造を検出するためのマーカーであり、実のところ関数ではなく構造体（集成体）です（そのため、`elements_of{...}`としても使用できます）。
+
+```cpp
+namespace std::ranges {
+
+  // elements_ofの実装例
+  template<range R, class Allocator = allocator<byte>>
+  struct elements_of {
+    [[no_unique_address]]
+    R range;
+    
+    [[no_unique_address]]
+    Allocator allocator = Allocator();
+  };
+
+  // 推論補助
+  template<class R, class Allocator = allocator<byte>>
+  elements_of(R&&, Allocator = Allocator()) -> elements_of<R&&, Allocator>;
+}
+```
 
 # その他の関連する変更
 
@@ -1155,365 +1512,6 @@ int main() {
 }
 ```
 
-## `std::generator`
-
-C++20でコルーチンの言語サポートと、コルーチンユーによる機能作成のための最低限のライブラリ機能が用意されましたが、ユーザーが気軽に利用できるコルーチンアプリケーションは一切用意されていませんでした。
-
-C++23では、その第一弾として範囲をオンデマンドで生成していくためのコルーチンジェネレータクラスである`std::generator`が`<generator>`ヘッダに用意されます。
-
-```cpp
-// 新設の<generator>ヘッダに追加される
-import <generator>;
-
-auto random_number_sequence() -> std::generator<std::uint64_t> {
-  std::mt19937_64 engine(std::random_device{}());
-
-  while (true) {
-    co_yield engine();
-  }
-}
-
-int main() {
-  // 乱数を10個出力
-  for (auto rnd : random_number_sequence() | std::views::take(10))
-  {
-    std::cout << rnd << '\n';
-  }
-}
-```
-
-拙著「C++20 ライブラリ機能1」では簡易的ながらもこれと同等のクラスを例として作成していましたが、それよりも洗練されたものが標準ライブラリ機能として利用できるようになります。この例のように、`std::generator`はそれそのものが`range`（常に`input_range`）となるため、範囲`for`文や`<ranges>`の各種アダプタ、Rangeアルゴリズムなどと容易に組み合わせて使用できます
-
-`std::generator`を返す関数内で`co_yield value;`とすると`value`を呼び出し元に返し、この関数（コルーチン）の実行はそこで中断します。コルーチンの中断中はその実行は中断箇所で停止しており、関数の状態（自動変数やスタック）等は保持されています。コルーチンの直接の戻り値である`std::generator`オブジェクトをイテレートするごとに（より正確にはそのイテレータをインクリメントするごとに）、コルーチンの実行が再開され、関数の実行は次の`co_yield`まで進行し、そこでまた値を返して中断します。
-
-値の生成は常に`co_yield`で行う必要があり、`std::generator`によるコルーチンでは`co_await`を使用できません。`std::generator`によるコルーチンはそのコルーチンの末尾に到達するか`co_return`に到達することで終了（中断ではなく）します。
-
-実のところ、`std::generator`を使用しようと思って思いつく単純な例の多くは、RangeファクトリとRangeアダプタを組み合わせることでより効率的に実現可能だったりします。ある処理を`range`とその反復で表現することができる場合で新しいイテレータを作成しないとそれを達成できそうもない場合に、`std::generator`を利用することでイテレータを作成することなくそのような処理を単純な関数（コルーチン）の形で記述して`range`化することができます。
-
-### 生成する値などの型の決定
-
-`std::generator<T>`を利用する際、テンプレートパラメータ`T`には生成したい値の型を指定します。ほとんどの場合はこれは修飾なしの素の方を指定すれば事足りるはずですが、稀に参照を返したい場合もあるかもしれません。そういう場合でも`T`には参照型や`const`参照型を渡すことができます。ただ、その場合に`std::generator<T>`は`T`に応じて`co_yield`に渡せる型（正確には、プロミス型の`.yield_value()`の引数型）や、それらに応じてコルーチン呼び出し側で生成される値の型（イテレータの間接参照の結果型）を調整します。
-
-```cpp
-namespace std {
-  // std::generatorの宣言例
-  template<class Ref, class V = void, class Allocator = void>
-  class generator : public ranges::view_interface<generator<Ref, V, Allocator>> {
-    ...
-  };
-}
-```
-
-`std::generator`の第一テンプレートパラメータに指定する型を`Ref`、任意の修飾なしの型を`T`、`std::generator`のイテレータの間接参照の結果型を`reference`とすると、3種類の型の関係性は次のようになります
-
-|`Ref`|`co_yield`に渡せる型|`reference`|
-|---|---|---|
-|`T`|`T&&, const T&`|`T&&`|
-|`T&`|`T&`|`T&`|
-|`T&&`|`T&&, const T&`|`T&&`|
-|`const T&`|`const T&`|`const T&`|
-
-`const T`とか`const T&&`は実用的ではないので省略しています。
-
-`std::generator`はさらに、2つ目のテンプレートパラメータ`V`でそのイテレータの値型（`value_type`）を明示的に指定することができます。`V`が指定されない場合は`std::remove_cv_ref_t<Ref>`がデフォルトの値型として使用されます。
-
-値型`V`が明示的に指定されている場合、`Ref`が修飾なしの`T`の場合のみ先ほどの表は若干変化します
-
-|`Ref`|`co_yield`に渡せる型|`reference`|
-|---|---|---|
-|`T`|`const T&`|`T`|
-|`T&`|`T&`|`T&`|
-|`T&&`|`T&&, const T&`|`T&&`|
-|`const T&`|`const T&`|`const T&`|
-
-どちらの場合も、表にない組み合わせはコンパイルエラーとなります。
-
-ほとんどの場合、`V`を明示的に指定する必要はありません。指定が必要なのは、イテレータの参照型（`reference`）と値型（`value_type`）の関係性が特殊となり、それが問題となる場合のみです。おそらくそれは、`Ref`としてプロキシ型のようなものを使用し、なおかつ一部のイテレータ/Rangeアルゴリズムを使用しているような場合が該当するでしょう。
-
-例えば、`Ref`として`std::tuple<T&, U&>`を指定して`std::tuple<T&, U&>`のオブジェクトを生成しているとき、その値型も`std::tuple<T&, U&>`となりますが、おそらくこの場合に正しいのは`std::tuple<T, U>`であると思われます。これが問題となる場合、`V`に`std::tuple<T, U>`を明示的に指定することでイテレータの値型を直接指定することができるようになっています。
-
-### `co_yield`から`operator*`までの経路について
-
-`std::generator`を使用したコルーチン内部で`co_yield`してから、呼び出し側のイテレータの間接参照（`operator*`）の結果を受けるまでの間は、コルーチン仕様に隠蔽されているため自明ではありません。そこで何回コピーが起こりうるのかは当然気になってくるでしょう。
-
-`std::generator`は基本的に、`co_yield`に渡された値をコピーもムーブもすることなく、そのポインタだけをプロミス型内部に格納します。先ほどの表の「`co_yield`に渡せる型」は全て参照型であるため、`co_yield expr;`（及び`.yield_value()`）に渡しているオブジェクト（`expr`）が例え右辺値であったとしても、そこの`co_yield`式で中断している間は`expr`のオブジェクトは生存し続けています。その状態で呼び出し側でイテレータの間接参照を通してその値を取得する場合、ポインタを通して取得したその参照を`reference`型にキャストして返すことでコピーを回避します。
-
-ただし、`reference`が右辺値（`T`もしくは`T&&`）である場合に`co_yield`に左辺値を渡すと、`const T&`をとる`.yield_value()`が呼ばれます。この場合、`co_yield expr;`の呼び出しは、`expr`をコピーします。この場合、`co_yield(const T&)`が返す`awaitable`型オブジェクト内部に`expr`はコピーされており、プロミス型はそのオブジェクトへのポインタを保持します。この場合もその後すぐコルーチンを中断させることでこの`awaitable`型オブジェクトは次に再開されるまで生存しており、呼び出し側でイテレータの間接参照を通してその値を取得する場合には同じようにそのオブジェクトへの参照を`reference`にキャストするだけです。そのため、この経路ではコピーが1回だけ発生します。
-
-まとめると
-
-- `Ref`に右辺値（`T`/`T&&`）を指定していて`co_yield`に左辺値を渡している場合
-    - `std::generator`の機構内部でコピーが1回発生する
-    - `Ref`の素の型`T`は`copy_constructible`である必要がある
-- それ以外の場合
-    - `co_yield`から`operator*`まででコピーは発生しない
-    - `Ref`の素の型`T`はムーブオンリーでもコピー/ムーブ不可でも良い
-
-のようになっています。ただし、`co_yield`に`T`に変換可能な型の値を渡した場合は変換されてから同様の経路（おそらく2つ目の経路）を辿るため、変換に伴う処理は発生します。
-
-なお、ここまでのことはあくまで`std::generator`のイテレータの`operator*`がリターンするところまでの話です。その結果を受ける場所での受け方によっては、そこでコピーが発生する可能性があります。いずれの場合でも参照型で受けておけばコピーは発生せず、非参照型（ちょうど`T`）で受けるとコピーが発生します。
-
-```cpp
-auto gen_coro() -> std::generator<...>;
-
-int main() {
-  auto gen = gen_coro();
-  auto it = gen.begin();
-
-  auto   v1 = *it;  // ok、コピー（ムーブ）される
-  auto&  v2 = *it;  // ng、右辺値を受けられない
-  auto&& v3 = *it;  // ok、コピーなし、寿命に注意
-  const auto& v4 = *it;  // ok、コピーなし、寿命に注意
-}
-```
-
-とりあえず`auto&&`で受けておけばジェネリックかるゼロコピーになるのですが、それは参照で取得されており右辺値に対しても寿命の延長は行われていません（正確にはある1経路だけは行われます）。そのため、取得後にコルーチンを再開すると、その参照（上記例の`v3, v4`）はダングリング参照となります。とはいえこれを気にする必要があるのは、この例のように`std::generator`のイテレータを直接触ってる場合のみです。範囲`for`で使用する分には、要素を受ける変数宣言は常に`auto&&`にしておいても危険性はありません。
-
-```cpp
-auto gen_coro() -> std::generator<...>;
-
-int main() {
-  // 常にゼロコピーで受けられ、かつ安全
-  for (auto&& elem : gen_ven()) {
-    ...
-  }
-}
-```
-
-### アロケータのカスタマイズ
-
-`std::generator`はアロケータをカスタマイズすることができます。この場合のアロケータはコルーチンの最初の呼び出し時にコルーチンステートを動的確保する部分のメモリ確保方法をカスタマイズするためのものです。デフォルトでは`std::allocator<void>`が使用されています。
-
-基本的なカスタマイズ方法は、`std::generator`によるコルーチンの引数の先頭で`std::allocator_arg_t`とアロケータを受け取るようにしておくことです。
-
-```cpp
-// アロケータをカスタマイズするコルーチン宣言
-template <class Allocator>
-auto gen_coro(std::allocator_arg_t, Allocator alloc, auto&&... args) -> std::generator<int>;
-
-int main() {
-  std::pmr::synchronized_pool_resource mr{};
-  std::pmr::polymorphic_allocator<> alloc{&mr};
-
-  // アロケータはallocator_argとともに引数の先頭で渡す
-  gen_coro(std::allocator_arg, std::move(alloc), ...);
-}
-```
-
-この方法はアロケータを型に出現させることなくアロケータのカスタマイズを行えますが、`std::generator`を使用した関数では`std::allocator_arg_t`とアロケータを受け取るようにしておかなければなりません。オーバーロードを提供すればユーザーの使用負担は減らせるかもしれませんが、少し手間です。
-
-そこで、`std::generator`の3番目の引数にアロケータ型（デフォルト構築可能であること）を指定することで、追加のアロケータ専用引数を省略してカスタマイズすることもできます。
-
-```cpp
-// オリジナルのアロケータ（ステートレスであること）
-template<typename T>
-struct my_stateless_allocator {
-  my_stateless_allocator() = default;
-  ...
-};
-
-// アロケータをカスタムしたstd::generator
-template<typename T, typename V = void>
-using my_generator = std::generator<T, V, my_stateless_allocator<T>>;
-
-// アロケータをカスタマイズするコルーチン宣言
-auto gen_coro(auto&&... args) -> my_generator<int>;
-
-int main() {
-  // アロケータを渡す必要がない
-  gen_coro(...);
-}
-```
-
-ただしこの方法は、指定したアロケータ型をデフォルト構築することでアロケータを取得しているため、基本的にステートレスなアロケータ型の場合に使用します。
-
-また、`std::generator`の3番目の引数にアロケータ型を指定した場合でもコルーチン引数先頭でアロケータを渡すことができます。
-
-```cpp
-// オリジナルのアロケータ
-template<typename T>
-struct my_allocator {
-  ...
-};
-
-template<typename T, typename V = void>
-using my_generator = std::generator<T, void, my_allocator<T>>;
-
-// アロケータをカスタマイズするコルーチン宣言
-auto gen_coro(auto&&... args) -> my_generator<int>;
-
-int main() {
-  std::pmr::synchronized_pool_resource mr{};
-  std::pmr::polymorphic_allocator<> alloc{&mr};
-
-  // アロケータはallocator_argとともに引数の先頭で渡す
-  gen_coro(std::allocator_arg, alloc, ...);
-
-  // デフォルト構築可能な場合はアロケータを渡さなくても良い
-  gen_coro(...);
-}
-```
-
-最初の方法との違いは`std::generator`の型にアロケータ型が出るか出ないかだけです。
-
-まとめると、`std::generator`の3番目のテンプレート引数を`A`として、`std::generator`のアロケータのカスタマイズ方法には次の4パターンがあります
-
-1. `A`を指定しない（`A = void`）
-    1. コルーチン引数でアロケータを受け取る
-        - 受け取ったアロケータを使用
-        - 受け取ったアロケータはコルーチンステートに保存（コピーされる）
-    2. コルーチン引数でアロケータを受け取らない
-        - デフォルトアロケータの使用（アロケータカスタマイズしない）
-        - アロケータは保存されない（オンデマンドで構築）
-2. `A`を指定する
-    1. コルーチン引数でアロケータを受け取る
-        - 受け取ったアロケータを使用
-        - 受け取ったアロケータはコルーチンステートに保存（コピーされる）
-    2. コルーチン引数でアロケータを受け取らない
-        - `A`をデフォルト構築してアロケータを取得
-        - アロケータはステートレスであること
-        - アロケータは保存されない（オンデマンドで構築）
-
-アロケータを保存しなくてよい場合、確保されるコルーチンステートの領域はそれに応じて小さくなります。
-
-これらいずれかの方法によって渡したアロケータは、コルーチンの最初の呼び出し時のコルーチン初期化処理中にコルーチンステートのための領域を確保するために使用されますが、その経路は明確ではありません（コード上からは見えない）。
-
-コルーチンステートを保存するための領域が必要な場合は、コルーチン初期化の一番最初、プロミス型のオブジェクトを構築するよりも前に、`operator new`を使用することで領域を確保します。その際、使用する`operator new`はまずプロミス型のコンテキストで検索され、見つからなかったらグローバルのものを使用します。どちらの場合にせよ、見つかった`operator new`は確保する領域のサイズに続いてコルーチンの引数列を渡して呼び出されます。呼び出し（オーバロード解決）が失敗した場合、確保する領域のサイズのみを渡して呼び出します（グローバルの`operator new`が使用される場合は常にこの経路による）。
-
-`std::generator`の場合はそのプロミス型（`std::generator<...>::promise_type`）が`operator new`オーバーロードを3つ定義しており、常にこちらがメモリ確保のために使用されます。3つのうちの1つは確保サイズのみをとるデフォルトのもので、残りの2つはコルーチン引数列も取るものです。どれが使用されたとしても、上記3つの方法のいずれかで渡したアロケータがこれらの`operator new`オーバーロードに適切に伝播されて使用されることで、ユーザーが指定したアロケータによってメモリ確保が行われるようになっています。
-
-オリジナルのコルーチンアプリケーションを自作する場合でも、この`std::generator`がやっていることを参考にしてアロケータサポートを追加することができます。
-
-### `pmr::generator`
-
-C++20以降、`std::pmr::polymorphic_allocator`はC++のライブラリ機能のうちで基本的なものとして扱われており、アロケータカスタマイズをサポートする標準ライブラリ機能は`polymorphic_allocator`のサポートを含むようになっています。それは型エイリアスを定義することで行われており、そのエイリアスは`std::pmr`名前空間に配置されます。
-
-`std::generator`にも、3番目のアロケータパラメータに`polymorphic_allocator`が事前に指定された`std::pmr::generator`が用意されています。
-
-前述のように、この場合は2つの方法でアロケータの動作（使用するメモリリソース）をカスタマイズすることができます。
-
-```cpp
-// polymorphic_allocatorを使用するコルーチン宣言
-auto gen_coro(auto&&... args) -> std::pmr::generator<int>;
-
-int main() {
-  std::pmr::synchronized_pool_resource mr{};
-  std::pmr::polymorphic_allocator<> alloc{&mr};
-
-  // アロケータをコルーチンに渡して指定
-  gen_coro(std::allocator_arg, alloc, ...);
-
-  // デフォルトリソースを変更
-  std::pmr::set_default_resource(&mr);
-  gen_coro(...);
-}
-```
-
-`polymorphic_allocator`はデフォルトコンストラクタで`std::pmr::get_default_resource()`からデフォルトのメモリリソースを取得しますが、このデフォルトは`std::pmr::set_default_resource()`で変更することができます。そのため、アロケータを明示的に渡さず内部でデフォルト構築して使用されている場合でも、アロケータの動作をカスタマイズすることが可能です。
-
-ただし、どちらの場合でも、使用するメモリリソースはそれを渡しているコルーチンの動作期間（戻り値`std::generator`オブジェクトの生存期間）よりも長くなるように管理する必要があります。
-
-### `elements_of`
-
-`std::ranges::elements_of`は、`std::generator`によるコルーチン内で`range`を展開しながら順次生成（`co_yiled`）するためのユーティリティです。
-
-```cpp
-auto gen_coro(auto&&... args) -> std::pmr::generator<int> {
-  co_yield 1; // ok、1を生成
-
-  std::array<int, 5> arr = {2, 3, 4, 5, 6};
-
-  co_yield arr; // ng、std::array<int, 5>を生成しようとする
-
-  for (int n : arr) {
-    co_yield n; // ok
-  }
-  // 2, 3, 4, 5, 6と生成
-
-  co_yield std::ranges::elements_of(arr); // ok、2, 3, 4, 5, 6と生成
-}
-```
-
-パイプラインで`range`を`views::join`するのと同じことをコルーチンジェネレータ内で行ってくれます。
-
-`elements_of`を使用しない場合、範囲`for`で展開して順次`co_yiled`していくコードを書かなければなりませんが、`elements_of`を使用することでそれを簡略化することができます。
-
-なお、この例では`std::array`を`elements_of`に渡していますが、`std::array`に限らず任意の`range`を渡すことができます。ただし、`std::generator<T>`に対して`T`に変換可能な型を要素とする`range`でなければなりません。
-
-これだけだと範囲`for`で展開するコードを書いてもさほど変わりはないような気もしますが、`elements_of`が重要なのはコルーチンジェネレータをネストさせた場合においてです。ジェネレータのネストは自身の再帰呼び出しや他のコルーチンジェネレータの呼び出しなどによって発生し、`elements_of`の引数でネストしたコルーチンを呼び出すことで先ほどの`range`の場合と同様にコルーチン起動と要素の展開および順次生成を行えます。
-
-```cpp
-// 単純な二分木
-struct tree {
-  tree* left;
-  tree* right;
-  int value;
-};
-
-// コルーチンジェネレータによるtreeのトラバーサル（深さ優先）
-auto dfs_traverse(tree& node) -> std::generator<int> {
-  if (node.left) {
-    co_yield std::ranges::elements_of(dfs_traverse(*node.left));
-  }
-
-  co_yield node.value;
-  
-  if (node.right) {
-    co_yield std::ranges::elements_of(dfs_traverse(*node.right));
-  }
-}
-```
-
-この時、`elements_of`によって展開するとネストしたコルーチンジェネレータを手動で呼び出して要素ごとに`co_yield`するよりも効率的に各要素を生成していくことができます。むしろ、`elements_of`の本領はこちらです。
-
-例えば、上記例の`dfs_traverse()`において、ネストしたコルーチンジェネレータを手動展開すると次のようになります
-
-```cpp
-// elements_ofを使用しないtreeのトラバーサル
-auto dfs_traverse(Tree& tree) -> std::generator<int> {
-  if (tree.left) {
-    for (int x : dfs_traverse(*tree.left)) {
-      co_yield x;
-    }
-  }
-
-  co_yield tree.value;
-  
-  if (tree.right) {
-    for (int x : dfs_traverse(*tree.right)) {
-      co_yield x;
-    }
-  }
-}
-```
-
-最初に`dfs_traverse()`を呼び出した側（一番外側）から見ると、`dfs_traverse()`を再開すると各`for`では、外側の`dfs_traverse()`の中断とネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）の再開がループの度に行われます。この例がそうですが、ネストが深くなると一番外側の1回のループでその深さの分だけ中断と再開が連鎖することになります（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って`N`回中断と再開が再帰的に行われる）。
-
-`elements_of`を使用すると、`co_yield elements_of(...);`の評価で一番外側の`dfs_traverse()`が中断し、ネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）が起動され、以降外側のコルーチンへの再開はこのネストしたコルーチンを直接再開するようになります。これは何段ネストしていたとしても、大元のコルーチンの制御が直接一番深いところのコルーチンを制御するようになります。このため、ネストの深さによらず、一番外側の1回のループで中断と再開は一回だけ発生します（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って1回だけ中断と再開が行われる）。
-
-また、このようにコルーチンがネストして呼ばれている時に対称転送（*symmetric transfer*）を適切に行うことで、ネストしたコルーチンが相互再起呼び出しを行ってスタック消費量が増えてしまう問題を回避しています。
-
-`elements_of`はこれらの最適化を単一の`std::generator`型のみで実現するためにそのネスト構造を検出するためのマーカーであり、実のところ関数ではなく構造体（集成体）です（そのため、`elements_of{...}`としても使用できます）。
-
-```cpp
-namespace std::ranges {
-
-  // elements_ofの実装例
-  template<range R, class Allocator = allocator<byte>>
-  struct elements_of {
-    [[no_unique_address]]
-    R range;
-    
-    [[no_unique_address]]
-    Allocator allocator = Allocator();
-  };
-
-  // 推論補助
-  template<class R, class Allocator = allocator<byte>>
-  elements_of(R&&, Allocator = Allocator()) -> elements_of<R&&, Allocator>;
-}
-```
-
 ## `view`の２引数コンストラクタの`explicit`化
 
 C++20の各種Rangeアダプタの`view`型の中には、コンストラクタで2引数以上を受け取るものがあり、そのコンストラクタは`explicit`指定されていませんでした。一方、C++23で追加された新しい`view`型では、2引数以上を受け取るコンストラクタは`explicit`指定がデフォルトになっています。
@@ -1603,7 +1601,9 @@ int main() {
 
 これによって、上記の例を含めた標準ライブラリでの*stashing iterator*の扱いが改善されます。
 
-## P2494R2
+
+## Rangeアダプタのムーブオンリータイプへの対応
+P2494R2
 
 ## P2609R3?
 
