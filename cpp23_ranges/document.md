@@ -708,8 +708,8 @@ auto it = vec.begin();
 // 進行に伴って、同じだけ内部カウンタも増減する
 ++it;
 --it;
-it+=3;
-it-=1;
+it += 3;
+it -= 1;
 
 // 現在のカウンタ値と元の要素をtupleにラップして返す
 auto elem = *it;
@@ -721,6 +721,8 @@ auto&& value = std::get<1>(elem);
 ```
 
 間接参照結果の`std::tuple`は`std::tuple<range_difference_t<R>, range_reference_t<R>>`のようになり、元のイテレータの間接参照結果をそのまま（参照なら参照のまま）保持しています。そのため、間接参照結果の`std::tuple`の2つ目の要素は入力範囲の参照型が参照型なら参照型、*prvalue*なら*prvalue*になります。通常ここで要素のコピーは発生せず、元の参照型が*prvalue*の場合にのみ要素はムーブ構築されます。
+
+イテレータが行う特別なことはこの2点だけで、イテレータの進行とインデックス（整数値）の進行は完全に同期させることができるため、`enumerate_view<R>`は元の範囲`R`の性質をほぼそのまま受け継ぎます。ただし、要素のメモリ位置は連続したものにならないため`contiguous_range`にはなりません。 
 
 ### イテレータの`.index()`
 
@@ -753,13 +755,160 @@ int main() {
 入力範囲を`R`とすると次のようになります。
 
 - `reference` : `std::tuple<range_difference_t<R>, range_reference_t<R>>`
-- `range`カテゴリ : `R`のカテゴリに従う
+- `range`カテゴリ : `R`のカテゴリに従う（ただし、`contiguous_range`にはならない）
 - `common_range` : `R`が`common_range`かつ`sized_range`の場合
 - `sized_range` : `R`が`sized_range`の場合
 - `const-iterable` : `const R`も`range-with-movable-references`を満たす場合
 - `borrowed_range` : `R`が`borrowed_range`の場合
 
 ## `views::zip`
+
+`views::zip`は複数の範囲を入力に取り、それらの対応するインデックスの要素を一纏めにした要素からなる1つの範囲を生成する`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {'a', 'b', 'c', 'd'};
+  std::list lst = {1, 2, 3, 4};
+  std::deque deq = {"あ", "い", "う", "え"};
+
+  auto zip = std::views::zip(vec, lst, deq);
+
+  for (auto [alpha, num, hira] : zip) {
+    std::cout << std::format("({:c}, {:d}, {:s})\n", alpha, num, hira);
+  }
+}
+```
+```{style=planetext}
+(a, 1, あ)
+(b, 2, い)
+(c, 3, う)
+(d, 4, え)
+```
+
+複数の範囲を横並びに一括で扱いたい場合に、`views::zip`に通すことでそれらを1つの範囲として扱うことができます。その際、`zip`の要素型は元の範囲それぞれの要素を参照する`std::tuple`オブジェクトとなり、その`std::tuple`オブジェクト内部での各要素の順番は範囲の入力順に一致します。`zip`の各要素の`std::tuple`オブジェクトは入力の各範囲のイテレータの間接参照結果が参照なら参照を保持することでコピーを回避しており、入力イテレータの間接参照が*prvalue*を返す場合にのみムーブして値を保持します。
+
+```cpp
+int main() {
+  std::vector vec = {'a', 'b', 'c', 'd'};
+  std::list lst = {1, 2, 3, 4};
+  std::deque deq = {"あ", "い", "う", "え"};
+
+  auto zip = std::views::zip(vec, lst, deq);
+
+  for (auto tuple : zip) {
+    char elem0 = std::get<0>(tuple);  // vecの要素
+    int elem1 = std::get<1>(tuple);   // lstの要素
+    std::string_view elem2 = std::get<2>(tuple);  // deqの要素
+  }
+
+  auto zip2 = std::views::zip(deq, lst, vec);
+
+  for (auto tuple : zip2) {
+    std::string_view elem0 = std::get<0>(tuple);  // deqの要素
+    int elem1 = std::get<1>(tuple);   // lstの要素
+    char elem2 = std::get<2>(tuple);  // vecの要素
+  }
+}
+```
+
+`views::zip`の範囲としての長さは、入力範囲のうち最も短いものに合わせられます。
+
+```cpp
+int main() {
+  std::vector vec = {'a', 'b', 'c', 'd'};
+  std::list lst = {1, 2};
+  std::deque deq = {"あ", "い", "う", "え"};
+
+  auto zip1 = std::views::zip(vec, deq);
+  auto zip2 = std::views::zip(vec, deq, lst);
+
+  std::cout << std::format("length = {}\n", zip1.size());
+  std::cout << std::format("length = {}\n", zip2.size());
+}
+```
+```{style=planetext}
+length = 4
+length = 2
+```
+
+ただし、`.size()`（及び`ranges::size()`）が使用可能なのは、入力範囲が全て`sized_range`である場合のみです。
+
+`views::zip`そのものはカスタマイゼーションポイントオブジェクトであり、0個以上の引数（`args...`）を受け取ってその数に応じて次のどちらかの動作をします
+
+- 引数なし（`sizeof...(args) == 0`）の場合 : `views​::​empty<std::tuple<>>`
+- それ以外の場合 : `args...`内のそれぞれの範囲を`views::all`で包みながら、`zip_view`を構築して返す
+
+`views::zip`はRangeアダプタオブジェクトではないため、パイプ（`|`）を使用した入力はサポートされていません。Rangeファクトリ同様に、パイプラインの先頭で使用することになるでしょう。
+
+```cpp
+int main() {
+  std::vector vec = {'a', 'b', 'c', 'd'};
+  std::list lst = {1, 2, 3, 4};
+  std::deque deq = {"あ", "い", "う", "え"};
+
+  auto zip = lst | std::views::zip(vec, deq); // ng
+}
+```
+
+### `zip_view`
+
+`views::zip`に1つ以上の範囲を入力する場合は`zip_view`が返されます。
+
+```cpp
+namespace std::ranges {
+
+  // zip_viewの宣言例
+  template<input_range... Views>
+    requires (view<Views> && ...) && (sizeof...(Views) > 0)
+  class zip_view : public view_interface<zip_view<Views...>> {
+    ...
+  };
+}
+```
+
+`zip_view`そのものは入力範囲に`input_range`であることくらいしか要求していないため、`zip`できる範囲とその組み合わせに制限はありません。ただし、`zip_view`のRangeカテゴリは入力範囲のカテゴリのうち最も弱いものになります。
+
+### 動作詳細
+
+`zip_view`は構築されると入力範囲を`views::all`に通したものを`std::tuple`につめて保持しますが、それ以上のことはしません。実際の`zip`動作はそのイテレータが担っています。
+
+`zip_view`のイテレータは入力範囲の全てのイテレータを保持しており、進行に伴ってはそれら全てのイテレータを同様に進行させます。
+
+`zip_view`のイテレータの間接参照では、保持する全てのイテレータに対して`*i`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。前述のように、ここでは参照は参照のままラップされます。
+
+```cpp
+// 入力範囲の保存or参照のみを行う
+auto zip = std::views::zip(...);
+
+// 入力範囲のイテレータを取り出し保存する
+auto it = zip.begin();
+
+// 進行は保持するイテレータ全てに同じ操作を適用する
+++it;
+--it;
+it += 3;
+it -= 3;
+
+// 保持するイテレータ全ての間接参照結果をtupleにラップして返す
+auto tuple = *it;
+```
+
+動作自体はそこまで難しいことはしておらず、割とシンプルです。ただし、この様子から明らかなように、`zip_view`に入力する範囲の数を`N`とすると`zip_view`のサイズ及びほぼ全ての操作に対して`O(N)`のコストがかかります。例えば、`zip_view`及びそのイテレータは`N`個の範囲（`views::all`に通したもの）orイテレータを保持しており、`zip_view`のイテレータのインクリメントは`N`個のイテレータをインクリメントし、間接参照は`N`個のイテレータを間接参照します。
+
+### `zip_view`(`views::zip`)の諸特性
+
+少なくとも1つ以上入力があり、入力範囲型の列（パック）を`Rs`とすると次のようになります
+
+- `reference` : `std::tuple<range_reference_t<Rs>...>`
+- `range`カテゴリ : `Rs`のカテゴリのうち最も弱いもの（ただし、`contiguous_range`にはならない）
+- `common_range` : 次のいずれかの条件を満たす
+    - `sizeof...(Rs) == 1`であり、`Rs`が`common_range`の場合
+    - `Rs`が全て`bidirectional_range`ではなく、全て`common_range`の場合
+    - `Rs`が全て`random_access_range`であり、全て`sized_range`の場合
+- `sized_range` : `Rs`が全て`sized_range`の場合
+- `const-iterable` : `const Rs`が全て`range`である場合
+- `borrowed_range` : `Rs`が全て`borrowed_range`の場合
+
 ## `views::zip_transform`
 ## `views::adjacent`
 ## `views::adjacent_transform`
