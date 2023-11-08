@@ -910,6 +910,117 @@ auto tuple = *it;
 - `borrowed_range` : `Rs`が全て`borrowed_range`の場合
 
 ## `views::zip_transform`
+
+`views::zip_transform`は、複数の範囲とそれらの要素全てを受け取る関数を受けて、入力範囲の対応する要素をまとめて関数に渡して呼び出した結果からなる1つの範囲を生成する`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 3, 5, 7};
+  std::list lst = {11, 13, 17, 19};
+
+  auto zip_map = std::views::zip_transform(std::multiplies{}, vec, lst);
+
+  for (auto n : zip_map) {
+    std::cout << std::format("{} ", n);
+  }
+}
+```
+```{style=planetext}
+11 39 85 133 
+```
+
+すなわち、`views::zip_transform(func, rng...)`とは`views::zip(rng...) | views::transform(func)`です。`views::zip`の各要素に対して指定された関数を適用した結果を要素とする範囲を生成します。
+
+そのため、要素に関する部分以外のほとんどの性質は`views::zip`と共通しています。
+
+`views::zip_transform`が`views::zip`と`views::transform`の単なる合成と異なるのは、`views::zip`で`std::tuple`に詰めた要素を`views::transform`で再び取り出す中間過程をスキップすることで、間接参照を効率化するとともに、指定する関数の引数に中間の`std::tuple`が現れてしまうことを回避している（入力範囲の要素型を直接受け取る形で指定できるようにしている）点です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 3, 5, 7};
+  std::list lst = {11, 13, 17, 19};
+
+  auto zip_map1 = std::views::zip_transform(std::multiplies{}, vec, lst); //ok
+
+  auto zip_map2 = std::views::zip(vec, lst)
+                | std::views::transform(std::multiplies{}); // ng
+
+  auto zip_map3 = std::views::zip(vec, lst)
+                | std::views::transform([mul = std::multiplies{}](auto tuple){
+                    const auto [n, m] = tuple;
+                    return mul(n, m);
+                  }); // ok
+}
+```
+
+`views::zip_transform`そのものはカスタマイゼーションポイントオブジェクトであり、関数呼び出し可能なもの（`func`）と0個以上の入力範囲（`rng...`）を受け取って次のいずれかの動作をします
+
+- `rng`が空（入力範囲が0個）の場合、`FD = std::decay_t<decltype((func))>`として次のどちらか
+    - `FD`が`move_constructible`ではなく`FD&`が`regular_invocable`ではない、もしくは`func`を引数なしで呼び出した結果がオブジェクト型ではない場合 : 呼び出しは不適格（コンパイルエラー）
+    - それ以外の場合 : `views::empty<decay_t<invoke_result_t<FD&>>`を構築して返す
+- それ以外の場合 :`func`と`rng...`をそのまま転送して`zip_transform_view`を構築して返す
+
+`views::zip`同様に`views::zip_transform`もRangeアダプタオブジェクトではないため、`|`の右側に来ることはできません。
+
+### `zip_transform_view`
+
+`views::zip_transform`に1つ以上の範囲を入力する場合は`zip_transform_view`が返されます。
+
+```cpp
+namespace std::ranges {
+
+  // zip_transform_viewの宣言例
+  template<move_constructible F, input_range... Views>
+    requires (view<Views> && ...) && (sizeof...(Views) > 0) && is_object_v<F> &&
+              regular_invocable<F&, range_reference_t<Views>...> &&
+              can-reference<invoke_result_t<F&, range_reference_t<Views>...>>
+  class zip_transform_view : public view_interface<zip_transform_view<F, Views...>> {
+    ...
+  };
+}
+```
+
+`zip_view`に対して増えている制約は追加で受けている関数（呼び出し可能オブジェクト）に対してのものです。関数に対しては入力範囲全ての間接参照結果を渡して呼び出し可能である他には`regular_invocable`であることが求めらています。すなわち、渡す関数は副作用を持ってはなりません。
+
+`zip_transform_view`は入力範囲を`views::zip`したものと受け取った関数をそれぞれ内部に保存しています。
+
+### 動作詳細
+
+`zip_transform_view`のイテレータは`zip_transform_view`が保持している入力範囲の`zip_view`からイテレータを取得して内部に保持します。進行時はその`zip_view`のイテレータを同時に進行させます。
+
+間接参照時は、内部の`zip_view`のイテレータが保持している入力範囲のイテレータを直接取得して、その間接参照結果を直接`zip_transform_view`が保持している関数に渡して呼び出し、その結果を返します。この呼び出しは渡された呼び出し可能なものを`func`、入力範囲のイテレータを`iters...`とすると、`std::invoke(func, *iteres...)`のように行われます。間接参照結果は中間変数等を介することなく直接`func`に渡されます。
+
+```cpp
+// funcとviews::zip(rng...)を保存する
+auto zip_map = std::views::zip_transform(func, rng...);
+
+// views::zipのイテレータを取得し保存する
+auto it = zip_map.begin();
+
+// 進行は保持するviews::zipのイテレータに同じ操作を適用する
+++it;
+--it;
+it += 3;
+it -= 3;
+
+// 入力イテレータ全ての間接参照結果をfuncに渡して呼び出し、その結果を返す
+// この時、zip_viewのイテレータの間接参照は行われない
+auto result = *it;
+```
+
+### `zip_transform_view`(`views::zip_transform`)の諸特性
+
+少なくとも1つ以上入力があり、渡す呼び出し可能な型を`F`、入力範囲型の列（パック）を`Rs`とすると次のようになります
+
+- `reference` : `std::invoke_result_t<F&, range_reference_t<Rs>...>`
+- `range`カテゴリ : `Rs`について`views::zip`と同じ
+- `common_range` : `Rs`について`views::zip`と同じ
+- `sized_range` : `Rs`について`views::zip`と同じ
+- `const-iterable` : `Rs`について`views::zip`と同じ
+- `borrowed_range` : ×
+
+渡した`F`のオブジェクトは`zip_transform_view`内に保存されており、そのイテレータは取得元の`zip_transform_view`オブジェクトを参照して`F`のオブジェクトを取得しています。それにより、`zip_transform_view`のイテレータは取得元の`zip_transform_view`オブジェクトの寿命が尽きるとダングリングイテレータとなるため、`zip_transform_view`は`borrowed_range`にはなりません。それ以外の部分はほぼ`views::zip`と同じになります。
+
 ## `views::adjacent`
 ## `views::adjacent_transform`
 ## `views::chunk`
