@@ -1008,6 +1008,8 @@ it -= 3;
 auto result = *it;
 ```
 
+内部で`views::zip`を使用していることからも明らかですが、計算量についても`views::zip`と同じになります。
+
 ### `zip_transform_view`(`views::zip_transform`)の諸特性
 
 少なくとも1つ以上入力があり、渡す呼び出し可能な型を`F`、入力範囲型の列（パック）を`Rs`とすると次のようになります
