@@ -876,6 +876,8 @@ namespace std::ranges {
 
 `zip_view`のイテレータの間接参照では、保持する全てのイテレータに対して`*i`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。前述のように、ここでは参照は参照のままラップされます。
 
+`zip_view`のイテレータ終端判定は、保持する全てのイテレータの比較が行われ、そのうちいずれか1つが終端に達している場合に`zip_view`のイテレータも終端に到達しているとみなされます。この時、短絡評価を行うかどうかは規定されていませんが禁止されてもいません。
+
 ```cpp
 // 入力範囲の保存or参照のみを行う
 auto zip = std::views::zip(...);
@@ -891,6 +893,10 @@ it -= 3;
 
 // 保持するイテレータ全ての間接参照結果をtupleにラップして返す
 auto tuple = *it;
+
+// 保持するイテレータ全ての比較が行われる
+// おそらく短絡評価は行われる
+bool b = it == zip.end();
 ```
 
 動作自体はそこまで難しいことはしておらず、割とシンプルです。ただし、この様子から明らかなように、`zip_view`に入力する範囲の数を`N`とすると`zip_view`のサイズ及びほぼ全ての操作に対して`O(N)`のコストがかかります。例えば、`zip_view`及びそのイテレータは`N`個の範囲（`views::all`に通したもの）orイテレータを保持しており、`zip_view`のイテレータのインクリメントは`N`個のイテレータをインクリメントし、間接参照は`N`個のイテレータを間接参照します。
@@ -988,7 +994,9 @@ namespace std::ranges {
 
 `zip_transform_view`のイテレータは`zip_transform_view`が保持している入力範囲の`zip_view`からイテレータを取得して内部に保持します。進行時はその`zip_view`のイテレータを同時に進行させます。
 
-間接参照時は、内部の`zip_view`のイテレータが保持している入力範囲のイテレータを直接取得して、その間接参照結果を直接`zip_transform_view`が保持している関数に渡して呼び出し、その結果を返します。この呼び出しは渡された呼び出し可能なものを`func`、入力範囲のイテレータを`iters...`とすると、`std::invoke(func, *iteres...)`のように行われます。間接参照結果は中間変数等を介することなく直接`func`に渡されます。
+`zip_transform_view`のイテレータの間接参照時は、内部の`zip_view`のイテレータが保持している入力範囲のイテレータを直接取得して、その間接参照結果を直接`zip_transform_view`が保持している関数に渡して呼び出し、その結果を返します。この呼び出しは渡された呼び出し可能なものを`func`、入力範囲のイテレータを`iters...`とすると、`std::invoke(func, *iteres...)`のように行われます。間接参照結果は中間変数等を介することなく直接`func`に渡されます。
+
+`zip_transform_view`のイテレータの終端判定は`zip_view`と同じです。
 
 ```cpp
 // funcとviews::zip(rng...)を保存する
@@ -1006,6 +1014,9 @@ it -= 3;
 // 入力イテレータ全ての間接参照結果をfuncに渡して呼び出し、その結果を返す
 // この時、zip_viewのイテレータの間接参照は行われない
 auto result = *it;
+
+// 保持するイテレータ全ての比較が行われる
+bool b = it == zip_map.end();
 ```
 
 内部で`views::zip`を使用していることからも明らかですが、計算量についても`views::zip`と同じになります。
@@ -1024,6 +1035,138 @@ auto result = *it;
 渡した`F`のオブジェクトは`zip_transform_view`内に保存されており、そのイテレータは取得元の`zip_transform_view`オブジェクトを参照して`F`のオブジェクトを取得しています。それにより、`zip_transform_view`のイテレータは取得元の`zip_transform_view`オブジェクトの寿命が尽きるとダングリングイテレータとなるため、`zip_transform_view`は`borrowed_range`にはなりません。それ以外の部分はほぼ`views::zip`と同じになります。
 
 ## `views::adjacent`
+
+`views::adjacent`は入力範囲の先頭から指定された数`N`個分の要素を取り出して一纏めにした要素からなる範囲を生成する`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6};
+
+  for (auto [n1, n2, n3] : vec | std::views::adjacent<3>) {
+    std::cout << std::format("({}, {}, {})\n", n1, n2, n3);
+  }
+}
+```
+```{style=planetext}
+(1, 2, 3)
+(2, 3, 4)
+(3, 4, 5)
+(4, 5, 6)
+```
+
+一纏めにする個数`N`は`views::adjacent<N>`のように非型テンプレートパラメータで渡し、`views::adjacent<N>`の`M`番目の要素は元の範囲の`M`番目から`(M + N -1)`番目（0-index）の要素を参照します。
+
+入力範囲の長さが`N`未満の場合、`views::adjacent<N>`は空の範囲になります。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3};
+
+  auto adj1 = vec | std::views::adjacent<3>;
+  auto adj2 = vec | std::views::adjacent<4>;
+
+  std::cout << std::format("length = {}\n", adj1.size());
+  std::cout << std::format("length = {}\n", adj2.size());
+}
+```
+```{style=planetext}
+length = 1
+length = 0
+```
+
+`views::adjacent<N>`の長さは、入力範囲の長さを`l`とすると`l - std::min(l, N - 1)`になります。ただし、`.size()`（及び`ranges::size()`）が使用可能なのは、入力範囲`sized_range`である場合のみです。
+
+`views::adjacent<N>`の1つの要素は元の範囲の`N`個の要素を参照する`std::tuple`オブジェクトであり、それは入力範囲のイテレータの間接参照結果が参照なら参照を保持することでコピーを回避しており、入力イテレータの間接参照が*prvalue*を返す場合にのみムーブして値を保持します。
+
+`views::adjacent<N>`そのものはRangeアダプタオブジェクトであり、`N`と1つの範囲を受け取って次のどちらかの動作をします
+
+- `N == 0` : `views​::​empty<std::tuple<>>`を返す
+- それ以外の場合 : `N`と受けた引数を転送して`adjacent_view`を構築して返す
+
+`N == 2`の場合のより適切な命名のために`views::pairwise`も用意されています。`views::pairwise`は単に`views::adjacent<2>`の別名です。
+
+```cpp
+int main() {
+  std::string str = "pairwise";
+
+  for (auto [c1, c2] : str | std::views::pairwise) {
+    std::cout << std::format("({}, {})\n", c1, c2);
+  }
+}
+```
+```{style=planetext}
+(p, a)
+(a, i)
+(i, r)
+(r, w)
+(w, i)
+(i, s)
+(s, e)
+```
+
+### `adjacent_view`
+
+`views::adjacent<N>`で`N`が1以上の場合は`adjacent_view`が返されます。
+
+```cpp
+namespace std::ranges {
+
+  // adjacent_viewの宣言例
+  template<forward_range V, size_t N>
+    requires view<V> && (N > 0)
+  class adjacent_view : public view_interface<adjacent_view<V, N>> {
+    ...
+  };
+}
+```
+
+`adjacent_view`の入力範囲は`forward_range`でなければなりません。入力範囲のイテレータは最大`N`回間接参照されるので、マルチパス保証が必須になるためです。
+
+`adjacent_view`は入力範囲を`views::all`に通してそれを保持しています。
+
+### 動作詳細
+
+`adjacent_view`のイテレータは元の範囲のイテレータを`N`個分保持しています。元の範囲のイテレータ型を`I`とすると`std::array<I, N>`のような形で保存されており、先頭のイテレータ（`.front()`）から最後（`.back()`）にかけてあらかじめ1つづつインクリメントされます（実際には保存方法がこう指定されているわけではありませんが、説明のために以下ではそうなっているものとします）。`adjacent_view`のイテレータの進行時には保持している`N`個のイテレータを同様に進行させます。
+
+`adjacent_view`のイテレータの間接参照時は、そのように保持している`N`個のイテレータに対して`*i`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。ここで行われることは`zip_view`のイテレータとほぼ同じことで、それと同様に参照は参照のままラップされます。
+
+`adjacent_view`のイテレータの終端判定は、保持する`N`個のイテレータのうち`.back()`のイテレータが終端に到達しているかによって行われます。このため、範囲`for`のようにチェックしながらインクリメントしている限り、保持するイテレータが元の範囲をオーバーランすることはありません。
+
+```cpp
+auto adj = rng | std::views::adjacent_view<N>;
+
+// 元の範囲のイテレータをN個分保存する
+auto it = adj.begin();
+
+// 進行は保持するイテレータ全てに同じ操作を適用する
+++it;
+--it;
+it += 3;
+it -= 3;
+
+// 保持するイテレータ全ての間接参照結果をtupleにラップして返す
+auto tuple = *it;
+
+// 保持するイテレータのうち一番最後のものと比較される
+bool b = it == adj.end();
+```
+
+なお、イテレータの進行時に`N`個のイテレータを同時に進行させるかは実装によります。例えばインクリメント時に、`.back()`のイテレータをコピーしたものをインクリメントしてから`.front()`のイテレータを捨てるように保持しているイテレータを移動させて`.back()`のイテレータを更新する、ような実装も可能です。ただ、この場合でも`N`回のインクリメントの代わりに`N`回のムーブ代入が行われます。
+
+おそらくですが、イテレータを1つだけ保持して間接参照時にそれを`N`個分コピーして進行させてから間接参照するような実装は、間接参照のコストが大きくなり実装が複雑化するため行われないと思われます（明確に禁止されてはいないようですが）。そのため、`adjacent_view`のイテレータは`O(N)`の空間計算量となるでしょう。
+
+### `adjacent_view`（`views::adjacent`）の諸特性
+
+入力範囲を`R`とすると次のようになります
+
+- `reference` : `Rn`を`N`個の`R`からなるパックとすると
+    - `std::tuple<range_reference_t<Rn>...>`
+- `range`カテゴリ : `R`のカテゴリと同じ（ただし、`contiguous_range`にはならない）
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : `const R`が`range`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
 ## `views::adjacent_transform`
 ## `views::chunk`
 ## `views::slide`
