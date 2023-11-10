@@ -475,7 +475,7 @@ Rangeライブラリの主役であるRangeアダプタ/RangeファクトリはC
 ```cpp
 int main() {
   for (int n : std::views::repeat(23) | std::views::take(4)) {
-    std::cout << std::format("{}, ", n);
+    std::cout << std::format("{:d}, ", n);
   }
 }
 ```
@@ -488,7 +488,7 @@ int main() {
 ```cpp
 int main() {
   for (int n : std::views::repeat(23, 4)) {
-    std::cout << std::format("{}, ", n);
+    std::cout << std::format("{:d}, ", n);
   }
 }
 ```
@@ -626,6 +626,157 @@ int main() {
 C++23で追加されたRangeファクトリはこの`views::repeat`のみなので、以降のものは全てRangeアダプタになります。
 
 ## `views::as_rvalue`
+## `views::join_with`
+
+`views::join_with`は指定されたパターンによって接合しながら入力の`range`の`range`を平坦化する`view`です。
+
+```cpp
+int main() {
+  std::vector<std::string> strvec = {"https:", "", "eel.is", "c++draft", "range.join.with"};
+
+  for (char c : strvec | std::views::join_with('/')) {
+    std::cout << std::format("{:c}", c);
+  }
+}
+```
+```{style=planetext}
+https://eel.is/c++draft/range.join.with
+```
+
+`views::join`による平坦化に際して、入力範囲の内側`range`間に指定されたパターンを挿入しながら平坦化を行います。
+
+`views::join_with`への接合パターンの渡し方には2種類あり、1つは上記例のように入力範囲の内側`range`の値型（`value_type`）と同じ型のオブジェクトを1つだけ指定して、その値を挿入しながら`join`を行うものです。もう1つは任意の`forward_range`オブジェクトを渡して、範囲を挿入しながら`join`を行うものです。
+
+```cpp
+int main() {
+  std::vector<std::list<int>> listvec = {{1, 2}, {3, 4, 5}, {6, 7}, {8}};
+
+  // 1. 入力の内側の要素型の値を渡す
+  for (int n : listvec | std::views::join_with(0)) {
+    std::cout << std::format("{:d}", n);
+  }
+
+  std::forward_list pattern = {0, 0, 0};
+
+  // 2. 任意のforward_rangeを渡す
+  for (int n : listvec | std::views::join_with(pattern)) {
+    std::cout << std::format("{:d}", n);
+  }
+}
+```
+```{style=planetext}
+12034506708
+12000345000670008
+```
+
+一応、接合パターンには空の範囲を渡すこともでき、その場合は`views::join`と同じ動作をしますが多少非効率になります。
+
+動作だけを見れば、`views::join_with(p)`は`views::split(p)`（あるいは`views::lazy_split`）の逆変換となっており、`input | views::split(p) | views::join_with(p)`は元の範囲`input`と同じシーケンスになります。ただし、特に特別扱いはされていないため結果の型は異なります。
+
+`views::join_with`そのものはRangeアダプタオブジェクトであり、2つの引数を受け取ってそれをそのまま転送して`join_with_view`を構築して返します。
+
+### `join_with_view`
+
+`join_with_view`は`views::join_with`の実装詳細であり、`views::join_with`は常にこの`view`型を返します。
+
+```cpp
+namespace std::ranges {
+
+  // join_with_viewの宣言例
+  template<input_range V, forward_range Pattern>
+    requires view<V> && input_range<range_reference_t<V>>
+          && view<Pattern>
+          && compatible-joinable-ranges<range_reference_t<V>, Pattern>
+  class join_with_view {
+    ...
+  };
+}
+```
+
+入力範囲`V`およびその内側の`range`は`input_range`であることしか求められていない一方で、パターンの範囲`Pattern`は`forward_range`でなければなりません。これは、パターンは複数回参照されるためマルチパス保証が必要となるためです。
+
+`compatible-joinable-ranges`は入力範囲とパターンの要素型/参照型との間で共通の型（共通参照型）が存在することを要求するものです。
+
+この宣言だけを見ると、接合パターンとしては常に`forward_range`が求められており、値1つを渡すパターンの渡し方ができなさそうに思えます。これは`join_with_view`のテンプレートパラメータ推論補助を工夫することで受け入れるようになっています。
+
+```cpp
+// forward_rangeなパターンが渡された時のための推論補助
+template<class R, class P>
+join_with_view(R&&, P&&) -> join_with_view<views::all_t<R>, views::all_t<P>>;
+
+// 単一の値が渡された時のための推論補助
+template<input_range R>
+join_with_view(R&&, range_value_t<range_reference_t<R>>)
+  -> join_with_view<views::all_t<R>, single_view<range_value_t<range_reference_t<R>>>>;
+```
+
+1つ目の推論補助は入力範囲とパターン範囲の両方を`views::all`に通すもので、他のRangeアダプタの`view`型でも多用されているものです。
+
+2つ目の推論補助が`forward_range`ではない値1つを渡されたときに使用されるもので、渡された値の型を`views::single`でラップして`join_with_view`のパターン型を求めています。これによって、パターンは常に`forward_range`な範囲として一貫して扱われています。見てわかるように、この場合には入力範囲の内側`range`の値型に一致する型だけを受け入れます。
+
+`join_with_view`はこのように渡された2つの範囲を内部で保存しており、内側`range`が*prvalue*となる（左辺値ではない）場合はさらに内側`range`もキャッシュしています。内側`range`のキャッシュが行われる場合、`join_with_view`は`input_range`になり、`.begin()`の呼び出しは最初の一回だけが有効になります。
+
+また、外側`range`（`V`）が`forward_range`ではない場合もそのイテレータを内部にキャッシュします。この場合も`join_with_view`は`input_range`になります。
+
+### 動作詳細
+
+`join_with_view`の構築時は入力範囲とパターンを保持し、キャッシュが必要となる場合は各種キャッシュ領域を用意しますが、この時点ではほぼ何もしません。
+
+`join_with_view`のイテレータが取得されるとき、パターンのイテレータと入力範囲の外側イテレータを取得しそこから内側`range`と内側イテレータを取得するとともに、`join_with_view`内の必要なキャッシュを初期化します。その後、内側イテレータ（およびパターンのイテレータ）の終端判定を行いながらまず最初の要素まで管理するイテレータを進行させます。
+
+`join_with_view`内では、外側のイテレータと内側イテレータおよびパターンのイテレータの3つを管理していますが、同時に保持しているのは外側のイテレータと内側イテレータもしくはパターンのイテレータのどちらかのみです。後者は、内側イテレータとパターンのイテレータをそれぞれ`II, PI`とすると`std::variant<PI, II>`によって保持されています。その`std::variant<PI, II>`オブジェクトは、現在位置が内側`range`内にあるときは内側イテレータを、パターン内にあるときはパターンのイテレータを保持するように管理されます。
+
+`join_with_view`のイテレータの進行時は、`std::variant<PI, II>`の現在のイテレータを1つ進めた後、その終端チェックを行います。終端チェック時では、内側イテレータが終端に達しているときは外側イテレータを1つ進めて`std::variant<PI, II>`をパターンのイテレータの先頭で更新し、そのパターンのイテレータの終端チェックを再び行います。パターンのイテレータが終端に達しているときは内側`range`と内側イテレータを更新し、内側イテレータの終端チェックを再び行います。
+
+`join_with_view`が`bidirectional_range`となっている場合、後退（`--`）時はこの逆のことをします。まず外側イテレータが終端に達しているなら内側`range`の一番最後の要素の`end`イテレータを取得し`std::variant<PI, II>`に保存します。その後、`std::variant<PI, II>`のイテレータを取得し、その終端チェックを行いながら空の範囲のスキップとイテレータの切り替えを行います。最後に、`std::variant<PI, II>`の現在のイテレータを1つ後退させます。
+
+イテレータの終端判定においては、外側イテレータが終端に達しているときに終端だと判定されます。これは、上記の進行時に外側イテレータが先に終端へ到達するようになっているためです。
+
+
+```cpp
+// 外側rangeがforwardではなければ、そのイテレータのキャッシュ領域を提供する
+// 内側rangeがprvalueとなる場合、内側rangeのキャッシュ領域を提供する
+auto jwv = input | std::views::join_with(pattern);
+
+auto it = jwv.begin();
+
+// 現在のイテレータ（内側orパターン）を進行させ、都度終端チェックを行いながら切り替えていく 
+// 保持する外側イテレータや内側rangeやそれらのキャッシュもその際に更新される
+++it;
+// 後退時には、先に終端チェックを行い空の部分を飛ばして切り替えを完了させて
+// その後現在のイテレータを後退させる
+// この場合キャッシュは一切使用されていない
+--it;
+
+// 現在のイテレータ（内側orパターン）の関節参照結果をそのまま返す
+auto elem = *it;
+
+// 外側イテレータの比較によってのみ終端が判定され、パターンのイテレータは終端判定に関与しない
+// ただし、イテレータそのものの比較には内側イテレータも参加する
+bool b = it == jwv.end();
+```
+
+パターンの範囲とそのイテレータの管理が追加されてはいますが、基本的には`join_view`と同じような方法で平坦化をおこなっています。
+
+### `join_with_view`(`views::join_with`)の諸特性
+
+入力範囲を`R`、その内側の`range`を`IR`、接合パターンを`P`とすると次のようになります
+
+- `reference` : `common_reference_t<range_reference_t<IR>, range_reference_t<P>>`
+- `range`カテゴリ
+    - `range_reference_t<R>`が参照型であり、かつ
+        - `R`が`bidirectional_range`であり、`IR`と`P`が共に`bidirectional_range`かつ`common_range`の場合 : `bidirectional_range`
+        - `R`と`IR`が共に`forward_range`の場合 : `forward_range`
+    - それ以外の場合 : `input_range`
+- `common_range` : `range_reference_t<R>`が参照型であり、`R`と`IR`が共に`forward_range`かつ`common_range`の場合
+- `sized_range` : ×
+- `const-iterable` : `R`と`P`が共に`const-iterable`であり、`range_reference_t<const R>`が参照型であり`input_range`である場合
+- `borrowed_range` : ×
+
+接合パターンが関わってはきますが、ほぼ`views::join`と同じ性質となります。
+
+「`range_reference_t<R>`が参照型であり」のような要求は内側`range`が左辺値であることを要求しており、そうではなく内側`range`が*prvalue*の場合は`join_with_view`内に内側`range`が都度キャッシュされます。そのためその場合は`input_range`になりその他の性質も制限されます。
+
 ## `views::as_cosnt`
 ## `views::enumerate`
 
@@ -636,7 +787,7 @@ int main() {
   std::vector vec = {1, 3, 5, 7, 11, 13};
 
   for (auto [index, value] : vec | std::views::enumerate) {
-    std::cout << std::format("{}: {}\n", index, value);
+    std::cout << std::format("{:d}: {:d}\n", index, value);
   }
 }
 ```
@@ -656,7 +807,7 @@ int main() {
   std::vector vec = {1, 3, 5, 7, 11, 13};
 
   for (auto index = 0u; auto value : vec) {
-    std::cout << std::format("{}: {}\n", index, value);
+    std::cout << std::format("{:d}: {:d}\n", index, value);
     ++index;
   }
 }
@@ -697,13 +848,11 @@ namespace std::ranges {
 間接参照では、`pos`の値と`*current`（参照）を`std::tuple`にラップして返します。
 
 ```cpp
-std::vector vec = {1, 3, 5, 7, 11, 13};
-
 // enumerate_view構築時は何もしない
-std::ranges::enumerate_view ev{vec};
+auto ev = input | std::views::enumerate;
 
 // イテレータ取得時、内部カウンタ（インデックス）が0に初期化
-auto it = vec.begin();
+auto it = ev.begin();
 
 // 進行に伴って、同じだけ内部カウンタも増減する
 ++it;
@@ -822,8 +971,8 @@ int main() {
   auto zip1 = std::views::zip(vec, deq);
   auto zip2 = std::views::zip(vec, deq, lst);
 
-  std::cout << std::format("length = {}\n", zip1.size());
-  std::cout << std::format("length = {}\n", zip2.size());
+  std::cout << std::format("length = {:d}\n", zip1.size());
+  std::cout << std::format("length = {:d}\n", zip2.size());
 }
 ```
 ```{style=planetext}
@@ -927,7 +1076,7 @@ int main() {
   auto zip_map = std::views::zip_transform(std::multiplies{}, vec, lst);
 
   for (auto n : zip_map) {
-    std::cout << std::format("{} ", n);
+    std::cout << std::format("{:d} ", n);
   }
 }
 ```
@@ -1043,7 +1192,7 @@ int main() {
   std::vector vec = {1, 2, 3, 4, 5, 6};
 
   for (auto [n1, n2, n3] : vec | std::views::adjacent<3>) {
-    std::cout << std::format("({}, {}, {})\n", n1, n2, n3);
+    std::cout << std::format("({:d}, {:d}, {:d})\n", n1, n2, n3);
   }
 }
 ```
@@ -1065,8 +1214,8 @@ int main() {
   auto adj1 = vec | std::views::adjacent<3>;
   auto adj2 = vec | std::views::adjacent<4>;
 
-  std::cout << std::format("length = {}\n", adj1.size());
-  std::cout << std::format("length = {}\n", adj2.size());
+  std::cout << std::format("length = {:d}\n", adj1.size());
+  std::cout << std::format("length = {:d}\n", adj2.size());
 }
 ```
 ```{style=planetext}
@@ -1090,7 +1239,7 @@ int main() {
   std::string str = "pairwise";
 
   for (auto [c1, c2] : str | std::views::pairwise) {
-    std::cout << std::format("({}, {})\n", c1, c2);
+    std::cout << std::format("({:c}, {:c})\n", c1, c2);
   }
 }
 ```
