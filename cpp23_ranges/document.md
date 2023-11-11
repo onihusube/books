@@ -1066,7 +1066,7 @@ bool b = it == zip.end();
 
 ## `views::zip_transform`
 
-`views::zip_transform`は、複数の範囲とそれらの要素全てを受け取る関数を受けて、入力範囲の対応する要素をまとめて関数に渡して呼び出した結果からなる1つの範囲を生成する`view`です。
+`views::zip_transform`は、複数の範囲とそれらの要素全てを受け取る変換関数を受けて、入力範囲の対応する要素をまとめて変換関数に渡して呼び出した結果からなる1つの範囲を生成する`view`です。
 
 ```cpp
 int main() {
@@ -1135,15 +1135,17 @@ namespace std::ranges {
 }
 ```
 
-`zip_view`に対して増えている制約は追加で受けている関数（呼び出し可能オブジェクト）に対してのものです。関数に対しては入力範囲全ての間接参照結果を渡して呼び出し可能である他には`regular_invocable`であることが求めらています。すなわち、渡す関数は副作用を持ってはなりません。
+`zip_view`に対して増えている制約は追加で受けている関数（呼び出し可能オブジェクト）に対してのものです。関数に対しては入力範囲全ての間接参照結果を渡して呼び出し可能である他には`regular_invocable`であることが求めらています。すなわち、渡す関数は副作用を持ってはなりません。また、戻り値は非`void`であること（参照修飾可能であること）が求められています。
 
 `zip_transform_view`は入力範囲を`views::zip`したものと受け取った関数をそれぞれ内部に保存しています。
 
 ### 動作詳細
 
-`zip_transform_view`のイテレータは`zip_transform_view`が保持している入力範囲の`zip_view`からイテレータを取得して内部に保持します。進行時はその`zip_view`のイテレータを同時に進行させます。
+`zip_transform_view`のイテレータは`zip_transform_view`が保持している`zip_view`からイテレータを取得して内部に保持します。進行時はその`zip_view`のイテレータを同時に進行させます。
 
-`zip_transform_view`のイテレータの間接参照時は、内部の`zip_view`のイテレータが保持している入力範囲のイテレータを直接取得して、その間接参照結果を直接`zip_transform_view`が保持している関数に渡して呼び出し、その結果を返します。この呼び出しは渡された呼び出し可能なものを`func`、入力範囲のイテレータを`iters...`とすると、`std::invoke(func, *iteres...)`のように行われます。間接参照結果は中間変数等を介することなく直接`func`に渡されます。
+`zip_transform_view`のイテレータの間接参照時は、内部の`zip_view`のイテレータが保持している入力範囲のイテレータを直接取得して、その間接参照結果を直接`zip_transform_view`が保持している関数に渡して呼び出し、その結果を返します。この呼び出しは渡された変換関数を`func`、入力範囲のイテレータを`iters...`とすると、`std::invoke(func, *iteres...)`のように行われます。間接参照結果は中間変数等を介することなく直接`func`に渡されます。
+
+なお、間接参照における呼び出し結果は直接返されるため中間変数等を介することなく、値カテゴリ等も含めて受け側に完全に等価的になります。そのため、変換関数が*prvalue*を返す場合はコピー省略が行われます。
 
 `zip_transform_view`のイテレータの終端判定は`zip_view`と同じです。
 
@@ -1178,7 +1180,9 @@ bool b = it == zip_map.end();
 - `range`カテゴリ : `Rs`について`views::zip`と同じ
 - `common_range` : `Rs`について`views::zip`と同じ
 - `sized_range` : `Rs`について`views::zip`と同じ
-- `const-iterable` : `Rs`について`views::zip`と同じ
+- `const-iterable` : `CRs`を`Rs`の全ての型を`const`化したパックとして、次のどちらも満たす場合
+    - `const R`が`range`
+    - `regular_invocable<const F&, range_reference_t<CRs>...>`を満たす
 - `borrowed_range` : ×
 
 渡した`F`のオブジェクトは`zip_transform_view`内に保存されており、そのイテレータは取得元の`zip_transform_view`オブジェクトを参照して`F`のオブジェクトを取得しています。それにより、`zip_transform_view`のイテレータは取得元の`zip_transform_view`オブジェクトの寿命が尽きるとダングリングイテレータとなるため、`zip_transform_view`は`borrowed_range`にはなりません。それ以外の部分はほぼ`views::zip`と同じになります。
@@ -1230,7 +1234,7 @@ length = 0
 `views::adjacent<N>`そのものはRangeアダプタオブジェクトであり、`N`と1つの範囲を受け取って次のどちらかの動作をします
 
 - `N == 0` : `views​::​empty<std::tuple<>>`を返す
-- それ以外の場合 : `N`と受けた引数を転送して`adjacent_view`を構築して返す
+- それ以外の場合 : と受けた引数を転送して`adjacent_view<N>`を構築して返す
 
 `N == 2`の場合のより適切な命名のために`views::pairwise`も用意されています。`views::pairwise`は単に`views::adjacent<2>`の別名です。
 
@@ -1306,7 +1310,7 @@ bool b = it == adj.end();
 
 ### `adjacent_view`（`views::adjacent`）の諸特性
 
-入力範囲を`R`とすると次のようになります
+指定した隣接数を`N`、入力範囲を`R`とすると次のようになります
 
 - `reference` : `Rn`を`N`個の`R`からなるパックとすると
     - `std::tuple<range_reference_t<Rn>...>`
@@ -1317,6 +1321,133 @@ bool b = it == adj.end();
 - `borrowed_range` : `R`が`borrowed_range`の場合
 
 ## `views::adjacent_transform`
+
+`views::adjacent_transform`は`views::adjacent`の各要素に対して指定した変換を適用した結果からなる範囲を生成する`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 3, 5, 7, 11, 13, 17, 19};
+
+  auto product = [](auto... args) {
+    return (args * ...);
+  };
+
+  for (int n : vec | std::views::adjacent_transform<3>(product)) {
+    std::cout << std::format("{} ", n);
+  }
+}
+```
+```{style=planetext}
+15 105 385 1001 2431 4199
+```
+
+`views::adjacent_transform<N>(func, rng)`は`views::adjacent<N>(rng)`の要素から元の`N`個の要素`func`に渡して呼び出し、その結果を要素として返します。すなわち、`rng | views::adjacent<N> | views::transform(func)`と同じですが、`views::zip`に対する`views::zip_transform`と同様に`std::tuple`に詰めて取り出すという中間過程をスキップすることで間接参照の効率化と変換関数の引数が元の要素型を直接受け取れるようにしています。
+
+そのため、要素に関する部分以外のほとんどの性質は`views::adjacent`と共通しています。
+
+`views::adjacent_transform<N>`そのものはRangeアダプタオブジェクトであり、`N`と1つの範囲と変換関数`func`を受け取って次のどちらかの動作をします
+
+- `N == 0` : `views​::​zip_transform(func)`を返す
+- それ以外の場合 : 受けた引数を転送して`adjacent_transform_view<N>`を構築して返す
+
+`views::adjacent`同様に、`N == 2`の場合の別名として`views::pairwise_transform`も用意されています。
+
+```cpp
+int main() {
+  std::string str = "pairwise";
+
+  auto to_string = [](auto... chars) {
+    return std::string{chars...};
+  };
+
+  for (auto str : str | std::views::pairwise_transform(to_string)) {
+    std::cout << std::format("({:s})\n", str);
+  }
+}
+```
+```{style=planetext}
+(pa)
+(ai)
+(ir)
+(rw)
+(wi)
+(is)
+(se)
+```
+
+### `adjacent_transform_view`
+
+`views::adjacent_transform<N>`で`N`が1以上の場合は`adjacent_transform_view`が返されます。
+
+```cpp
+namespace std::ranges {
+
+  // adjacent_transform_viewの宣言例
+  template<forward_range V, move_constructible F, size_t N>
+    requires view<V> && (N > 0) && is_object_v<F> &&
+             regular_invocable<F&, REPEAT(range_reference_t<V>, N)...> &&
+             can-reference<invoke_result_t<F&, REPEAT(range_reference_t<V>, N)...>>
+  class adjacent_transform_view : public view_interface<adjacent_transform_view<V, F, N>> {
+    ...
+  };
+}
+```
+
+`adjacent_view`に対して増えている制約は追加で受けている変換関数（呼び出し可能オブジェクト）に対してのものです。変換関数に対しては入力範囲の間接参照結果を`N`個渡して呼び出し可能である他には`regular_invocable`であることが求めらています。すなわち、渡す関数は副作用を持ってはなりません。また、戻り値は非`void`であること（参照修飾可能であること）が求められています。
+
+`REPEAT(range_reference_t<V>, N)`というものは、`N`個の`range_reference_t<V>`からなる型パックを生成するマクロのようなものです。
+
+`adjacent_transform_view`は入力範囲を`views::adjacent`したものと受け取った変換関数をそれぞれ内部に保存しています。
+
+### 動作詳細
+
+`adjacent_transform_view`のイテレータは`adjacent_transform_view`が保持している`adjacent_view`からイテレータを取得して内部に保持します。進行時はその`adjacent_view`のイテレータを同時に進行させます。
+
+`adjacent_transform_view`のイテレータの間接参照時は、内部の`adjacent_view`のイテレータが保持している入力範囲のイテレータを直接取得して、その間接参照結果を直接`adjacent_transform_view`が保持している関数に渡して呼び出し、その結果を返します。この呼び出しは渡された変換関数を`func`、入力範囲のイテレータを`iters...`とすると、`std::invoke(func, *iteres...)`のように行われます。間接参照結果は中間変数等を介することなく直接`func`に渡されます。
+
+なお、間接参照における呼び出し結果は直接返されるため中間変数等を介することなく、値カテゴリ等も含めて受け側に完全に等価的になります。そのため、変換関数が*prvalue*を返す場合はコピー省略が行われます。
+
+`adjacent_transform_view`のイテレータの終端判定は`adjacent_view`と同じです。
+
+```cpp
+// funcとviews::adjacent(rng...)を保存する
+auto adj_map = rng | std::views::adjacent_transform<N>(func);
+
+// views::adjacentのイテレータを取得し保存する
+auto it = adj_map.begin();
+
+// 進行は保持するviews::adjacentのイテレータに同じ操作を適用する
+++it;
+--it;
+it += 3;
+it -= 3;
+
+// 入力イテレータ全ての間接参照結果をfuncに渡して呼び出し、その結果を返す
+// この時、adjacent_viewのイテレータの間接参照は行われない
+auto tuple = *it;
+
+// 保持するイテレータのうち一番最後のものと比較される
+bool b = it == adj_map.end();
+```
+
+動作は`zip_transform_view`(`views::zip_transform`)とよく似ているというかほとんど同じことをしています。
+
+### `adjacent_transform_view`（`views::adjacent_transform`）の諸特性
+
+指定した隣接数を`N`、渡す呼び出し可能な型を`F`、入力範囲を`R`とすると次のようになります
+
+- `reference` : `Rn`を`N`個の`R`からなるパックとすると
+    - `std::invoke_result_t<F&, range_reference_t<Rn>...>`
+- `range`カテゴリ : `R`について`views::adjacent`と同じ
+- `common_range` : `R`について`views::adjacent`と同じ
+- `sized_range` : `R`について`views::adjacent`と同じ
+- `const-iterable` : `CRn`を`N`個の`const R`からなるパックとして、次のどちらも満たす場合
+    - `const R`が`range`
+    - `regular_invocable<const F&, range_reference_t<CRn>...>`を満たす
+- `borrowed_range` : ×
+
+渡した`F`のオブジェクトは`adjacent_transform_view`内に保存されており、そのイテレータは取得元の`adjacent_transform_view`オブジェクトを参照して`F`のオブジェクトを取得しています。それにより、`adjacent_transform_view`のイテレータは取得元の`adjacent_transform_view`オブジェクトの寿命が尽きるとダングリングイテレータとなるため、`adjacent_transform_view`は`borrowed_range`にはなりません。それ以外の部分はほぼ`views::adjacent`と同じになります。
+
 ## `views::chunk`
 ## `views::slide`
 ## `views::chunk_by`
