@@ -1598,6 +1598,152 @@ bool ob = it == chv.end();
 - `borrowed_range` : `R`が`borrowed_range`の場合
 
 ## `views::slide`
+
+`views::slide`は指定した数のウィンドウで入力範囲上を参照し、そのウィンドウに対応する部分範囲を要素とする`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6};
+
+  for (auto rng : vec | std::views::slide(3)) {
+    std::cout << "[ ";
+    for (auto n : rng) {
+      std::cout << std::format("{:d} ", n);
+    }
+    std::cout << "]\n";
+  }
+}
+```
+```{style=planetext}
+[ 1 2 3 ]
+[ 2 3 4 ]
+[ 3 4 5 ]
+[ 4 5 6 ]
+```
+
+`views::slide`は実行時に要素数を指定する`views::adjacent`です。また、`views::chunk`は`views::slide`に対して入力範囲上でウィンドウが重ならないように進行するものです。そのため、動作や性質はこの2つのRangeアダプタとよく似ています。
+
+実行時にウィンドウサイズを指定するため`views::chunk`同様に要素型は`range`型となり、`views::slide`は`range`の`range`となります。
+
+`views::slide`そのものはRangeアダプタオブジェクトであり、入力範囲とウィンドウサイズを受け取ってそれをそのまま転送して`slide_view`を構築して返します。
+
+### `slide_view`
+
+`views::slide`は常に`slide_view`を返します。
+
+```cpp
+namespace std::ranges {
+
+  // slide_viewの宣言例
+  template<forward_range V>
+    requires view<V>
+  class slide_view : public view_interface<slide_view<V>> {
+    ...
+  };
+}
+```
+
+`slide_view`の入力範囲は`forward_range`でなければなりません。入力範囲のイテレータは複数回間接参照される可能性があるのでマルチパス保証が必須になるためです。これは`views::chunk`とは異なる所で、`views::slide`は`input_range`のサポートを行いません。
+
+`slide_view`は、受け取った入力範囲を`views::all`に通したものと、指定されたウィンドウサイズを内部で保存しています。
+
+### 動作詳細
+
+`slide_view`のイテレータは`adjacent_view`のものとは異なり、入力範囲のイテレータを1つ（最大2つ）だけ保持しています。イテレータの進行時には、保持するすべてのイテレータを同じだけ進めます。
+
+ただし、入力範囲が`random_access_range`でも`sized_range`でもないとき、`slide_view`の`end`イテレータ取得時には要素となる最後の部分範囲の先頭位置を指すイテレータを計算するとともにそれをイテレータ内部に保存します。さらに、`bidirectional_range`でも`common_range`でもないとき、`slide_view`の`begin`イテレータ取得時にも要素となる最初の部分範囲の最後の位置を指すイテレータを計算するとともにそれをイテレータ内部に保存します。
+
+`slide_view`の`begin/end`イテレータが2つのイテレータを保存している場合、最初に計算されたそのイテレータは`slide_view`内部にキャッシュされます。これによって、指定されたウィンドウサイズ`n`によって`begin()/end()`に`O(n)`の時間コストが常にかかってしまうことを回避し、`range`コンセプトの意味論要件である`begin()/end()`の呼び出しが償却定数であるという要件を満たしています。
+
+イテレータの間接参照時には、保持しているイテレータ（`current`）と指定されたウィンドウサイズ（`n`）によって`views::counted(current, n)`を返します。これは、入力範囲によって`span, sunrange, counted_iterator`のいずれかによる部分範囲を返します。
+
+`slide_view`のイテレータが内部に1つしかイテレータを持たない場合（入力範囲が`random_access_range`かつ`sized_range`の場合）、終端判定は保持するイテレータ同士の比較によって行われます。
+
+`slide_view`のイテレータが内部に2つのイテレータを保持する場合、2つ目のイテレータは常に元の範囲上で現在位置からのスライディングウィンドウの終わりの位置を指すようになっており、この2つ目のイテレータを比較することによって終端判定が行われます。この場合、`slide_view`のイテレータの進行時に2つ目のイテレータも同じだけ進行し、2つ目のイテレータが先に入力範囲上の終端に到達することでオーバーランしないようになっています。
+
+```cpp
+auto sld = rng | std::views::slide(n);
+
+// 元の範囲のイテレータを保存する
+// 必要な場合、slide_viewの最初の要素の最後の位置のイテレータを追加で保存する
+auto it = sld.begin();
+
+// 元の範囲のイテレータを保存する
+// 必要な場合、slide_viewの最後の要素の最初の位置のイテレータを追加で保存する
+auto se = sld.end();
+
+// 進行は保持するイテレータ全てに同じ操作を適用する
+++it;
+--it;
+it += 3;
+it -= 3;
+
+// 保持するイテレータをcurrentとすると
+// views::counted(current, n)を返す
+auto subrng = *it;
+
+// 保持するイテレータ同士の比較になる
+// 保持するイテレータが1つの場合、そのイテレータの比較
+// 保持するイテレータが2つの場合、2つ目のイテレータの比較
+bool b = it == sld.end();
+```
+
+`views::counted`の`views::take`との違い及びそのメリットとしては次のものがあります
+
+- 部分範囲の終端イテレータが必要ない
+    - 終端計算を省略できる
+- 進行等に伴うオーバーラン防止のチェックが行われない
+    - 要素の部分範囲の走査が効率的になる
+
+`adjacent_view`のイテレータが`N`個のイテレータを内部に保持しサイズや操作に`O(N)`の計算量がかかるのに対して、`slide_view`のイテレータは多くても2つのイテレータしか保持しません。さらに、その2つのイテレータをうまくやりくりして入力範囲をオーバーランしないようにしているため、`views::counted`を安全に利用しつつ上記メリットを得ることができます。そのため、実行時の動作はともすればこちらの方が効率的になるかもしれません。
+
+### `slide_transform`
+
+要素が`tuple`にラップされる中間地点がなくメリットが薄いためか、`slide_transform`のようなものは用意されていません。それが欲しい場合は`views::transform`を接続することで得られます。
+
+```cpp
+auto slide_transform(auto func, int n) {
+  return std::views::slide(n) | std::views::transform(func);
+}
+
+int main() {
+  std::vector vec = {1, 3, 5, 7, 11, 13, 17, 19};
+
+  auto product = []<std::ranges::range R>(R&& rng) {
+    std::ranges::range_value_t<R> p = 1;
+    for (auto n : rng) {
+      p *= n;
+    }
+    return p;
+  };
+
+  for (int n : vec | slide_transform(product, 3)) {
+    std::cout << std::format("{} ", n);
+  }
+}
+```
+```{style=planetext}
+15 105 385 1001 2431 4199 
+```
+
+この場合、変換関数の引数型は入力範囲の部分範囲になってしまいますが、間接参照結果は直接得られます。
+
+### `slide_view`（`views::slide`）の諸特性
+
+入力範囲を`R`とすると次のようになります
+
+- `reference` : 入力範囲の現在のイテレータを`it`、ウィンドウサイズを`n`とすると
+    - `views::counted(it, n)`
+- `range`カテゴリ : `R`のカテゴリと同じ（ただし、`contiguous_range`にはならない）
+- `common_range` : `R`について次のどちらか
+    - `random_access_range`かつ`sized_range`の場合
+    - `common_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : `const R`が`random_access_range`かつ`sized_range`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`R`が`random_access_range`かつ`sized_range`ではないとき、前述のように`begin/end`イテレータのどちらか片方もしくは両方のイテレータを内部でキャッシュしています。そのため、その場合は`const-iterable`ではありません。
+
 ## `views::chunk_by`
 ## `views::stride`
 ## `views::cartesian_product`
