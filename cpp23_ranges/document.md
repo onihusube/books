@@ -1449,6 +1449,154 @@ bool b = it == adj_map.end();
 渡した`F`のオブジェクトは`adjacent_transform_view`内に保存されており、そのイテレータは取得元の`adjacent_transform_view`オブジェクトを参照して`F`のオブジェクトを取得しています。それにより、`adjacent_transform_view`のイテレータは取得元の`adjacent_transform_view`オブジェクトの寿命が尽きるとダングリングイテレータとなるため、`adjacent_transform_view`は`borrowed_range`にはなりません。それ以外の部分はほぼ`views::adjacent`と同じになります。
 
 ## `views::chunk`
+
+`views::chunk`は入力の範囲の要素を指定された数まとめたチャンクを要素とする範囲を生成する`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6, 7};
+
+  for (auto chunk : vec | std::views::chunk(3)) {
+    std::cout << "[ "
+    for (int n : chunk) {
+      std::cout << std::format("{:d} ", n);
+    }
+    std::cout << "]\n"
+  }
+}
+```
+```{style=planetext}
+[ 1 2 3 ]
+[ 4 5 6 ]
+[ 7 ]
+```
+
+`views::chunk`は常に`range`の`range`を生成します。
+
+まとめる数（チャンクサイズ）`n`は実行時の値として指定し、`views::chunk`の要素（チャンク）は`n`個の要素からなる`range`となります。ただし、末尾要素で残りの要素が足りない場合（入力範囲の長さが`n`で割り切れない場合）はチャンクの長さは`n`未満になります。
+
+`views::chunk`そのものはRangeアダプタオブジェクトであり、入力範囲とチャンクサイズを受け取って、それをそのまま転送して`chunk_view`を構築して返します。
+
+### `chunk_view`
+
+`chunk_view`は`views::chunk`の実装詳細であり、`views::chunk`は常にこの型を返します。
+
+```cpp
+namespace std::ranges {
+
+  // chunk_viewの宣言例（プライマリテンプレート）
+  template<view V>
+    requires input_range<V>
+  class chunk_view : public view_interface<chunk_view<V>> {
+    ...
+  };
+
+  // forward_rangeのためのchunk_view特殊化
+  template<view V>
+    requires forward_range<V>
+  class chunk_view<V> : public view_interface<chunk_view<V>> {
+    ...
+  };
+}
+```
+
+`chunk_view`の入力範囲には`input_range`であることしか求められていませんが、入力範囲が`forward_range`（よりも強い）であるかどうかによって、その実装は分岐します。これは、`input_range`をサポートするためのことです。
+
+どちらの場合でも、`chunk_view`は入力範囲を`views::all`に通したものとチャンクサイズを内部に保存しています。
+
+### 動作詳細
+
+前述のように`chunk_view`の動作は入力範囲が`forward_range`であるかによって大きく変化します。
+
+入力範囲が`forward_range`以上であるとき、`chunk_view`のイテレータは入力範囲のイテレータと番兵（`it, se`）を保持しており、イテレータの進行時にはイテレータと番兵とチャンクサイズ`n`によって`ranges::advance(it, n, se)`に渡して進行させることで`n`飛ばしで進行しながら元の範囲上でオーバーランしないようにしています。
+
+間接参照時には、`views::take(ranges::subrange{it, se}, n)`を返します。このため、間接参照結果型は入力範囲によって変動します。
+
+終端判定は現在のイテレータを元の範囲の終端イテレータと比較することによって行われます。
+
+```cpp
+// 最初はまだ何もしない
+auto chv = rng | std::views::chunk(n);
+
+// 元の範囲の先頭イテレータと番兵を保存する
+auto it = chv.begin();
+
+// 進行は元の範囲でオーバーランしないように進行する
+++it;
+--it;
+it += 3;
+it -= 3;
+
+// 元の範囲の現在位置からの部分範囲を取得し
+// そこからviews::takeによってチャンクサイズ分の範囲を切り出す
+auto chunk = *it;
+
+// 元のイテレータ同士の比較になる
+bool b = it == chv.end();
+```
+
+入力範囲が`input_range`でしかないとき、`chunk_view`は内外`range`がすべて`input_range`になります。この場合の`chunk_view`は入力範囲とチャンクサイズ（`n`）に加えて、元の範囲のイテレータを保持し、最も内側の範囲の残りの長さを記録するための変数（`remainder`）を保持しています。
+
+外側イテレータ（`chunk_view`のイテレータ）の取得時には、`chunk_view`内部で入力のイテレータを取得し、`remainder`を`n`にセットします。
+
+外側イテレータの間接参照時には、外側イテレータ内部で定義されている独自の`input_range`型を返します。この内側`range`のイテレータは自身の残りの長さを親の`chunk_view`で保持されている`remainder`によって把握しており、進行に伴って元のイテレータを1つ進めるとともにその値を1づつ減じていきます。`remainder`が0になっている時、内側`range`は終端に達しているとみなされます（`operator==`は`remainder == 0`を返す）。その際、進めた後の元のイテレータの終端チェックが行われ、`remainder`が0になるよりも早く元のイテレータの終端に到着した場合は`remainder`が0にセットされます。
+
+内側イテレータの間接参照時は元のイテレータの間接参照結果を直接返します。
+
+外側イテレータ（`chunk_view`のイテレータ）のインクリメント時には、入力範囲の番兵と`n`を用いて`ranges::advance`によって元のイテレータを最大`n`進行させ、`remainder`に`n`をセットします。この時も、元の範囲をオーバーランしないようになっています。
+
+外部イテレータの終端判定は現在のイテレータを元の範囲の終端イテレータと比較することで行われます（正確には、なおかつ`remainder != 0`である場合に終端となる）。
+
+```cpp
+// 要素のチャンクの現在サイズを表す変数remainderを提供する
+auto chv = rng | std::views::chunk(n);
+
+// chunk_view内部に元の範囲の先頭イテレータを保存し
+// remainderをnにセット
+auto it = chv.begin();
+
+// 進行は元の範囲でオーバーランしないように進行する
+// 進行するたびにremainderをnにセット
+++it;
+
+// 独自のinput_rangeを返す
+auto chunk = *it;
+
+// 独自定義内部イテレータ
+auto inner_it = chunk.begin();
+
+// 内部イテレータは大本のremainderを減じていくことで残りの長さを管理する
+++inner_it;
+
+// remainder == 0ならチャンク終端
+bool ib = inner_it == chunk.end();
+
+// 元のイテレータ同士の比較になる
+bool ob = it == chv.end();
+```
+
+つまりは、入力範囲のイテレータを1つづつ進めながらうまく`chunk_view`の動作を実現しています。
+
+### `chunk_view`（`views::chunk`）の諸特性
+
+入力範囲を`R`として、まず`R`が`input_range`の場合は次のようになります
+
+- `reference` : `input_range`かつ`view`である型
+- `range`カテゴリ : `input_range`
+- `common_range` : ×
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : ×
+- `borrowed_range` : ×
+
+そして、`R`が`forward_range`の場合は次のようになります
+
+- `reference` : チャンクサイズを`n`とすると
+    - `R`の部分範囲`subrng`について、`views::take(subrng, n)`
+- `common_range` : `R`が`common_range`かつ`sized_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : `const R`が`forward_range`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
 ## `views::slide`
 ## `views::chunk_by`
 ## `views::stride`
