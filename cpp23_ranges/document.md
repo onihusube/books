@@ -1851,7 +1851,7 @@ auto it2 = cby.begin();
 auto subrng = *it;
 
 // 保持するイテレータ同士の比較になる
-// common_rangeとならない場合、current == nextによって終端判定
+// common_rangeではない場合、current == nextによって終端判定
 bool b = it == cby.end();
 ```
 
@@ -1870,6 +1870,166 @@ bool b = it == cby.end();
 - `borrowed_range` : ×
 
 ## `views::stride`
+
+`views::stride`は指定された幅によって入力範囲上で等間隔な位置にある要素からなる`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+  for (int n : vec | std::views::stride(2)) {
+    std::cout << std::format("{:d} ", n);
+  }
+}
+```
+```{style=planetext}
+1 3 5 7 9 
+```
+
+指定する値はスキップする要素数ではなくスキップする幅です。`views::stride(n)`はそのイテレータが`m`進む際に、入力範囲上では`m * n`進みます。
+
+```cpp
+int main() {
+  for (auto n : std::views::iota(0) | std::views::stride(10)
+                                    | std::views::take(5))
+  {
+    std::cout << std::format("{:d} ", n);
+  }
+}
+```
+```{style=planetext}
+0 10 20 30 40 
+```
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  std::vector vec(10, 0);
+
+  fill(vec | views::stride(3), 23);
+
+  for (int n : vec) {
+    std::cout << std::format("{:d} ", n);
+  }
+}
+```
+```{style=planetext}
+23 0 0 23 0 0 23 0 0 23 
+```
+
+`views::stride`そのものはRangeアダプタオブジェクトであり、入力範囲とスキップ幅を受け取ってそれをそのまま転送して`stride_view`を構築して返します。
+
+### `stride_view`
+
+`views::stride`は常に`stride_view`を返します。
+
+```cpp
+namespace std::ranges {
+
+  // stride_viewの宣言例
+  template<input_range V>
+    requires view<V>
+  class stride_view : public view_interface<stride_view<V>> {
+    ...
+  };
+}
+```
+
+`stride_view`は受け取った入力範囲を`views::all`に通したものと、指定されたスキップ幅を内部で保存しています。
+
+### 動作詳細
+
+`stride_view`のイテレータは入力範囲の先頭と終端のイテレータペア（`it, end`）と指定されたスキップ幅及び進行時に進めなかった距離（`stride, missing`）を保存する変数を保持しています。
+
+`stride_view`のイテレータの進行時には保持するイテレータを`ranges::advance(it, stride, end)`のように進めて、この戻り値を`missing`に保存します。`missing`は`it`が終端に到達した時に非ゼロになります。
+
+イテレータの間接参照時は保持するイテレータの間接参照（`*it`）を直接返し、終端判定は`it`の比較によって行われます。
+
+`missing`が使用されるのは`stride_view`のイテレータの後退時で、`ranges::advance(it, missing - stride)`のように後退させて`missing`を0にします。これは、終端から逆に戻る際に進行時と同じ要素を指すようにするためのものです。
+
+```cpp
+auto strd = rng | std::views::stride(n);
+
+// 元の範囲のイテレータペアを保存（it, end）
+// ストライド値と終端調整値も保持（stride, missing）
+auto it = cby.begin();
+
+// 進行時はranges::advance(it, stride, end)のように進める
+// そして、この戻り値をmissingに保存
+++it;
+
+// 後退時は逆ranges::advance(it, missing - stride)
+// そして、missingを0にする
+--it;
+
+// ランダムアクセス時もほぼ同様
+// ranges::advance(it, stride * d + missing, end)
+// ただし、進行時はmissingを正しく更新するために2回に分けて進行する
+it += d;
+it -= d;
+
+// *itをそのまま返す
+auto elem = *it;
+
+// 保持するイテレータ同士の比較になる
+// common_rangeではない場合、it == endによって終端判定
+bool b = it == cby.end();
+```
+
+`missing`による正しい逆順操作のサポートは特に、`stride_view`が`random_access_range`となるために必要になります。
+
+### 後退と逆転
+
+`views::stride`による範囲は、先頭から辿っても末尾から辿っても同じ要素列を生成するようになっています。そのため、末尾から`views::stride`するのと、`views::stride`を`views::reverse`するのでは結果が異なります。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+  // 先頭からのstride(2)
+  for (int n : vec | std::views::stride(2)) {
+    std::cout << std::format("{:2d} ", n);
+  }
+  
+  std::cout << '\n';
+  
+  // stride(2)の逆順
+  for (int n : vec | std::views::stride(2) 
+                   | std::views::reverse)
+  {
+    std::cout << std::format("{:2d} ", n);
+  }
+
+  std::cout << '\n';
+
+  // 末尾からのstride(2)
+  for (int n : vec | std::views::reverse 
+                   | std::views::stride(2))
+  {
+    std::cout << std::format("{:2d} ", n);
+  }
+}
+```
+```{style=planetext}
+ 1  3  5  7  9 
+ 9  7  5  3  1 
+10  8  6  4  2 
+```
+
+### `stride_view`（`views::stride`）の諸特性
+
+入力範囲を`R`とすると次のようになります
+
+- `reference` : `range_reference_t<R>`
+- `range`カテゴリ : `R`のカテゴリと同じ（ただし、`contiguous_range`にはならない）
+- `common_range` : `R`が`common_range`であり
+    - `sized_range`かつ`forward_range`である場合
+    - そうではないなら、`bidirectional_range`ではない場合
+- `sized_range` : `R`が`sized_range`である場合
+- `const-iterable` : `const R`が`range`である場合
+- `borrowed_range` : `R`が`borrowed_range`である場合
+
 ## `views::cartesian_product`
 
 ## `ranges::range_adaptor_closure`
