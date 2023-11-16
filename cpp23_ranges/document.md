@@ -1682,8 +1682,8 @@ auto se = sld.end();
 it += 3;
 it -= 3;
 
-// 保持するイテレータをitとすると
-// views::counted(it, n)を返す
+// 保持するイテレータをcurrentとすると
+// views::counted(current, n)を返す
 auto subrng = *it;
 
 // 保持するイテレータ同士の比較になる
@@ -1940,40 +1940,40 @@ namespace std::ranges {
 
 ### 動作詳細
 
-`stride_view`のイテレータは入力範囲の先頭と終端のイテレータペア（`it, end`）と指定されたスキップ幅及び進行時に進めなかった距離（`stride, missing`）を保存する変数を保持しています。
+`stride_view`のイテレータは入力範囲の先頭と終端のイテレータペア（`current, end`）と指定されたスキップ幅及び進行時に進めなかった距離（`stride, missing`）を保存する変数を保持しています。
 
-`stride_view`のイテレータの進行時には保持するイテレータを`ranges::advance(it, stride, end)`のように進めて、この戻り値を`missing`に保存します。`missing`は`it`が終端に到達した時に非ゼロになります。
+`stride_view`のイテレータの進行時には保持するイテレータを`ranges::advance(current, stride, end)`のように進めて、この戻り値を`missing`に保存します。`missing`は`current`が終端に到達した時に非ゼロになります。
 
-イテレータの間接参照時は保持するイテレータの間接参照（`*it`）を直接返し、終端判定は`it`の比較によって行われます。
+イテレータの間接参照時は保持するイテレータの間接参照（`*current`）を直接返し、終端判定は`current`の比較によって行われます。
 
-`missing`が使用されるのは`stride_view`のイテレータの後退時で、`ranges::advance(it, missing - stride)`のように後退させて`missing`を0にします。これは、終端から逆に戻る際に進行時と同じ要素を指すようにするためのものです。
+`missing`が使用されるのは`stride_view`のイテレータの後退時で、`ranges::advance(current, missing - stride)`のように後退させて`missing`を0にします。これは、終端から逆に戻る際に進行時と同じ要素を指すようにするためのものです。
 
 ```cpp
 auto strd = rng | std::views::stride(n);
 
-// 元の範囲のイテレータペアを保存（it, end）
+// 元の範囲のイテレータペアを保存（current, end）
 // ストライド値と終端調整値も保持（stride, missing）
 auto it = cby.begin();
 
-// 進行時はranges::advance(it, stride, end)のように進める
+// 進行時はranges::advance(current, stride, end)のように進める
 // そして、この戻り値をmissingに保存
 ++it;
 
-// 後退時は逆ranges::advance(it, missing - stride)
+// 後退時は逆ranges::advance(current, missing - stride)
 // そして、missingを0にする
 --it;
 
 // ランダムアクセス時もほぼ同様
-// ranges::advance(it, stride * d + missing, end)
+// ranges::advance(current, stride * d + missing, end)
 // ただし、進行時はmissingを正しく更新するために2回に分けて進行する
 it += d;
 it -= d;
 
-// *itをそのまま返す
+// *currentをそのまま返す
 auto elem = *it;
 
 // 保持するイテレータ同士の比較になる
-// common_rangeではない場合、it == endによって終端判定
+// common_rangeではない場合、current == endによって終端判定
 bool b = it == cby.end();
 ```
 
