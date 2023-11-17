@@ -1017,21 +1017,21 @@ namespace std::ranges {
 
 `zip_view`そのものは入力範囲に`input_range`であることくらいしか要求していないため、`zip`できる範囲とその組み合わせに制限はありません。ただし、`zip_view`のRangeカテゴリは入力範囲のカテゴリのうち最も弱いものになります。
 
-### 動作詳細
+`zip_view`は入力範囲を`views::all`に通したものを`std::tuple`につめて保持しています。
 
-`zip_view`は構築されると入力範囲を`views::all`に通したものを`std::tuple`につめて保持しますが、それ以上のことはしません。実際の`zip`動作はそのイテレータが担っています。
+### 動作詳細
 
 `zip_view`のイテレータは入力範囲の全てのイテレータを保持しており、進行に伴ってはそれら全てのイテレータを同様に進行させます。
 
-`zip_view`のイテレータの間接参照では、保持する全てのイテレータに対して`*i`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。前述のように、ここでは参照は参照のままラップされます。
+`zip_view`のイテレータの間接参照では、保持する全てのイテレータに対して`*it`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。前述のように、ここでは参照は参照のままラップされます。
 
 `zip_view`のイテレータ終端判定は、保持する全てのイテレータの比較が行われ、そのうちいずれか1つが終端に達している場合に`zip_view`のイテレータも終端に到達しているとみなされます。この時、短絡評価を行うかどうかは規定されていませんが禁止されてもいません。
 
 ```cpp
 // 入力範囲の保存or参照のみを行う
-auto zip = std::views::zip(...);
+auto zip = std::views::zip(rngs...);
 
-// 入力範囲のイテレータを取り出し保存する
+// 全ての入力範囲のイテレータを取り出し保存する
 auto it = zip.begin();
 
 // 進行は保持するイテレータ全てに同じ操作を適用する
@@ -2031,6 +2031,176 @@ int main() {
 - `borrowed_range` : `R`が`borrowed_range`である場合
 
 ## `views::cartesian_product`
+
+`views::cartesian_product`は複数の範囲を入力に取り、それらの直積となる範囲を表す`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {'a', 'b', 'c'};
+  std::string str = "def";
+
+  for (auto [a, b] : std::views::cartesian_product(vec, str)) {
+    std::cout << std::format("({:c}, {:c})\n", a, b);
+  }
+}
+```
+```{style=planetext}
+(1, a)
+(1, b)
+(1, c)
+(2, a)
+(2, b)
+(2, c)
+(3, a)
+(3, b)
+(3, c)
+```
+
+`views::zip`と異なる点は、各要素は入力範囲のそれぞれの要素の順序対となるところです。`views::cartesian_product`はこの順序対の可能なペアを全て列挙する範囲となります。
+
+例えば多重ループを1つの`for`ループによって実現することができます
+
+```cpp
+// assertのためにインクルード
+#include <cassert>
+
+auto multi_index(std::integral auto... Ns) {
+  using namespace std::views;
+
+  assert(((0 <= Ns) && ...));
+  
+  return cartesian_product(iota(0, Ns)...);
+}
+
+int main() {
+  for (auto [x, y, z] : multi_index(3, 3, 3)) {
+    std::cout << std::format("({:d}, {:d}, {:d})\n", x, y, z);
+  }
+}
+```
+```{style=planetext}
+(0, 0, 0)
+(0, 0, 1)
+    .
+    .
+    .
+(2, 2, 1)
+(2, 2, 2)
+```
+
+`views::cartesian_product`の長さは入力範囲の長さの総乗となり、この例では27要素になります（そのため、出力が長くなるので途中を省略しています）。
+
+`views::cartesian_product`の要素型は`views::zip`と同様に入力範囲の各要素を参照する`std::tuple`となり、その要素の順番は範囲の入力順に一致します。また、要素の`std::tuple`オブジェクトは入力の各範囲のイテレータの間接参照結果が参照なら参照を保持することでコピーを回避しており、入力イテレータの間接参照が*prvalue*を返す場合にのみムーブして値を保持します。
+
+`views::cartesian_product`そのものはカスタマイゼーションポイントオブジェクトであり、0個以上の引数（`args...`）を受け取ってその数に応じて次のどちらかの動作をします
+
+- 引数なし（`sizeof...(args) == 0`）の場合 : `views​::single(std::tuple())`
+- それ以外の場合 : `args...`内のそれぞれの範囲を`views::all`で包みながら、`cartesian_product_view`を構築して返す
+
+`views::cartesian_product`はRangeアダプタオブジェクトではないため、パイプ（`|`）を使用した入力はサポートされていません。Rangeファクトリ同様に、パイプラインの先頭で使用することになるでしょう。
+
+### `cartesian_product_view`
+
+`views::cartesian_product`に1つ以上の範囲を入力する場合は`cartesian_product_view`が返されます。
+
+```cpp
+namespace std::ranges {
+
+  // cartesian_product_viewの宣言例
+  template<input_range First, forward_range... Vs>
+    requires (view<First> && ... && view<Vs>)
+  class cartesian_product_view : public view_interface<cartesian_product_view<First, Vs...>> {
+    ...
+  };
+}
+```
+
+入力範囲に関して、1つ目の範囲は`input_range`ですが2つ目以降の範囲は`forward_range`であることが求められています。1つ目だけ制約が異なるのは、`views::cartesian_product`の列挙は1つ目の範囲について行われるためで、1つ目の範囲のある要素が参照されるタイミングは連続的になりますが（1つのイテレータが進むだけで良い）、2つ目以降の範囲の要素は異なるタイミングで複数回参照されるため（マルチパス保証が必要になるため）です。
+
+`cartesian_product_view`は入力範囲をそれぞれ`views::all`に通したものを`std::tuple`に詰めて保持しています。
+
+### 動作詳細
+
+`cartesian_product_view`のイテレータは入力範囲の全てのイテレータを保持しています。この時、そのイテレータの並び順は範囲の入力順に一致し、先頭が1つ目の範囲のイテレータ、一番後ろが最後の入力範囲のイテレータとなっています。
+
+`cartesian_product_view`のイテレータの進行時は、次の`next<N>()`のような関数を入力範囲の数を`N`として呼び出すことで進行（インクリメント）を行います
+
+```cpp
+// currentは入力イテレータを保持するstd::tupleオブジェクト
+// input_rangesは入力範囲を保持するstd::tupleオブジェクト
+template<size_t N>
+constexpr void next() {
+  // N番目のイテレータを取得
+  auto& it = std::get<N>(current);
+  // 進める
+  ++it;
+
+  if constexpr (N > 0) {
+    // N番目のイテレータが終端に到達している場合のみ、N-1番目のイテレータを進める
+    if (it == ranges::end(std::get<N>(input_ranges))) {
+      it = ranges::begin(std::get<N>(input_ranges));
+      next<N - 1>();
+    }
+  }
+}
+```
+
+すなわち、保持するイテレータの一番最後のものを1つ進めた後、それが終端に到達していたら先頭にリセットして1つ前のイテレータに対して同様の進行とチェックを行っていきます。
+
+後退時はこれとほぼ逆のことをします（この場合、チェックしてからデクリメントする順番）。また、ランダムアクセス（`+= -=`など）が行われる場合は、進行距離`d`に対して定数時間で`d`回インクリメント/デクリメントしたのと同じ結果になるように指定されています。具体的な実装は規定されていませんが、おそらく、`d`を`N`番目の範囲の長さで割ってその剰余の値で`N`番目のイテレータを進行させ、商の値を長さとして`N - 1`番目も同様に進行させ...のような形で実装されると思われます。
+
+`cartesian_product_view`のイテレータの間接参照では、保持する全てのイテレータに対して`*it`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。前述のように、ここでは参照は参照のままラップされます。
+
+```cpp
+// 入力範囲の保存or参照のみを行う
+auto crp = std::views::cartesian_product(rngs...);
+
+// 全ての入力範囲のイテレータを取り出し保存する
+auto it = crp.begin();
+
+// 進行時は後のイテレータから進めていく
+// 進めたイテレータが終端に達した時のみその1つ前のイテレータを進める
+++it;
+--it;
+
+// ランダムアクセスも基本は同様に処理される
+it += 3;
+it -= 3;
+
+// 保持するイテレータ全ての間接参照結果をtupleにラップして返す
+auto tuple = *it;
+
+// 保持するイテレータ全ての比較が行われる
+// おそらく短絡評価は行われる
+bool b = it == crp.end();
+```
+
+この実装になっているため、`views::cartesian_product`の要素である順序対内の要素の順番は入力範囲の順番と一致し、要素の列挙はより下位の範囲の要素が先に列挙される形になります。
+
+### `cartesian_product_view`(`views::cartesian_product`)の諸特性
+
+少なくとも1つ以上入力があり、入力範囲型の列（パック）を`Rs`、1つ目の範囲を`R0`とすると次のようになります
+
+- `reference` : `std::tuple<range_reference_t<Rs>...>`
+- `range`カテゴリ : 次のいずれか
+    - 次の全てを満たす場合 : `random_access_range`
+      - `Rs`は全て`random_access_range`
+      - `R0`を除いた`Rs`はは全て`sized_range`
+    - 次の全てを満たす場合 : `bidirectional_range`
+      - `Rs`は全て`bidirectional_range`
+      - `R0`を除いた`Rs`は全て次ののどちらか
+        - `common_range`
+        - `random_access_range`かつ`sized_range`
+    - `R0`が`forward_range`の場合 : `forward_range`
+    - それ以外の場合 : `input_range`
+- `common_range` : `R0`が`common_range`の場合
+- `sized_range` : `Rs`が全て`sized_range`の場合
+- `const-iterable` : `const Rs`が全て`range`である場合
+- `borrowed_range` : ×
+
+`random_access_range`となる場合はランダムアクセスを定数時間で処理するために入力範囲の長さがあらかじめわかっている必要があるため、入力範囲は`sized_range`である必要があります。ただこの場合でも、一番最初の範囲の長さは関係ないので、`R0`だけはそれが求められません。
+
+`bidirectional_range`となる場合も後退をサポートするためにはendイテレータからデクリメントできなければなりませんが、`bidirectional_range`であるが`common_range`ではない場合はそれができないため、定数時間で終端の1つ前を求めるために`random_access_range`かつ`sized_range`であることを求めています。この場合もやはり、`R0`だけはそれが必要ないので求められていません。
 
 ## `ranges::range_adaptor_closure`
 
