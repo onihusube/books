@@ -2204,6 +2204,213 @@ bool b = it == crp.end();
 
 ## `ranges::range_adaptor_closure`
 
+Rangeアダプタは`views::cartesian_product`で打ち止めで、ここからはRangeアダプタに関連する変更を見ていきます。
+
+`ranges::range_adaptor_closure`はRangeアダプタを自作する場合に標準アダプタとの間でパイプライン演算子（`|`）による接続が行えるようにするためのサポートを提供するクラス型です。
+
+```cpp
+namespace std::ranges {
+  template<class D>
+    requires is_class_v<D> && same_as<D, remove_cv_t<D>>
+  class range_adaptor_closure { }; 
+}
+```
+
+`range_adaptor_closure`はCRTPによって継承して使用し、Rangeアダプタの実装詳細の`view`型ではなくRangeアダプタオブジェクトの型で使用するものです。
+
+オリジナルのRangeアダプタである`my_adaptor`を実装しようとしているとします。パイプのための考慮を一切しない場合、そのままだとパイプライン演算子を使用できません
+
+```cpp
+using namespace std::ranges;
+
+// 自作のRangeアダプタの実装view型
+template<view V>
+class my_view : public view_interface<my_view<V>> {
+  ...
+};
+
+// 自作のRangeアダプタ型
+class my_original_adaptor {
+  
+  template<viewable_range R>
+  view auto operator()(R&& rng) const {
+    return my_view(std::forward<R>(rng));
+  }
+};
+
+// Rangeアダプタであるmy_adaptorの定義
+inline constexpr my_original_adaptor my_adaptor{};
+
+
+int main() {
+  std::vector vec = {...};
+
+  // パイプでrangeを入力できない
+  view auto v1 = vec | my_adaptor; // ng
+  view auto v2 = vec | views::take(2) | my_adaptor;  // ng
+
+  // Rangeアダプタの合成もできない
+  auto raco1 = views::take(2) | my_adaptor;  // ng
+  auto raco2 = my_adaptor | views::take(2);  // ng
+}
+```
+
+これを有効化するためには`my_original_adaptor`クラスに`operator|`を実装すればいいのですが、1つ目の`range`の入力はともかく、2つ目の他のアダプタとの合成に関してはどうすればいいのかわかりませんし、実際そのための統一的な方法はC++20時点では提供されていません。
+
+`ranges::range_adaptor_closure`はこの問題を解決するために導入されたもので、これをRangeアダプタ実装クラスで継承するだけで上記2つのタイプのパイプサポートを有効化できます。この例では、`my_original_adaptor`で使用します。
+
+```cpp
+#include <ranges>
+using namespace std::ranges;
+
+// 自作のRangeアダプタの実装view型
+template<view V>
+class my_view : public view_interface<my_view<V>> {
+  ...
+};
+
+// 自作のRangeアダプタ型
+// CRTPによってrange_adaptor_closureを継承する
+class my_original_adaptor : range_adaptor_closure<my_original_adaptor> {
+
+  template<viewable_range R>
+  view auto operator()(R&& rng) const {
+    return my_view(std::forward<R>(rng));
+  }
+};
+
+// Rangeアダプタであるmy_adaptorの定義
+inline constexpr my_original_adaptor my_adaptor{};
+
+
+int main() {
+  std::vector vec = {...};
+
+  // パイプでrangeを入力できるようになる
+  view auto v1 = vec | my_adaptor; // ok
+  view auto v2 = vec | views::take(2) | my_adaptor;  // ok
+
+  // Rangeアダプタの合成も有効化される
+  auto raco1 = views::take(2) | my_adaptor;  // ok
+  auto raco2 = my_adaptor | views::take(2);  // ok
+}
+```
+
+ただし、`range_adaptor_closure`が行うのはRangeアダプタクロージャ（オブジェクト）と呼ばれるタイプのRangeアダプタに対してパイプライン演算子のサポートを追加することだけです。そうではないものはRangeアダプタ（オブジェクト）と呼ばれ、こちらの実装のためには入力範囲以外の追加の引数を予め受けておいてそれをラップしたRangeアダプタクロージャオブジェクトを生成する、という処理が必要になります。
+
+Rangeアダプタクロージャオブジェクトとは、そのRangeアダプタの動作のために追加の引数を必要とせずあとは`range`を入力されるだけ、というタイプのものです。標準のものだと例えば`views::reverse`や`views::join`等があります。そうではないRangeアダプタ（オブジェクト）は標準には例えば`views::filter`や`views::transform`等があります。
+
+```cpp
+#include <ranges>
+using namespace std::ranges;
+
+int main() {
+  std::vector vec = {...};
+  
+  // views::reverseはRangeアダプタクロージャオブジェクト
+  view auto v1 = vec | views::reverse;
+
+  // 追加の引数が必要なものはRangeアダプタオブジェクト
+  view auto v2 = vec | views::take(5);
+  view auto v3 = vec | views::filter([](auto v) { ... });
+  view auto v4 = vec | views::transform([](auto v) { ... });
+
+  // Rangeアダプタオブジェクトに追加の引数を予め充填したものはRangeアダプタクロージャオブジェクト
+  auto raco1 = views::take(5);
+  auto raco2 = views::filter([](auto v) { ... });
+  auto raco3 = views::transform([](auto v) { ... });
+
+  // パイプライン演算子はRangeアダプタクロージャオブジェクトに対して作用する
+  view auto v5 = vec | raco1; // v2と同じ意味
+  view auto v6 = vec | raco2; // v3と同じ意味
+  view auto v7 = vec | raco3; // v4と同じ意味
+  auto raco4 = raco1 | raco2 | raco3;
+}
+```
+
+### `std::bind_back`
+
+とはいえRangeアダプタのためのサポートはほったらかしかというとそういうことはなく、Rangeアダプタの処理のために`std::bind_back()`が用意されます。`std::bind_back()`は`std::bind_front()`の逆順版のものです。
+
+`std::bind_front()`は、呼び出し可能なものとその引数の先頭部分を受けてそれをラップしたオブジェクトを返し、そのオブジェクトに残りの引数を与えて呼び出すと`bind_front`に渡した引数を先頭にして追加の引数をその後に並べた形で元の呼び出し可能なオブジェクトに渡して呼び出しを行います。
+
+`std::bind_back()`は、呼び出し可能なものとその引数の末尾部分受けてそれをラップしたオブジェクトを返し、そのオブジェクトに残りの引数を与えて呼び出すと追加の引数を先頭にして`bind_back`に渡した引数をその後に並べた形で元の呼び出し可能なオブジェクトに渡して呼び出しを行います。
+
+```cpp
+int main() {
+  auto print4 = [](auto&&... args) {
+    static_assert(sizeof...(args) == 4);
+
+    std::cout << std::format("{}, {}, {}, {}\n", args...);
+  };
+
+  auto bf = std::bind_front(print4, 20, 23);
+  auto bb = std::bind_back(print4, 20, 23);
+
+  std::cout << "bind_front : ";
+  bf('C', "++");
+  std::cout << "bind_back  : ";
+  bb('C', "++");
+}
+```
+```{style=planetext}
+bind_front : 20, 23, C, ++
+bind_back  : C, ++, 20, 23
+```
+
+これを用いるとRangeアダプタの処理である追加の引数の順番を保った保存の部分を委任することができます。
+
+```cpp
+using namespace std::ranges;
+
+// 自作のRangeアダプタクロージャ型
+template<typename... Args>
+struct my_closure_adaptor : range_adaptor_closure<my_closure_adaptor<F>> {
+  F f;
+
+  template<viewable_range R>
+  view auto operator()(R&& input) const {
+    // bind_back()でラッピングされたfに引数のrangeを入力しRangeアダプタを実行する
+    return f(input);
+  }
+};
+
+// 自作のRangeアダプタ型（not クロージャ）
+class my_original_adaptor {
+
+  ...
+  
+  template<typename... Args>
+  view auto operator()(viewable_range auto&& input, Args&&... args) const {
+    // 入力rangeと必要な引数がすべてそろった状態で、Rangeアダプタを実行し結果のviewを返す
+    return my_view(std::forward<R>(input, std::forward<Args>(args)...));
+  }
+  
+  // 追加の引数を受けてRangeアダプタクロージャオブジェクトを返す
+  template<typename... Args>
+  auto operator()(Args&&... args) const {
+    // bind_back()で自身と追加の引数をラッピングし、Rangeアダプタクロージャオブジェクトを作成
+    return my_closure_adaptor{.f = std::bind_back(*this, std::forward<Args>(args)...)};
+  }
+};
+
+inline constexpr my_original_adaptor my_adaptor{};
+
+int main() {
+  std::vector vec = {...};
+
+  // my_original_adaptorが追加の引数として整数を1つ受け取るとすると
+  view auto v1 = vec | my_adaptor(1); // ok
+  view auto v2 = vec | views::take(2) | my_adaptor(2);  // ok
+  auto raco = my_adaptor(1);  // ok
+  view auto v3 = vec | raco;  // ok、v1と同じ意味
+}
+```
+
+Rangeアダプタの実装においてはおそらく、ほとんどの場合この例のように入力範囲も含めた必要なものをすべて受けてRangeダプタとしての処理を実行する関数呼び出し演算子と、追加の引数だけを受けて対応するRangeアダプタクロージャオブジェクトを作成する関数呼び出し演算子の2つを記述することになると思われます。
+
+おそらく、この`my_closure_adaptor`のより汎用なもの（汎用的なRangeアダプタクロージャオブジェクト型）はRangeアダプタとは別で作成できて、かつこの例のような典型的な実装になるはずです。そのため、自作のRangeアダプタ毎にこのようなものを作る必要は無いでしょう。この部分がC++23で追加されなかったのは、この部分の最適な実装がまだ確立されていないためだったようです。
+
 ## Rangeアダプタのムーブオンリータイプへの対応
 P2494R2
 
