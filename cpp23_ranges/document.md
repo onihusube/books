@@ -2364,7 +2364,7 @@ bind_back  : C, ++, 20, 23
 using namespace std::ranges;
 
 // 自作のRangeアダプタクロージャ型
-template<typename... Args>
+template<typename F>
 struct my_closure_adaptor : range_adaptor_closure<my_closure_adaptor<F>> {
   F f;
 
@@ -2412,7 +2412,19 @@ Rangeアダプタの実装においてはおそらく、ほとんどの場合こ
 おそらく、この`my_closure_adaptor`のより汎用なもの（汎用的なRangeアダプタクロージャオブジェクト型）はRangeアダプタとは別で作成できて、かつこの例のような典型的な実装になるはずです。そのため、自作のRangeアダプタ毎にこのようなものを作る必要は無いでしょう。この部分がC++23で追加されなかったのは、この部分の最適な実装がまだ確立されていないためだったようです。
 
 ## Rangeアダプタのムーブオンリータイプへの対応
-P2494R2
+
+C++20のRangeアダプタのうち、ユーザー定義の型を追加で受けるものはその受ける型に対して`copy_constructible`であることを要求しており、これによってムーブオンリーな型の利用が妨げられていました。
+
+これはC++20に導入されるよりも前の`view`コンセプトの要件によっていたようで、その要件が緩和された後にもそのままになっていたようです。
+
+そのため、それらのRangeアダプタ（の`view`型）の要件が緩和されます。影響を受けるのは次のものです
+
+- `single_view`
+- `transform_view`
+- `take_while_view`
+- `drop_while_view`
+
+これらの`view`型ではムーブオンリーな型の値を渡して保持させることができるようになり、その場合その`view`もムーブオンリーになります。
 
 # Rangeアルゴリズム
 
