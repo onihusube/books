@@ -2428,7 +2428,78 @@ C++20のRangeアダプタのうち、ユーザー定義の型を追加で受け�
 
 # Rangeアルゴリズム
 
-## `find_last/find_last_if/find_last_if_not`
+## `find_last`系アルゴリズム
+
+`find_last`系アルゴリズムは`find`系のアルゴリズムに対して逆の探索を行うもので、範囲の末尾から指定された条件によって探索を行います。
+
+追加されるのは次の3つです
+
+- `ranges::find_last`
+    - 指定された値を範囲の末尾から検索する
+- `ranges::find_last_if`
+    - 条件を満たす最後の要素を検索する
+- `ranges::find_last_if_not`
+    - 条件を満たさない最後の要素を検索する
+
+```cpp
+namespace std::ranges {
+  template<forward_range R, class T, class Proj = identity>
+    requires
+      indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
+  constexpr borrowed_subrange_t<R>
+    find_last(R&& r, const T& value, Proj proj = {});
+
+  template<forward_range R, class Proj = identity,
+           indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+  constexpr borrowed_subrange_t<R>
+    find_last_if(R&& r, Pred pred, Proj proj = {});
+
+  template<forward_range R, class Proj = identity,
+           indirect_unary_predicate<projected<iterator_t<R>, Proj>> Pred>
+  constexpr borrowed_subrange_t<R>
+    find_last_if_not(R&& r, Pred pred, Proj proj = {});
+}
+```
+
+ここでは`range`を受け取るバージョンしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。
+
+使用感は`find`系アルゴリズムと同様になりますが戻り値だけが異なっており、`find_last`系アルゴリズムは戻り値として末尾の情報も含めて返します。すなわち、終端のイテレータを`end`、指定されたものを見つけ場合にその位置を指すイテレータを`it`とすると
+
+- 指定されたものを見つけた場合 : `[it, last)`
+- 何も見つからなかった場合 : `[last, last)`
+
+のような`subrange`を戻り値として返します。
+
+```cpp
+using std::ranges;
+
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5, 6};
+
+  auto is_even = [](int n) { return n % 2 == 1; };
+
+  range auto res1 = find_last(vec, 4);
+  range auto res2 = find_last_if(vec, is_even);
+  range auto res3 = find_last_if_not(vec, is_even);
+
+  std::cout << std::format("{} : {}\n", res1.front(), res1.size());
+  std::cout << std::format("{} : {}\n", res2.front(), res2.size());
+  std::cout << std::format("{} : {}\n", res3.front(), res3.size());
+  
+  // 見つからない場合
+  range auto res4 = find_last(vec, 10);
+
+  std::cout << std::format("  : {}\n", res4.size());
+}
+```
+```{style=planetext}
+4 : 3
+5 : 2
+6 : 1
+  : 0
+```
+
+なお、これらのアルゴリズムは`ranges`版のものしか用意されておらず、`std::find_last`などは利用できません。
 
 ## `ranges::starts_with`/`ranges::ends_with`
 ## `ranges::contains`/`ranges::contains_subrange`
