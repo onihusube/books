@@ -626,6 +626,122 @@ int main() {
 C++23で追加されたRangeファクトリはこの`views::repeat`のみなので、以降のものは全てRangeアダプタになります。
 
 ## `views::as_rvalue`
+
+`views::as_rvalue`は、入力範囲の各要素を`std::move()`した右辺値の要素からなる範囲となる`view`です。
+
+```cpp
+int main() {
+  std::vector<std::string> strvec = { "move_view", "all_move_view", "as_rvalue_view" };
+  
+  for (std::string&& rv : strvec | std::views::as_rvalue) {
+    std::cout << std::format("{:s}", rv);
+  }
+}
+```
+```{style=planetext}
+move_view
+all_move_view
+as_rvalue_view
+```
+
+このサンプルコードはほぼ意味がなく、これは後述の`ranges::to`とともに使用されることを意図しています。
+
+```cpp
+int main() {
+  std::vector<std::unique_ptr<int>> upvec;
+  upvec.emplace_back(std::make_unique<int>(10));
+  upvec.emplace_back(std::make_unique<int>(100));
+  upvec.emplace_back(std::make_unique<int>(17));
+  
+  // listに詰め替え
+  auto up_list = upvec | std::views::as_rvlaue
+                       | std::ranges::to<std::list>;  // ok
+
+  // upvecの要素はunique_ptrの左辺値であるため、これだとコピーしようとしてエラー
+  auto up_list = upvec | std::ranges::to<std::list>;  // ng  
+}
+```
+
+`ranges::to`は`range`から`range`への変換を行うもので詳しくは後で解説しています。
+
+また、同様の事をRangeアルゴリズムでやる場合にも使用できます。
+
+```cpp
+int main() {
+  std::vector<std::unique_ptr<int>> upvec;
+  upvec.emplace_back(std::make_unique<int>(10));
+  upvec.emplace_back(std::make_unique<int>(100));
+  upvec.emplace_back(std::make_unique<int>(17));
+  
+  // listに詰め替え
+  std::list<std::unique_ptr<int>> uplist;
+  std::ranges::copy(upvec | std::views::as_rvalue, std::back_inserter(uplist));
+}
+```
+
+`views::as_rvalue`そのものはRangeアダプタオブジェクトであり、入力範囲`r`（型`R`とする）を受けて次のどちらかの動作をします
+
+- `r`の右辺値参照型（`range_rvalue_reference_t<R>`）と`r`の参照型（`range_reference_t<R>`）が同じ型である場合 : `views::all(r)`を返す
+- そうではない場合 : `r`をそのまま転送して`as_rvalue_view`を構築して返す
+
+`views::as_rvalue`は入力範囲の要素の値カテゴリを見て、それが既に右辺値の場合は何もせず、左辺値である場合にのみ`as_rvalue_view`を返します。これによって、既に右辺値の範囲となっている入力範囲に対して要素ごとに`std::move`をかけていくことを回避しており、特に間接参照結果が*prvalue*になっている範囲に対して使用した場合にコピー省略を妨げないようになっています。
+
+### `as_rvalue_view`
+
+`views::as_rvalue`に左辺値を要素とする範囲を入力する場合は`as_rvalue_view`が返されます。
+
+```cpp
+namespace std::ranges {
+
+  // as_rvalue_viewの宣言例
+  template<view V>
+    requires input_range<V>
+  class as_rvalue_view : public view_interface<as_rvalue_view<V>> {
+    ...
+  };
+}
+```
+
+`as_rvalue_view`は入力範囲を`views::all``views::all`に通したものを保持しています。
+
+### 動作詳細
+
+`as_rvalue_view`は入力範囲のイテレータを`std::move_iterator`にラップして返すことでその要素の右辺値化を行います。そのため、動作はすべて`std::move_iterator`が定義するところによります。
+
+C++17までの（C++17イテレータとしての）`std::move_iterator<I>`はラップするイテレータ`I`の性質をなるべく再現しようとしていました。しかし、`std::move_iterator<I>`の各要素は対応する`I`のイテレータの要素をムーブしたものであり、同じ要素への2回目以降のアクセスは安全ではないため、`forward_iterator`以上になることは適切ではありません。
+
+そのため、C++20からの（C++20イテレータとしての）`std::move_iterator<I>`は`I`にかかわらず常に`input_iterator`となります。これを受けて、`as_rvalue_view`も常に`input_range`となります。
+
+```cpp
+// 入力範囲の保存or参照のみを行う
+auto arv = std::views::as_rvalue(input);
+
+// 入力のイテレータをmove_iteratorにラップして返す
+auto it = arv.begin();
+
+// 進行は保持するイテレータに同じ操作を適用する
+++it;
+
+// 保持するイテレータの間接参照結果をmoveして返す
+auto&& rvalue = *it;
+
+// 保持するイテレータ同士の比較が行われる
+bool b = it == arv.end();
+```
+
+入力の範囲（`input`）が右辺値だったとしても入力範囲は`as_rvalue_view`内部で保存されているため、`as_rvalue_view`から取得されるイテレータは元の`as_rvalue_view`オブジェクトが生存している限り安全に使用できます。これは、`views::as_rvalue`が`std::move_iterator`と`ranges::subrange`によって実装されていない理由でもあります（そのような実装では右辺値範囲の入力がダングリングイテレータを生成します）。
+
+### `as_rvalue_view`(`views::as_rvalue`)の諸特性
+
+入力の範囲を`R`とすると次のようになります
+
+- `reference` : `range_rvalue_reference_t<R>`
+- `range`カテゴリ : `input_range`
+- `common_range` : `R`が`common_range`の場合
+- `sized_range` : `R`が`sized_range`の場合
+- `const-iterable` : `R`が`const-iterable`の場合
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
 ## `views::join_with`
 
 `views::join_with`は指定されたパターンによって接合しながら入力の`range`の`range`を平坦化する`view`です。
