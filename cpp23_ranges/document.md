@@ -644,7 +644,7 @@ all_move_view
 as_rvalue_view
 ```
 
-このサンプルコードはほぼ意味がなく、これは後述の`ranges::to`とともに使用されることを意図しています。
+このサンプルコードはほぼ意味がなく、これはC++23で一緒に導入された`ranges::to`とともに使用されることを意図しています。
 
 ```cpp
 int main() {
@@ -662,7 +662,7 @@ int main() {
 }
 ```
 
-`ranges::to`は`range`から`range`への変換を行うもので詳しくは後で解説しています。
+`ranges::to`は`range`から`range`への変換を行うもので、詳しくは後の章で解説しています。
 
 また、同様の事をRangeアルゴリズムでやる場合にも使用できます。
 
@@ -1395,7 +1395,7 @@ namespace std::ranges {
 
 ### 動作詳細
 
-`adjacent_view`のイテレータは元の範囲のイテレータを`N`個分保持しています。元の範囲のイテレータ型を`I`とすると`std::array<I, N>`のような形で保存されており、先頭のイテレータ（`.front()`）から最後（`.back()`）にかけてあらかじめ1つづつインクリメントされます（実際には保存方法がこう指定されているわけではありませんが、説明のために以下ではそうなっているものとします）。`adjacent_view`のイテレータの進行時には保持している`N`個のイテレータを同様に進行させます。
+`adjacent_view`のイテレータは元の範囲のイテレータを`N`個分保持しています。元の範囲のイテレータ型を`I`とすると`std::array<I, N>`のような形で保存されており、先頭のイテレータ（``）から最後（`.back()`）2め1つづつインクリメントされます（実際には保存方法がこう指定されているわけではありませんが、説明のために以下ではそうなっているものとします）。`adjacent_view`のイテレータの進行時には保持している`N`個のイテレータを同様に進行させます。
 
 `adjacent_view`のイテレータの間接参照時は、そのように保持している`N`個のイテレータに対して`*i`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。ここで行われることは`zip_view`のイテレータとほぼ同じことで、それと同様に参照は参照のままラップされます。
 
@@ -2634,6 +2634,110 @@ int main() {
 なお、これらのアルゴリズムは`ranges`版のものしか用意されておらず、`std::find_last`などは利用できません。
 
 ## `ranges::starts_with`/`ranges::ends_with`
+
+`ranges::starts_with`及び`ranges::ends_with`はC++20で`std::string/std::string_view`に追加された同名のメンバ関数をベースとして一般化したもので、ある範囲の先頭（末尾）が指定された範囲で始まっている（終わっている）かを判定するものです。どちらの関数も判定結果は`bool`値で得られます。
+
+```cpp
+namespace std::ranges {
+
+  template<input_range R1, input_range R2, class Pred = ranges::equal_to,
+           class Proj1 = identity, class Proj2 = identity>
+    requires indirectly_comparable<iterator_t<R1>, iterator_t<R2>,
+                                   Pred, Proj1, Proj2>
+  constexpr bool starts_with(R1&& r1, R2&& r2, Pred pred = {},
+                             Proj1 proj1 = {}, Proj2 proj2 = {});
+
+  template<input_range R1, input_range R2, class Pred = ranges::equal_to,
+           class Proj1 = identity, class Proj2 = identity>
+    requires (forward_range<R1> || sized_range<R1>) &&
+             (forward_range<R2> || sized_range<R2>) &&
+             indirectly_comparable<iterator_t<R1>, iterator_t<R2>,
+                                   Pred, Proj1, Proj2>
+  constexpr bool ends_with(R1&& r1, R2&& r2, Pred pred = {},
+                           Proj1 proj1 = {}, Proj2 proj2 = {});
+}
+```
+
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。また、これらのアルゴリズムは`ranges`版のものしか用意されていません。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  range auto input = views::iota(0, 50);
+
+  bool res1 = starts_with(input, views::iota(0, 10));
+  bool res2 = ends_with(input, views::iota(30, 50));
+
+  std::cout << std::format("{:s}\n{:s}\n", res1, res2);
+
+  std::list list = {2, 4, 6};
+
+  bool res3 = starts_with(input, list);
+  bool res4 = ends_with(input, list);
+
+  std::cout << std::format("{:s}\n{:s}\n", res3, res4);
+}
+```
+```{style=planetext}
+true
+true
+false
+false
+```
+
+`std::string`の`.starts_with()/.ends_with()`と異なる点として、比較を行う方法をカスタマイズできるようになっています。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  range auto input = views::iota(0, 50);
+
+  bool res1 = starts_with(input, std::deque{-1, 0, 1, 2, 3}, greater{});
+  bool res2 = ends_with(input, std::array{61, 62, 49, 50}, less{});
+
+  std::cout << std::format("{:s}\n{:s}\n", res1, res2);
+}
+```
+```{style=planetext}
+true
+true
+```
+
+```cpp
+using namespace std::ranges;
+using namespace std::string_view_literals;
+
+constexpr auto to_upper(char8_t c) -> char8_t {
+  if (u8'a' <= c && c <= u8'z') {
+    constexpr auto diff = u8'A' - u8'a';
+    return c + diff;
+  }
+
+  return c;
+}
+
+constexpr auto cmp_alpha(char8_t l, char8_t r) -> bool {
+  return to_upper(l) == to_upper(r);
+}
+
+int main() {
+  std::u8string str = u8"Meteor Lake";
+
+  bool res1 = starts_with(str, u8"METEOR"sv, cmp_alpha);
+  bool res2 = ends_with(str, u8"lake"sv, cmp_alpha);
+
+  std::cout << std::format("{:s}\n{:s}\n", res1, res2);
+}
+```
+```{style=planetext}
+true
+true
+```
+
+さらに、他のRangeアルゴリズム同様に射影もサポートしています。
+
 ## `ranges::contains`/`ranges::contains_subrange`
 
 ## `ranges::iota`
