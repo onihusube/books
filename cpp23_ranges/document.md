@@ -2635,7 +2635,7 @@ int main() {
 
 ## `ranges::starts_with`/`ranges::ends_with`
 
-`ranges::starts_with`及び`ranges::ends_with`はC++20で`std::string/std::string_view`に追加された同名のメンバ関数をベースとして一般化したもので、ある範囲の先頭（末尾）が指定された範囲で始まっている（終わっている）かを判定するものです。どちらの関数も判定結果は`bool`値で得られます。
+`ranges::starts_with`及び`ranges::ends_with`はC++20で`std::string/std::string_view`に追加された同名のメンバ関数をベースとして一般化したもので、範囲の先頭（末尾）が指定された範囲で始まっている（終わっている）かを判定するものです。どちらの関数も判定結果は`bool`値で得られます。
 
 ```cpp
 namespace std::ranges {
@@ -2739,6 +2739,98 @@ true
 さらに、他のRangeアルゴリズム同様に射影もサポートしています。
 
 ## `ranges::contains`/`ranges::contains_subrange`
+
+`ranges::contains`及び`ranges::contains_subrange`はC++20で連想コンテナに対して追加され、C++23で`std::string/std::string_view`に追加された同名のメンバ関数をベースとして一般化したもので、範囲に指定された値、あるいは指定された範囲が含まれているかを判定するものです。どちらの関数も判定結果は`bool`値で得られます。
+
+```cpp
+namespace std::ranges {
+
+  template<input_range R, class T, class Proj = identity>
+    requires indirect_binary_predicate<ranges::equal_to, 
+                                       projected<iterator_t<R>, Proj>, 
+                                       const T*>
+  constexpr bool contains(R&& r, const T& value, Proj proj = {});
+
+  template<forward_range R1, forward_range R2,
+           class Pred = ranges::equal_to,
+           class Proj1 = identity, class Proj2 = identity>
+    requires indirectly_comparable<iterator_t<R1>, iterator_t<R2>, 
+                                   Pred, Proj1, Proj2>
+  constexpr bool contains_subrange(R1&& r1, R2&& r2,
+                                   Pred pred = {}, 
+                                   Proj1 proj1 = {}, Proj2 proj2 = {});
+}
+```
+
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。また、これらのアルゴリズムは`ranges`版のものしか用意されていません。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  std::vector vec = {6, 2, 7, 5. 1};
+  std::array arr = {2, 7};
+  
+  bool res1 = contains(vec, 5);
+  bool res2 = contains_subrange(vec, arr);
+
+  std::cout << std::format("{:s}\n{:s}\n", res1, res2);
+
+  std::list list = {2, 4, 6};
+
+  bool res3 = contains(vec, 0);
+  bool res4 = contains_subrange(vec, list);
+
+  std::cout << std::format("{:s}\n{:s}\n", res3, res4);
+}
+```
+```{style=planetext}
+true
+true
+false
+false
+```
+
+これらのアルゴリズムは`find`や`search`などの既存アルゴリズムと全く同じことをします。その違いは戻り値が直接`bool`で得られるかにあります。`find`や`search`だと、結果がイテレータや`subrange`で得られるため、見つかるかだけが重要で見つかったものにアクセスする必要がない場合にその結果の取得が冗長になり、コードの意図を読み取りづらくします。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  std::vector vec = {6, 2, 7, 5. 1};
+  std::array arr = {2, 7};
+  
+  bool res1 = find(vec, 5) != vec.end();
+  bool res2 = !search(vec, arr).empty();
+}
+```
+
+`contains`及び`contains_subrange`を代わりに使用することで、冗長な記述を排除しながらその意図を明確にすることができます。
+
+連想コンテナ等の同名メンバ関数と異なる点として、射影がサポートされている点と`contains_subrange`では比較を行う方法をカスタマイズすることができます。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  std::map<std::string, int> map = { {"１", 1}, {"２", 2}, {"３", 3} };
+  std::array arr = {0, 1};
+
+  // valueを取り出す
+  auto proj = [](auto& p) -> decltype(auto) { return std::get<1>(p); };
+
+  bool res1 = contains(map, 2, proj);
+  bool res2 = contains_subrange(map, arr, greater{}, proj);
+
+  std::cout << std::format("{:s}\n{:s}\n", res1, res2);
+}
+```
+```{style=planetext}
+true
+true
+```
+
+余談ですが、`std::map`等要素が`std::pair`ないし`std::tuple`となっているものから特定のインデックスの要素だけを取り出したい（この例のような）場合は、射影よりも`views::keys/views::values`（`views::elements`）を使用した方が簡易かもしれません。
 
 ## `ranges::iota`
 
