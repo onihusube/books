@@ -2762,7 +2762,7 @@ namespace std::ranges {
 }
 ```
 
-ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。また、これらのアルゴリズムは`ranges`版のものしか用意されていません。
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。また、これらのアルゴリズムも`ranges`版のものしか用意されていません。
 
 ```cpp
 using namespace std::ranges;
@@ -2807,13 +2807,13 @@ int main() {
 
 `contains`及び`contains_subrange`を代わりに使用することで、冗長な記述を排除しながらその意図を明確にすることができます。
 
-連想コンテナ等の同名メンバ関数と異なる点として、射影がサポートされている点と`contains_subrange`では比較を行う方法をカスタマイズすることができます。
+連想コンテナ等の同名メンバ関数と異なる点としては、射影がサポートされている点と`contains_subrange`では比較を行う方法をカスタマイズすることができる点があります。
 
 ```cpp
 using namespace std::ranges;
 
 int main() {
-  std::map<std::string, int> map = { {"１", 1}, {"２", 2}, {"３", 3} };
+  std::map<std::u8string, int> map = { {u8"１", 1}, {u8"２", 2}, {u8"３", 3} };
   std::array arr = {0, 1};
 
   // valueを取り出す
