@@ -2834,7 +2834,129 @@ true
 
 ## `ranges::iota`
 
+`ranges::iota`は以前からあった`std::iota`のRangeバージョンです。
+
+```cpp
+// <numeric>で定義される
+namespace std::ranges {
+  
+  template<weakly_incrementable T, output_range<const T&> R>
+  constexpr iota_result<borrowed_iterator_t<R>, T> iota(R&& r, T value);
+}
+```
+
+指定された範囲`r`に`value`から始まり1づつ増加（インクリメント）していく単調増加列を書き込むものです。
+
+```cpp
+int main() {
+  // 0から始まる10要素のシーケンスを作成する。
+  std::array<int, 10> ar;
+  const auto [it, v] = std::ranges::iota(ar, 0);
+
+  for (int x : ar) {
+    std::cout << x;
+  }
+
+  std::cout << std::format("\n{:s}\n{:d}", it == ar.end(), v);
+}
+```
+```{style=planetext}
+0123456789
+true
+10
+```
+
+戻り値は、書き込んだ範囲の終端位置（入力範囲終端）を指すイテレータと書き込むために計算した値の最終値（書き込んだ値の1つ次）のペアとなる構造体です。
+
+`std::iota`に対してはコンセプトによる制約がなされていることや`range`を直接指定できるところなどがメリットであり、`views::iota`に対しては書き込む要素数を事前計算する必要が無くなり（入力範囲の要素数によって自動で決定できるため）効率的になることなどがメリットとなります。
+
+このアルゴリズムは`views::iota`と役割が被っていることもありC++20では導入されませんでしたが、このメリットが相違点であるとして追加されました。
+
+計算量は、入力範囲の要素数を`L`とすると正確に`L`回のインクリメントと代入（コピー）が行われます。
+
 ## `ranges::shift_left`/`ranges::shift_right`
+
+`ranges::shift_left`及び`ranges::shift_right`はC++20で追加された同名のアルゴリズムのRange版です。
+
+```cpp
+namespace std::ranges {
+  
+  template<forward_range R>
+    requires permutable<iterator_t<R>>
+  constexpr borrowed_subrange_t<R> shift_left(R&& r, range_difference_t<R> n);
+
+  template<forward_range R>
+    requires permutable<iterator_t<R>>
+  constexpr borrowed_subrange_t<R> shift_right(R&& r, range_difference_t<R> n);
+}
+```
+
+入力範囲`r`の要素を`n`だけ左/右シフト（非循環シフト）させます。元のアルゴリズム同様に、`n`は0以上の整数である必要があります（違反すると未定義動作）。
+
+```cpp
+using std::ranges::subrange;
+
+int main() {
+
+  std::vector vec = {1, 2, 3, 4, 5};
+  
+  // 戻り値はシフト後の終端位置
+  range auto res = shift_left(vec, 2);
+
+  for (int n : res) {
+    std::cout << std::format("{} ", n);
+  }
+  
+  std::cout << '\n';
+
+  // 戻り値はシフト後の開始位置
+  range auto res = shift_right(vec, 2);
+
+  for (int n : res) {
+    std::cout << std::format("{} ", n);
+  }
+}
+```
+```{style=planetext}
+3 4 5 
+1 2 3 
+```
+
+戻り値はシフト後の範囲を示す`subrange`であり、入力範囲のサイズを`L`とすると次のようになります
+
+- `L == 0` : 空
+- `0 <= n < L` : シフト後の範囲（シフトした後に残った有効な要素列）
+- `L < n` : 空
+
+空の範囲を返す（`n`が0もしくは入力範囲のサイズよりも大きい）場合はこの関数は何もせず入力範囲は変更されません。
+
+```cpp
+using std::ranges::subrange;
+
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5};
+  
+  range auto res1 = shift_left(vec, 7);
+  range auto res2 = shift_right(vec, 7);
+  range auto res3 = shift_left(vec, 0);
+  range auto res4 = shift_right(vec, 0);
+
+  std::cout << std::format("{:s}\n", res1.empty());
+  std::cout << std::format("{:s}\n", res2.empty());
+  std::cout << std::format("{:s}\n", res3.empty());
+  std::cout << std::format("{:s}\n", res4.empty());
+}
+```
+```{style=planetext}
+true
+true
+true
+true
+```
+
+この2つのアルゴリズムがC++20時点で導入されなかったのは、`ranges::shift_left`の戻り値についての議論が紛糾したためのようです。`ranges::shift_left`の場合、処理の過程で範囲終端を計算する必要がありますが、それは戻り値には必ずしも反映されません。`common_range`ではない範囲の場合はその終端情報が有効活用できる場合があるため、返すべきかが議論されましたが結局返さないことで決着しました。それによって、両アルゴリズムで戻り値の扱いは一貫しています。
+
+計算量は、入力範囲の要素数を`L`とすると、`shift_left`では高々`L - n`回の代入（ムーブ）が行われ、`shift_right`では高々`L - n`回の代入（ムーブ）あるいは`swap`が行われます。
 
 ## `ranges::fold`
 
