@@ -2973,7 +2973,125 @@ true
 
 計算量は、入力範囲の要素数を`L`とすると、`shift_left`では高々`L - n`回の代入（ムーブ）が行われ、`shift_right`では高々`L - n`回の代入（ムーブ）あるいは`swap`が行われます。
 
-## `ranges::fold`
+## `fold`アルゴリズム
+
+`fold`アルゴリズムはいわゆる高階関数としての`fold`関数で、`std::accumulate`のRange版に対応するものです。
+
+基本形は初期値を指定するもので、その計算順序によって左（*left*）と右（*right*）の2種類があります。
+
+```cpp
+namespace std::ranges {
+
+  // 左方向のfold
+  template<input_iterator I, sentinel_for<I> S, class T, 
+           indirectly-binary-left-foldable<T, I> F>
+  constexpr auto ranges::fold_left(I first, S last, T init, F f);
+  
+  template<input_range R, class T,
+           indirectly-binary-left-foldable<T, iterator_t<R>> F>
+  constexpr auto ranges::fold_left(R&& r, T init, F f);
+
+  // 右方向のfold
+  template<bidirectional_iterator I, sentinel_for<I> S, class T,
+           indirectly-binary-right-foldable<T, I> F>
+  constexpr auto ranges::fold_right(I first, S last, T init, F f);
+  
+  template<bidirectional_range R, class T,
+           indirectly-binary-right-foldable<T, iterator_t<R>> F>
+  constexpr auto ranges::fold_right(R&& r, T init, F f);
+}
+```
+
+他のRangeアルゴリズム同様にイテレータペアを受け取るものと`range`を受け取るものの2つが用意されています。ただし、射影はサポートされていません。
+
+この基本形はどちらも`ranges::fold_xxxx(rng, init, op)`のように呼び出し、戻り値は計算結果の値が得られます。ただし、戻り値の型は入力範囲`rng`のイテレータを`it`とすると、`decltype(op(inti, *it))`の結果の型を`decay`したものになります。つまりは、二項演算`op`の戻り値型から参照修飾を取り除いたものであり、変なことをしていなければ初期値`init`と同じ型になります。
+
+```cpp
+using std::ranges::subrange;
+
+int main() {
+  range auto rng = views::iota(1, 11);
+  const int init = 0;
+  auto op = std::plus<>{};
+  
+  int res1 = fold_left(rng, init, op);
+  int res2 = fold_right(rng, init, op);
+
+  std::cout << std::format("{:d}\n", res1);
+  std::cout << std::format("{:d}\n", res2);
+}
+```
+```{style=planetext}
+55
+55
+```
+
+この例のような単純な数値集計処理であれば`fold_left`と`fold_right`の違いを意識する必要は無いかもしれません。
+
+`fold_left`と`fold_right`の違いは入力範囲をどちらから走査するかの違いであり、入力範囲が左->右の順序で1列になっているとすると、それを左側（先頭）から走査して集計していくのが`fold_left`で、右側（末尾）から集計していくのが`fold_right`です。どちらの場合も初期値はそれぞれの走査開始位置の前に添加される形になります。
+
+```{style=planetext}
+0 : init
+[1, 2, 3, 4, 5] : rng
+
+fold_leftの処理の様子
+0  [1, 2, 3, 4, 5]
+0 + 1
+  1 + 2
+     3 + 3
+        6 + 4
+          10 + 5 -> fold_left(rng, 0, +)
+
+fold_rightの処理の様子
+[1, 2, 3, 4, 5] 0
+             5 + 0
+          4 + 5
+       3 + 9
+    2 + 12
+ 1 + 14 -> fold_right(rng, 0, +)  
+```
+
+入力範囲`rng`の各要素を`e0, e1, ...,em, en`とすると、`fold_left`は`op(op(op(op(init, e0), e1), e2)..., en)`、`fold_right`は`op(e0, ...op(em, op(en, init)))`のような計算を行います。
+
+```cpp
+using std::ranges::subrange;
+
+int main() {
+  range auto rng = views::iota('a', 'g');
+  const std::string init = "init -> ";
+
+  // fold_leftのop
+  auto op_left = [](std::string acc, char elem) {
+    acc += elem;
+    acc += " -> ";
+    return acc;
+  };
+  // fold_rightのop
+  auto op_right = [](char elem, std::string acc) {
+    acc += elem;
+    acc += " -> ";
+    return acc;
+  };
+  
+  auto res1 = fold_left(rng, init, op_left);
+  auto res2 = fold_right(rng, init, op_right);
+
+  std::cout << std::format("{:s}\n", res1);
+  std::cout << std::format("{:s}\n", res2);
+}
+```
+```{style=planetext}
+init -> a -> b -> c -> d -> e -> f -> 
+init -> f -> e -> d -> c -> b -> a -> 
+```
+
+適用する二項演算`op`に渡される引数は累積値（初期値）と各要素の値の2つですが、その引数順は`fold_left`と`fold_right`で逆になります。1つ目の例のように入力範囲の要素型と初期値の型が同じなら問題にならないのですが、この例のように異なっていると気を付けなければなりません。`op`に渡されてくる引数はどちらの関数でも、初期値及び累積値はムーブされ各要素については関節参照の結果が直接渡されます。累積値（初期値）を`acc`、`rng`のイテレータを`it`とすると、`fold_left`の場合は初期値及び各要素に対して各ステップで`op(*it, std::move(acc))`のように呼ばれ、`fold_right`の場合は`op(std::move(acc), *it)`のように呼ばれます（ただし、呼び出しには`std::invoke`が使用されます）。そのため、累積値は値で受ければよく、各要素に関しては基本的に`rng`の参照型で受けることになるでしょう。
+
+また、各ステップでの呼び出し結果は直接累積値`acc`に再代入されます（`acc = op(...)`のように呼び出される）。そのため、戻り値を参照で返したりする必要は無く、その場合でもNRVOが期待でき、悪くても暗黙ムーブは実行されます。このためほとんどの場合、`op`におけるパフォーマンスを気にして戻り値型を工夫する必要は無いでしょう。
+
+### 初期値を省略する
+
+### イテレータを返す
 
 ## 非Rangeアルゴリズムでのコンセプトの使用
 
