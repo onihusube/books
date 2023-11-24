@@ -2881,7 +2881,7 @@ true
 10
 ```
 
-戻り値は、書き込んだ範囲の終端位置（入力範囲終端）を指すイテレータと書き込むために計算した値の最終値（書き込んだ値の1つ次）のペアとなる構造体です。
+戻り値は、書き込んだ範囲の終端位置（入力範囲終端）を指すイテレータと書き込むために計算した値の最終値（書き込んだ値の1つ次）のペアとなる構造体（集成体）です。
 
 `std::iota`に対してはコンセプトによる制約がなされていることや`range`を直接指定できるところなどがメリットであり、`views::iota`に対しては書き込む要素数を事前計算する必要が無くなり（入力範囲の要素数によって自動で決定できるため）効率的になることなどがメリットとなります。
 
@@ -2905,6 +2905,8 @@ namespace std::ranges {
   constexpr borrowed_subrange_t<R> shift_right(R&& r, range_difference_t<R> n);
 }
 ```
+
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。どうやら、C++23以降に新しいアルゴリズムを追加する場合は基本的にRange版のみが追加されるようです。
 
 入力範囲`r`の要素を`n`だけ左/右シフト（非循環シフト）させます。元のアルゴリズム同様に、`n`は0以上の整数である必要があります（違反すると未定義動作）。
 
@@ -2975,7 +2977,7 @@ true
 
 ## `fold`アルゴリズム
 
-`fold`アルゴリズムはいわゆる高階関数としての`fold`関数で、`std::accumulate`のRange版に対応するものです。
+`fold`アルゴリズムはいわゆる高階関数としての`fold`関数で、`std::accumulate`のRange版に対応するものです。処理としては、初期値から始めて入力の範囲の各要素に各ステップでの結果を次のステップに渡しながら二項演算を逐次適用していき、その結果を返します。
 
 基本形は初期値を指定するもので、その計算順序によって左（*left*）と右（*right*）の2種類があります。
 
@@ -2985,29 +2987,29 @@ namespace std::ranges {
   // 左方向のfold
   template<input_iterator I, sentinel_for<I> S, class T, 
            indirectly-binary-left-foldable<T, I> F>
-  constexpr auto ranges::fold_left(I first, S last, T init, F f);
+  constexpr auto fold_left(I first, S last, T init, F op);
   
   template<input_range R, class T,
            indirectly-binary-left-foldable<T, iterator_t<R>> F>
-  constexpr auto ranges::fold_left(R&& r, T init, F f);
+  constexpr auto fold_left(R&& rng, T init, F op);
 
   // 右方向のfold
   template<bidirectional_iterator I, sentinel_for<I> S, class T,
            indirectly-binary-right-foldable<T, I> F>
-  constexpr auto ranges::fold_right(I first, S last, T init, F f);
+  constexpr auto fold_right(I first, S last, T init, F op);
   
   template<bidirectional_range R, class T,
            indirectly-binary-right-foldable<T, iterator_t<R>> F>
-  constexpr auto ranges::fold_right(R&& r, T init, F f);
+  constexpr auto fold_right(R&& rng, T init, F op);
 }
 ```
 
 他のRangeアルゴリズム同様にイテレータペアを受け取るものと`range`を受け取るものの2つが用意されています。ただし、射影はサポートされていません。
 
-この基本形はどちらも`ranges::fold_xxxx(rng, init, op)`のように呼び出し、戻り値は計算結果の値が得られます。ただし、戻り値の型は入力範囲`rng`のイテレータを`it`とすると、`decltype(op(inti, *it))`の結果の型を`decay`したものになります。つまりは、二項演算`op`の戻り値型から参照修飾を取り除いたものであり、変なことをしていなければ初期値`init`と同じ型になります。
+この基本形はどちらも`ranges::fold_xxxx(rng, init, op)`のように呼び出し、戻り値は計算結果の値が得られます。`init`も`op`にもデフォルトの指定はないため、都度指定する必要があります。
 
 ```cpp
-using std::ranges::subrange;
+using namespace std::ranges;
 
 int main() {
   range auto rng = views::iota(1, 11);
@@ -3026,7 +3028,29 @@ int main() {
 55
 ```
 
-この例のような単純な数値集計処理であれば`fold_left`と`fold_right`の違いを意識する必要は無いかもしれません。
+戻り値の型は入力範囲`rng`のイテレータを`it`とすると、`decltype(op(inti, *it))`の結果の型を`decay`したものになります。つまりは、二項演算`op`の戻り値型から参照修飾を取り除いたものであり、変なことをしていなければ初期値`init`と同じ型になります。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  std::vector<float> rng = { 0.125f, 0.25f, 0.75f };
+  const int init = 1;
+  auto op = std::plus<>{};
+  
+  std::same_as<float> auto res1 = fold_left(rng, init, op);
+  std::same_as<float> auto res2 = fold_right(rng, init, op);
+
+  std::cout << std::format("{:g}\n", res1);
+  std::cout << std::format("{:g}\n", res2);
+}
+```
+```{style=planetext}
+2.125
+2.125
+```
+
+`std::plus`の場合は入力を`a, b`とすると`decltype(a + b)`の結果型が戻り値型になり、これはどちらかが浮動小数点数型ならその型になります。これによって、`std::accumulate`に存在していた初期値の罠は回避されています。
 
 `fold_left`と`fold_right`の違いは入力範囲をどちらから走査するかの違いであり、入力範囲が左->右の順序で1列になっているとすると、それを左側（先頭）から走査して集計していくのが`fold_left`で、右側（末尾）から集計していくのが`fold_right`です。どちらの場合も初期値はそれぞれの走査開始位置の前に添加される形になります。
 
@@ -3051,25 +3075,27 @@ fold_rightの処理の様子
  1 + 14 -> fold_right(rng, 0, +)  
 ```
 
-入力範囲`rng`の各要素を`e0, e1, ...,em, en`とすると、`fold_left`は`op(op(op(op(init, e0), e1), e2)..., en)`、`fold_right`は`op(e0, ...op(em, op(en, init)))`のような計算を行います。
+入力範囲`rng`の各要素を`e0, e1, ..., en`とすると、`fold_left`は`op( op(op(init, e0), e1)... , en)`、`fold_right`は`op(e0, op(e1, ...op(en, init) ))`のような計算を行います。
+
+この動作のために、`fold_right`の入力範囲は`bidirectional_range`であることが要求されます。
 
 ```cpp
-using std::ranges::subrange;
+using namespace std::ranges;
 
 int main() {
   range auto rng = views::iota('a', 'g');
-  const std::string init = "init -> ";
+  const std::string init = "init";
 
   // fold_leftのop
   auto op_left = [](std::string acc, char elem) {
-    acc += elem;
     acc += " -> ";
+    acc += elem;
     return acc;
   };
   // fold_rightのop
   auto op_right = [](char elem, std::string acc) {
-    acc += elem;
     acc += " -> ";
+    acc += elem;
     return acc;
   };
   
@@ -3081,17 +3107,201 @@ int main() {
 }
 ```
 ```{style=planetext}
-init -> a -> b -> c -> d -> e -> f -> 
-init -> f -> e -> d -> c -> b -> a -> 
+init -> a -> b -> c -> d -> e -> f
+init -> f -> e -> d -> c -> b -> a
 ```
 
 適用する二項演算`op`に渡される引数は累積値（初期値）と各要素の値の2つですが、その引数順は`fold_left`と`fold_right`で逆になります。1つ目の例のように入力範囲の要素型と初期値の型が同じなら問題にならないのですが、この例のように異なっていると気を付けなければなりません。`op`に渡されてくる引数はどちらの関数でも、初期値及び累積値はムーブされ各要素については関節参照の結果が直接渡されます。累積値（初期値）を`acc`、`rng`のイテレータを`it`とすると、`fold_left`の場合は初期値及び各要素に対して各ステップで`op(*it, std::move(acc))`のように呼ばれ、`fold_right`の場合は`op(std::move(acc), *it)`のように呼ばれます（ただし、呼び出しには`std::invoke`が使用されます）。そのため、累積値は値で受ければよく、各要素に関しては基本的に`rng`の参照型で受けることになるでしょう。
 
 また、各ステップでの呼び出し結果は直接累積値`acc`に再代入されます（`acc = op(...)`のように呼び出される）。そのため、戻り値を参照で返したりする必要は無く、その場合でもNRVOが期待でき、悪くても暗黙ムーブは実行されます。このためほとんどの場合、`op`におけるパフォーマンスを気にして戻り値型を工夫する必要は無いでしょう。
 
+### 制約について
+
+制約に使用されている`indirectly-binary-left-foldable`とか`indirectly-binary-right-foldable`は説明専用のコンセプトです。
+
+```cpp
+namespace std::ranges {
+
+  template<class F, class T, class I, class U>
+  concept indirectly-binary-left-foldable-impl =
+    movable<T> && movable<U> &&
+    convertible_to<T, U> && invocable<F&, U, iter_reference_t<I>> &&
+    assignable_from<U&, invoke_result_t<F&, U, iter_reference_t<I>>>;
+
+  template<class F, class T, class I>
+  concept indirectly-binary-left-foldable =
+    copy_constructible<F> && indirectly_readable<I> &&
+    invocable<F&, T, iter_reference_t<I>> &&
+    convertible_to<invoke_result_t<F&, T, iter_reference_t<I>>,
+           decay_t<invoke_result_t<F&, T, iter_reference_t<I>>>> &&
+    indirectly-binary-left-foldable-impl<F, T, I,
+                    decay_t<invoke_result_t<F&, T, iter_reference_t<I>>>>;
+
+  template<class F, class T, class I>
+  concept indirectly-binary-right-foldable =
+    indirectly-binary-left-foldable<flipped<F>, T, I>;
+}
+```
+
+かなり複雑ですが、ざっくりいえば初期値の型`T`とイテレータ型`I`の間接参照結果によって関数`F`が呼び出し可能で、先ほどの2種類の`fold`処理を行うために必要な操作が可能であること、を要求しています。
+
+`indirectly-binary-right-foldable`は`T`と`I`を入れ替えて`F`に渡すようにした上で`indirectly-binary-left-foldable`に制約を委譲しており、`flipped<F>`は二項呼び出し可能な`F`の引数順序を入れ替える説明専用のクラス型です。
+
+`indirectly-binary-left-foldable`の直接的な制約では、`F`に対して`T`と`I`の間接参照によって呼び出し可能であることやその戻り値型が`fold`処理の戻り値型に変換可能であることをチェックし、`indirectly-binary-left-foldable-impl`では主に、`fold`処理の戻り値型かつ処理中に集計結果を保持している変数の型`U`を用いて、`T -> U`の変換可能性や`F`に`T`の代わりに`U`を渡せるか、`U`の左辺値に各ステップの呼び出し結果を代入できるかなどをチェックしています。
+
+これらのコンセプトは構文的なもので、構成しているそれぞれのコンセプトが持つ意味論要件以上の意味論要件を持っていません。`F, T, I`の入力の型について`fold`処理が可能であることを構文的に制約しているものです。
+
+この製薬は`std::accmulate`及び想定されていた`ranges::accmulate`と異なる部分を表現してもいて、`ranges::accmulate`が数値アルゴリズムとして数値範囲に対する集計処理を基本としようとしていたのに対して、`fold_left/fold_right`はより汎用的な範囲に対する二項演算の重畳処理を基本とするようになっています。
+
+例えば、`ranges::accmulate`の想定では、`magma`という代数学における亜群を表現するコンセプトによって制約されていましたが、見ての通り`fold_left/fold_right`にはそういうものは無く、`fold_left/fold_right`は関数型言語におけるリストに対する高階関数としての`foldl/foldr`に対応するものです。
+
 ### 初期値を省略する
 
-### イテレータを返す
+集計処理の場合などは必ずしも初期値を指定する必要が無い場合もあります。そのための変種が用意されており、`fold_left`と`fold_right`に対してそれぞれ`_first`と`_last`のサフィックスが付きます。
+
+```cpp
+namespace std::ranges {
+
+  template<input_range R, 
+           indirectly-binary-left-foldable<range_value_t<R>, iterator_t<R>> F>
+    requires constructible_from<range_value_t<R>, range_reference_t<R>>
+  constexpr auto fold_left_first(R&& rng, F op);
+
+  template<bidirectional_range R,
+           indirectly-binary-right-foldable<range_value_t<R>, iterator_t<R>> F>
+    requires constructible_from<range_value_t<R>, range_reference_t<R>>
+  constexpr auto fold_right_last(R&& rng, F op);
+}
+```
+
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。
+
+サフィックスが示す通り、こちらのバージョンではそれぞれ範囲の先頭/末尾の要素を初期値として`fold`していきます。初期値の取り方と戻り値型以外は動作に変わりはありません。
+
+`fold_left/fold_right`では`T`で指定されていた初期値の型は、こちらのバージョンでは入力範囲の値型（`range_value_t<R>`）によって取得されており、`R`の参照型から直接構築可能であることを追加で要求しています。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  range auto rng = views::iota(1, 11);
+  auto op = std::plus<>{};
+
+  auto res1 = fold_left_first(rng, op);
+  auto res2 = fold_right_last(rng, op);
+
+  std::cout << std::format("{:d}\n", res1.value_or(-1));
+  std::cout << std::format("{:d}\n", res2.value_or(-1));
+}
+```
+```{style=planetext}
+55
+55
+```
+
+これらのバージョンの戻り値型は、対応する`fold_left`と`fold_right`の戻り値型を`U`とした時の`std::optional<U>`になります。これは、入力範囲が空の場合に値を返せないためで、戻り値が無効値を取るのは入力範囲が空の場合のみです。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  range auto rng = views::iota(1, 1);
+  auto op = std::plus<>{};
+
+  auto res1 = fold_left_first(rng, op);
+  auto res2 = fold_right_last(rng, op);
+
+  std::cout << std::format("{:d}\n", res1.value_or(-1));
+  std::cout << std::format("{:d}\n", res2.value_or(-1));
+}
+```
+```{style=planetext}
+-1
+-1
+```
+
+先ほどの文字範囲を集計して文字列を作る例は、初期値を指定できないことで出力を`std::string`にすることができなくなるため、少し変更が必要になります。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  std::vector<std::string> rng = {"a", "b", "c", "d", "e", "f"};
+
+  // fold_leftのop
+  auto op_left = [](std::string acc, std::string& elem) {
+    acc += " -> ";
+    acc += elem;
+    return acc;
+  };
+  // fold_rightのop
+  auto op_right = [op_left](std::string& elem, std::string acc) {
+    return op_left(std::move(acc), elem);
+  };
+  
+  auto res1 = fold_left_first(rng, op_left);
+  auto res2 = fold_right_last(rng, op_right);
+
+  std::cout << std::format("{:s}\n", res1.value_or(""));
+  std::cout << std::format("{:s}\n", res2.value_or(""));
+}
+```
+```{style=planetext}
+a -> b -> c -> d -> e -> f
+f -> e -> d -> c -> b -> a
+```
+
+### 計算終了地点のイテレータを返す
+
+`fold_left`系の処理の場合、範囲の終端で処理を終えるため終端イテレータの計算を同時に行なってもいます。そのため、その計算した終端イテレータが欲しい場合があり、そのための変種も用意されています。
+
+ただし、`fold_right`系で得られるのは先頭のイテレータであり、それは`ranges::begin()`で労せずして得られるためこちらのバージョンに対応するものはありません。
+
+```cpp
+namespace std::ranges {
+
+  template<input_range R, class T, 
+           indirectly-binary-left-foldable<T, iterator_t<R>> F>
+  constexpr auto fold_left_with_iter(R&& rng, T init, F op);
+
+  template<input_range R,
+           indirectly-binary-left-foldable<range_value_t<R>, iterator_t<R>> F>
+    requires constructible_from<range_value_t<R>, range_reference_t<R>>
+  constexpr auto fold_left_first_with_iter(R&& rng, F op);
+}
+```
+
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。
+
+`fold_left/fold_left_first`に対して`_with_iter`のサフィックスが付いた形になっており、戻り値型以外の部分は元になった関数と同じことを行います。
+
+こちらのバージョンの戻り値型は、対応する`_with_iter`なしの関数の戻り値型を`U`とすると、`iterator_t<R>`と`U`のペアとなる構造体（集成体）を返します。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  range auto rng = views::iota(1, 11);
+  const int init = 0;
+  auto op = std::plus<>{};
+
+  auto [end1, res1] = fold_left_with_iter(rng, init, op);
+  auto [end2, res2] = fold_left_first_with_iter(rng, op);
+
+  std::cout << std::format("{:d}\n", res1);
+  std::cout << std::format("{:d}\n", res2.value_or(-1));
+  std::cout << std::format("{:s}\n", end1 == rng.end());
+  std::cout << std::format("{:s}\n", end2 == rng.end());
+}
+```
+```{style=planetext}
+55
+55
+true
+true
+```
+
+正確には`ranges::in_value_result<iterator_t<R>, U>`という構造体で、1つ目のメンバ変数`in`にイテレータを保持し、2つ目のメンバ変数`value`に計算結果の値を保持しています。
 
 ## 非Rangeアルゴリズムでのコンセプトの使用
 
@@ -4052,3 +4262,4 @@ int main() {
 - cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
 - Compiler Explorer(https://godbolt.org/)
+- なぜ ranges::accumulate は難しいのか - Zenn(https://zenn.dev/acd1034/articles/221006-why-ranges-accumulate-is-difficult)
