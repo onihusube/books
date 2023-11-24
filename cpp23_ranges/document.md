@@ -3028,7 +3028,7 @@ int main() {
 55
 ```
 
-戻り値の型は入力範囲`rng`のイテレータを`it`とすると、`decltype(op(inti, *it))`の結果の型を`decay`したものになります。つまりは、二項演算`op`の戻り値型から参照修飾を取り除いたものであり、変なことをしていなければ初期値`init`と同じ型になります。
+戻り値の型は入力範囲`rng`のイテレータを`it`とすると、`decltype(op(init, *it))`の結果の型を`decay`したものになります。つまりは、二項演算`op`の戻り値型から参照修飾を取り除いたものであり、変なことをしていなければ初期値`init`と同じ型になります。
 
 ```cpp
 using namespace std::ranges;
@@ -3111,9 +3111,11 @@ init -> a -> b -> c -> d -> e -> f
 init -> f -> e -> d -> c -> b -> a
 ```
 
-適用する二項演算`op`に渡される引数は累積値（初期値）と各要素の値の2つですが、その引数順は`fold_left`と`fold_right`で逆になります。1つ目の例のように入力範囲の要素型と初期値の型が同じなら問題にならないのですが、この例のように異なっていると気を付けなければなりません。`op`に渡されてくる引数はどちらの関数でも、初期値及び累積値はムーブされ各要素については関節参照の結果が直接渡されます。累積値（初期値）を`acc`、`rng`のイテレータを`it`とすると、`fold_left`の場合は初期値及び各要素に対して各ステップで`op(*it, std::move(acc))`のように呼ばれ、`fold_right`の場合は`op(std::move(acc), *it)`のように呼ばれます（ただし、呼び出しには`std::invoke`が使用されます）。そのため、累積値は値で受ければよく、各要素に関しては基本的に`rng`の参照型で受けることになるでしょう。
+適用する二項演算`op`に渡される引数は初期値もしくは累積値と各要素の値の2つですが、その引数順は`fold_left`と`fold_right`で逆になります。1つ目の例のように入力範囲の要素型と初期値の型が同じなら問題にならないのですが、この例のように異なっていると気を付けなければなりません。
 
-また、各ステップでの呼び出し結果は直接累積値`acc`に再代入されます（`acc = op(...)`のように呼び出される）。そのため、戻り値を参照で返したりする必要は無く、その場合でもNRVOが期待でき、悪くても暗黙ムーブは実行されます。このためほとんどの場合、`op`におけるパフォーマンスを気にして戻り値型を工夫する必要は無いでしょう。
+`op`に渡されてくる引数はどちらの関数でも、初期値及び累積値はムーブされ各要素については関節参照の結果が直接渡されます。累積値（初期値）を`acc`、`rng`のイテレータを`it`とすると、`fold_left`の場合は初期値及び各要素に対して各ステップで`op(std::move(acc), *it)`のように呼ばれ、`fold_right`の場合は`op(*it, std::move(acc))`のように呼ばれます（ただし、呼び出しには`std::invoke`が使用されます）。そのため、累積値は値で受ければよく、各要素に関しては基本的に`rng`の参照型で受けることになるでしょう。
+
+また、各ステップでの呼び出し結果は直接累積値`acc`に再代入されます（`acc = op(std::move(acc), *it)`のように呼ばれる）。そのため、戻り値を参照で返したりする必要は無く、その場合でもNRVOが期待でき、悪くても暗黙ムーブは実行されます。このためほとんどの場合、`op`におけるパフォーマンスを気にして戻り値型や`return`文を工夫する必要は無いでしょう。
 
 ### 制約について
 
@@ -3151,7 +3153,7 @@ namespace std::ranges {
 
 これらのコンセプトは構文的なもので、構成しているそれぞれのコンセプトが持つ意味論要件以上の意味論要件を持っていません。`F, T, I`の入力の型について`fold`処理が可能であることを構文的に制約しているものです。
 
-この製薬は`std::accmulate`及び想定されていた`ranges::accmulate`と異なる部分を表現してもいて、`ranges::accmulate`が数値アルゴリズムとして数値範囲に対する集計処理を基本としようとしていたのに対して、`fold_left/fold_right`はより汎用的な範囲に対する二項演算の重畳処理を基本とするようになっています。
+この制約は`std::accmulate`及び想定されていた`ranges::accmulate`と異なる部分を表現してもいて、`ranges::accmulate`が数値アルゴリズムとして数値範囲に対する集計処理を基本としようとしていたのに対して、`fold_left/fold_right`はより汎用的な範囲に対する二項演算の重畳処理を基本とするようになっています。
 
 例えば、`ranges::accmulate`の想定では、`magma`という代数学における亜群を表現するコンセプトによって制約されていましたが、見ての通り`fold_left/fold_right`にはそういうものは無く、`fold_left/fold_right`は関数型言語におけるリストに対する高階関数としての`foldl/foldr`に対応するものです。
 
@@ -3199,7 +3201,9 @@ int main() {
 55
 ```
 
-これらのバージョンの戻り値型は、対応する`fold_left`と`fold_right`の戻り値型を`U`とした時の`std::optional<U>`になります。これは、入力範囲が空の場合に値を返せないためで、戻り値が無効値を取るのは入力範囲が空の場合のみです。
+これらのバージョンの戻り値型は、対応する`fold_left`と`fold_right`の戻り値型を`U`とした時の`std::optional<U>`になります（初期値の型は入力範囲の値型`range_value_t<R>`が使用される）。`std::optional`を使うのは入力範囲が空の場合に値を返せないためで、戻り値が無効値を取るのは入力範囲が空の場合のみです。
+
+なお、`fold_left`/`fold_right`において入力範囲が空の場合、初期値が返されます。
 
 ```cpp
 using namespace std::ranges;
@@ -3210,12 +3214,18 @@ int main() {
 
   auto res1 = fold_left_first(rng, op);
   auto res2 = fold_right_last(rng, op);
+  auto res3 = fold_left(rng, -1, op);
+  auto res4 = fold_right(rng, -1, op);
 
   std::cout << std::format("{:d}\n", res1.value_or(-1));
   std::cout << std::format("{:d}\n", res2.value_or(-1));
+  std::cout << std::format("{:d}\n", res3);
+  std::cout << std::format("{:d}\n", res4);
 }
 ```
 ```{style=planetext}
+-1
+-1
 -1
 -1
 ```
@@ -3226,17 +3236,21 @@ int main() {
 using namespace std::ranges;
 
 int main() {
-  std::vector<std::string> rng = {"a", "b", "c", "d", "e", "f"};
-
+  // 文字範囲ではなく、文字列範囲にする
+  range auto rng = views::iota('a', 'g')
+                 | views::transform([](char c) {
+                     return std::string(1, c);
+                   });
+  
   // fold_leftのop
-  auto op_left = [](std::string acc, std::string& elem) {
+  auto op_left = [](std::string acc, std::string&& elem) {
     acc += " -> ";
     acc += elem;
     return acc;
   };
   // fold_rightのop
-  auto op_right = [op_left](std::string& elem, std::string acc) {
-    return op_left(std::move(acc), elem);
+  auto op_right = [op_left](std::string&& elem, std::string acc) {
+    return op_left(std::move(acc), std::move(elem));
   };
   
   auto res1 = fold_left_first(rng, op_left);
@@ -3250,6 +3264,8 @@ int main() {
 a -> b -> c -> d -> e -> f
 f -> e -> d -> c -> b -> a
 ```
+
+`indirectly-binary-left-foldable`に現れているように、二項演算`op`は1つ目の引数として初期値（`range_value_t<R>`）を渡しても累積値（戻り値型`decay_t<invoke_result_t<F&, range_value_t<R>, range_reference_t<R>>>`）を渡してもその両方で呼べる必要があります。初期値の型を指定できないこちらのバージョンでは、累積値の型（戻り値型）は入力範囲の要素型と`op`の戻り値型から決定されるため、入力範囲の型から大きく戻り値型を変化させることが難しくなります。
 
 ### 計算終了地点のイテレータを返す
 
