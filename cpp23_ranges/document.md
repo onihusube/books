@@ -3321,7 +3321,150 @@ true
 
 ## 非Rangeアルゴリズムでのコンセプトの使用
 
-# `ranges::to`
+
+# `range` to `range`の変換
+
+C++20の`<ranges>`は既存コンテナへの出力に関してほぼ互換性が無く、Rangeアダプタなどの結果の`range`から直接コンテナを構築したり挿入したりすることができませんでした。
+
+```cpp
+using std::ranges::common_range;
+
+int main() {
+  auto in = std::views::iota(0)
+          | std::views::take(10);
+
+  std::vector<int> vec(in);  // ng
+  vec.insert(vec.end(), in); // ng
+
+  // 終端を指定しないviews::iotaはcommon rangeではない
+  static_assert(not common_range<decltype(in)>);
+
+  std::vector<int> vec2(in.begin(), in.end());    // ng
+  vec2.insert(vec2.end(), in.begin(), in.end());  // ng
+
+　// common rangeにする
+  common_range auto inc = in | std::views::common;
+
+  std::vector<int> vec3(in.begin(), in.end());    // ok
+  vec3.insert(vec3.end(), in.begin(), in.end());  // ok
+}
+```
+
+`std::vector`で代表させましたが全てのコンテナでこの事は変わりません。イテレータペアを取るコンストラクタ/関数はあれど`range`を取るものはなく、イテレータペアを取るものもイテレータと番兵が同じ型でなければ使用できません。
+
+## `std::from_range`
+
+コンテナの`range`対応のためにまず、現在の既存コンテナに存在するイテレータペアを取るコンストラクタに対して、`std::from_range`を先頭に2つ目の引数で`range`オブジェクトを受け取る形のコンストラクタが追加されます。
+
+追加のパターンは全コンテナで同様で、大まかに例示すると次のようなコンストラクタが追加されます
+
+```cpp
+namespace std {
+
+  // 何らかのコンテナ型とする
+  template<typename T ...>
+  class C {
+
+    ...
+
+    // 既存のイテレータペアを取るコンストラクタ
+    template<class InputIterator>
+    C(InputIterator first, InputIterator last, args...);
+
+    // 追加されるfrom_rangeコンストラクタ
+    template<container-compatible-range<value_type> R>
+    C(from_range_t, R&& rng, args...);
+
+    ...
+  };
+}
+```
+
+`std::from_range_t`は単なるタグ型であり`std::from_range`はその事前定義オブジェクトです。イテレータペアを取るコンストラクタは追加の引数を取る場合がありますが（上記例中の`args...`）、その追加の引数の渡し方に関しては変化しません。
+
+このコンストラクタによって、任意の`range`（`input_range`）からコンテナを構築することができます。
+
+```cpp
+int main() {
+  auto in = std::views::iota(0)
+          | std::views::take(10);
+  
+  // どれも[0, 10)の範囲から初期化される
+  std::vector vec(std::from_range, in); // ok
+  std::list lst(std::from_range, in);   // ok
+  std::forward_list flst(std::from_range, in); // ok
+  std::set set(std::from_range, in);    // ok
+  std::stack stk(std::from_range, in);  // ok
+}
+```
+
+`from_range`コンストラクタでもCTADが利用可能になるように推論補助も追加されているため、このように要素型を自動で補ってもらうこともできます。
+
+これらのコンストラクタの制約に使用されている`container-compatible-range<R, T>`は説明専用のコンセプトで、入力範囲`R`の参照型がコンテナの要素型`T`に変換可能であることを要求するものです。
+
+```cpp
+namespace std {
+
+  template<class R, class T>
+  concept container-compatible-range =
+    ranges::input_range<R> &&
+    convertible_to<ranges::range_reference_t<R>, T>;
+}
+```
+
+つまりは`from_range`コンストラクタでは、入力範囲の要素型からコンテナの要素型に暗黙変換可能であればその入力範囲から構築することができます。
+
+`container-compatible-range<R, T>`の`T`は大抵の場合コンテナ型`C<T>`の`T`に一致しますが、`std::map`等の連想コンテナではそうではありません。その場合は、入力範囲の要素型に注意する必要があります。
+
+```cpp
+int main() {
+  // 要素型はstd::pair<int, std::string>
+  auto in = std::views::iota('0')
+          | std::views::transform([](char c) {
+              return std::make_pair(int(c), std::string(1, c));
+            })
+          | std::views::take(10);
+  
+  // どちらもKey=int、Value=std::string
+  std::map map(std::from_range, in);  // ok
+  std::unordered_map umap(std::from_range, in); // ok
+}
+```
+
+`std::map<K, V>`の要素型は`std::pair<const K, V>`であり、`K, V`を推論させようと思ったら`from_range`コンストラクタの入力範囲の要素型は少なくとも`std::pair`である必要があります。推論させないのであれば、入力範囲の要素型は`std::pair<const K, V>`に変換可能であればokです。
+
+```cpp
+int main() {
+  // 要素型はstd::tuple<size_f, std::string>
+  auto in = std::views::iota('0')
+          | std::views::transform([](char c) {
+              return std::string(1, c);
+            })
+          | std::views::take(10)
+          | std::views::enumerate;
+  
+  // CTADする場合は入力要素型はstd::pairでなければならない
+  std::map map1(std::from_range, in);  // ng
+  std::unordered_map umap1(std::from_range, in); // ng
+
+  // CTADしないなら2要素std::tupleでも可
+  std::map<std::size_t, std::string> map2(std::from_range, in);  // ok
+  std::unordered_map<std::size_t, std::string> umap2(std::from_range, in); // ok
+}
+```
+
+コンテナの`range`コンストラクタが`std::from_range`というタグを取るのは、次のようなコードにおいて構築後の要素型が変化してしまうことを回避するためです
+
+```cpp
+std::list<int> l;
+std::vector v{l}; // 要素型は何？
+```
+
+このコードはC++20でも有効であり、`v`の型は`std::vector<std::list<int>>`になります。`std::from_range`タグを取ることで、この問題を回避しています。
+
+## `_range`系関数
+
+## `ranges::to`
 
 # `std::generator`
 
