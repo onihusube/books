@@ -3453,6 +3453,8 @@ int main() {
 }
 ```
 
+なお、要素は全てコピーして構築されます。入力範囲が右辺値であっても同様です。ムーブしたい場合は`views::as_rvalue`を適用してから渡すと良いでしょう。
+
 コンテナの`range`コンストラクタが`std::from_range`というタグを取るのは、次のようなコードにおいて構築後の要素型が変化してしまうことを回避するためです
 
 ```cpp
@@ -3463,6 +3465,282 @@ std::vector v{l}; // 要素型は何？
 このコードはC++20でも有効であり、`v`の型は`std::vector<std::list<int>>`になります。`std::from_range`タグを取ることで、この問題を回避しています。
 
 ## `_range`系関数
+
+コンテナの`range`対応のために次に、構築済みのコンテナへ要素を挿入する関数の`range`対応版としてサフィックスに`_range`の付くメンバ関数が追加されます。これも`from_range`コンストラクタと同様に、現在イテレータペアを取る挿入系関数のオーバーロードをベースとして、イテレータペアを`range`に置き換えたような関数として追加されます。
+
+追加される関数とそのもとになった関数は次のようになっています
+
+|新しい関数|元の関数|意味|
+|---|---|---|
+|`insert_range`|`insert`|指定位置の前への範囲挿入|
+|`insert_range_after`|`insert_after`|指定位置の後ろへの範囲挿入|
+|`append_range`|なし（近いのは`push_back`）|末尾への範囲挿入|
+|`prepend_range`|なし（近いのは`push_front`）|先頭への範囲挿入|
+|`assign_range`|`assign`|コンテナへの範囲代入|
+|`replace_with_range`|`replace`|指定範囲の文字列置換|
+|`push_range`|なし（近いのは`push`）|末尾への範囲挿入|
+
+これらの関数は全てのコンテナに対して追加されるわけではなく、それぞれ次のコンテナで追加され使用可能になります
+
+- `insert_range`
+    - `std::vector`
+    - `std::deque`
+    - `std::list`
+    - `std::forward_list`
+    - `std::basic_string`
+    - 全ての連想コンテナ
+- `insert_range_after`
+    - `std::forward_list`
+- `append_range`
+    - `std::vector`
+    - `std::deque`
+    - `std::list`
+    - `std::basic_string`
+- `prepend_range`
+    - `std::deque`
+    - `std::list`
+    - `std::forward_list`
+- `assign_range`
+    - `std::vector`
+    - `std::deque`
+    - `std::list`
+    - `std::forward_list`
+    - `std::basic_string`
+- `replace_with_range`
+    - `std::basic_string`
+- `push_range`
+    - `std::queue`
+    - `std::priority_queue`
+    - `std::stack`
+
+`std::basic_string`はコンテナではありませんが、`std::vector`と同じ性質を持っているので追加対象になっています。
+
+### `insert_range`/`insert_range_after`
+
+`.insert_range()`は`.insert()`同様に、指定した位置（の後ろ）に指定した範囲を挿入するものです。
+
+```cpp
+using std::ranges::next;
+
+int main() {
+  std::vector vec = {1, 2, 9, 10};
+
+  auto rng = std::views::iota(3, 9);
+
+  auto vit = vec.insert_range(next(vec.begin(), 2), rng); // ok
+  // vec : {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+  // *vit : 3
+}
+```
+
+`.insert_range()`の戻り値は、挿入した位置（挿入した範囲の先頭要素の挿入後コンテナ内での位置）を指すイテレータを返します。`deque`や`list`でも同様ですが、`forward_list`はその特有の事情により少し異なります。
+
+```cpp
+using std::ranges::next;
+
+int main() {
+  std::vector vec = {1, 2, 9, 10};
+
+  auto rng = std::views::iota(3, 9);
+
+  std::deque deq(std::from_range, vec);
+  std::list lst(std::from_range, vec);
+
+  auto dit = deq.insert_range(next(deq.begin(), 2), rng); // ok
+  auto lit = lst.insert_range(next(lst.begin(), 2), rng); // ok
+  // 戻り値のイテレータ及び挿入後範囲はvectorの場合と同じ
+
+  std::forward_list fwl(std::from_range, vec);
+  
+  // 指定位置の前に挿入
+  auto flit = fwl.insert_range_after(next(fwl.begin()), rng); // ok
+  // 挿入後範囲はvectorの場合と同じ
+  // *flit : 8
+}`
+```
+
+`forward_list`の場合、戻り値のイテレータは挿入した要素の最後のものへのイテレータになります。
+
+連想コンテナ系の場合は、元の`.insert()`からして他のコンテナとは少し異なっており、`.insert_range()`もそれに準じています。
+
+```cpp
+int main() {
+  std::map<char, int> map = {{'1', 1}, {'2', 2}, {'5', 5}};
+  std::unordered_map<char, int> ump(std::from_range, map);
+
+  std::vector<std::pair<char, int>> rng = {{'3', 3}, {'4', 4}};
+
+  // 位置指定なし、戻り値なし
+  map.insert_range(rng);  // ok
+  // map : {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5}
+
+  ump.insert_range(rng);  // ok
+  // 挿入後範囲はmapと同じ
+
+  std::set set = {2, 1, 5};
+  std::unordered_set ust(std::from_range, set);
+
+  rng2 = rng | std::views::values;
+
+  set.insert_range(rng2); // ok
+  ust.insert_range(rng2); // ok
+  // set : {1, 2, 3, 4, 5}
+  // ustは順不定
+}
+```
+
+これらの関数の計算量は、元となった`.insert()`のイテレータ範囲をとるオーバーロードと同じになります。
+
+なお、入力範囲が右辺値であっても挿入される要素は全てコピーされています。ムーブしたい場合は`views::as_rvalue`を適用するなどして要素を右辺値にして渡す必要があります。
+
+### `append_range`/`prepend_range`
+
+`.append_range()`/`.prepend_range()`は、それぞれコンテナの終端/先頭（の手前）に指定した範囲を挿入するものです。これらの関数には完全に対応する関数はありませんが、`.push_back()`や`.push_front()`が単一要素の代わりに範囲をまとめて挿入するようになったものです。
+
+```cpp
+int main() {
+  std::deque deq = {1, 2, 3};
+
+  auto append = std::views::iota(-3, 0);
+  auto prepend = std::views::iota(4)
+               | std::views::take(3);
+
+  // 戻り値なし
+  deq.append_range(append);
+  deq.prepend_range(prepend);
+  // deq : {-3, -2, -1, 0, 1, 2, 3, 4, 5, 6}
+}
+```
+
+この2つの関数は動作に伴って挿入しようとする範囲の順序を並べ替えません。特に、`.prepend_range()`において挿入する範囲を逆転させてから挿入したりしません。
+
+`.prepend_range()`が使用できるのは`deque, list, forward_list`だけで、`vector, string`は`.append_range()`のみが使用できます。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3};
+  std::list lst(std::from_range, vec);
+  std::forward_list fwl(std::from_range, vec);
+
+  auto append = std::views::iota(-3, 0);
+  auto prepend = std::views::iota(4)
+               | std::views::take(3);
+
+  vec.append_range(append); // ok
+  lst.append_range(append); // ok
+  fwd.append_range(append); // ok
+  
+  vec.prepend_range(append); // ng
+
+  lst.prepend_range(append); // ok
+  fwd.prepend_range(append); // ok
+}
+```
+
+これらの関数の計算量は、挿入される範囲の長さを`N`とすると次のようになります
+
+- `std::vector` : 挿入前のコンテナサイズを`M`とすると
+    - メモリ再割り当てが行われた場合 : `N + M`に対して線形
+    - メモリ再割り当てが行われない場合 : `N`に対して線形
+- それ以外 : `N`に対して線形
+
+なお、入力範囲が右辺値であっても挿入される要素は全てコピーされています。ムーブしたい場合は`views::as_rvalue`を適用するなどして要素を右辺値にして渡す必要があります。
+
+### `assign_range`
+
+`.assign_range()`はコンテナに指定した範囲を代入するものです。元となった`.assgin()`同様に、コンテナの要素を一旦全てクリアしてから、指定された範囲の要素を新しい要素として追加します。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5};
+  std::deque deq(std::from_range, vec);
+  std::list lst(std::from_range, vec);
+  std::forward_list fwl(std::from_range, vec);
+
+  auto asn = std::views::iota(-5, 0)
+           | std::views::reverse
+           | std::views::take(3);
+
+  // 戻り値なし
+  vec.assign_range(asn);  // ok
+  // vec : {-1, -2, -3}
+
+  deq.assign_range(asn);  // ok
+  lst.assign_range(asn);  // ok
+  fwl.assign_range(asn);  // ok
+  // 挿入後範囲はvecと同じ
+}
+```
+
+全ての場合に、コンテナの要素型`T`と代入しようとする`range`型`R`は`assignable_from<T&, ranges::range_reference_t<R>>`のモデルとならなければなりません。
+
+`vector, deque`の場合、この関数の実行後に実行前に取得された終端イテレータ（`.end()`から取得したイテレータ）が無効化されます。
+
+これも、入力範囲が右辺値であっても挿入される要素は全てコピーされています。ムーブしたい場合は`views::as_rvalue`を適用するなどして要素を右辺値にして渡す必要があります。
+
+### `replace_with_range`
+
+`.replace_with_range()`は`std::basic_string`のみに追加される関数で、元となった`.replace()`同様に指定された範囲の文字列を挿入する文字範囲によって置き換えるものです。
+
+```cpp
+using std::ranges::next;
+
+int main() {
+  std::string str = "abcdefg";
+  auto rep = views::repeat('x', 4);
+
+  // 3文字目から2文字文
+  auto pos1 = next(str.begin(), 2);
+  auto pos2 = next(pos1, 2);
+
+  auto& res = str.replace_with_range(pos1, pos2, rep);
+  // str : "abxxxxefg"
+
+  // 戻り値としては*thisが返されている
+  assert(&res == &str);
+
+  pos1 = next(str.begin(), 2);
+  pos2 = next(pos1, 3);
+
+  // 3文字目から3文字分を"ww"で置換
+  str.replace_with_range(pos1, pos2, views::repeat('w', 2));
+  // str : "abwwxefg"
+}
+```
+
+挿入する範囲はイテレータによって指定して、挿入する文字範囲の長さは指定範囲の長さと一致している必要はありません。指定範囲より後ろの文字列は、挿入する長さが指定範囲の長さより短ければ詰められ、長ければ後ろにずらされます。
+
+戻り値は元のオブジェクトへの左辺値参照が得られます。メソッドチェーンのように処理を連結したい場合以外はあまり使い道は無いでしょうか。
+
+### `push_range`
+
+`.push_range()`はコンテナアダプタと呼ばれるコンテナに追加される関数で、指定した範囲の要素をそれぞれのコンテナの意味論のもとで追加していくものです。これには元になった関数はなく、`.push()`が単一要素の代わりに範囲をまとめて追加するようになったものです。
+
+```cpp
+int main() {
+  std::deque deq = {5, 6, 7};
+
+  std::queue que{deq};
+  std::priority_queue pqu{std::less<void>{}, deq};
+  std::stack stk{deq}
+
+  auto push = std::views::iota(1, 4);
+
+  // 戻り値なし
+  que.push_range(push);
+  // que : {5, 6, 7, 1, 2, 3}
+
+  pqu.push_range(push);
+  // pqu : {7, 6, 5, 3, 2, 1}
+
+  stk.push_range(push);
+  // stk : {3, 2, 1, 7, 6, 5}
+}
+```
+
+挿入しようとする範囲の要素をその順番通りに`.push()`していったように要素を追加します。処理後の順序は、それぞれのコンテナの意味論に応じた順序になります。
+
+これも、入力範囲が右辺値であっても挿入される要素は全てコピーされています。ムーブしたい場合は`views::as_rvalue`を適用するなどして要素を右辺値にして渡す必要があります。
 
 ## `ranges::to`
 
