@@ -2006,8 +2006,9 @@ int main() {
 
 ```cpp
 int main() {
-  for (auto n : std::views::iota(0) | std::views::stride(10)
-                                    | std::views::take(5))
+  for (auto n : std::views::iota(0) 
+              | std::views::stride(10)
+              | std::views::take(5))
   {
     std::cout << std::format("{:d} ", n);
   }
@@ -3356,7 +3357,7 @@ int main() {
 
 コンテナの`range`対応のためにまず、現在の既存コンテナに存在するイテレータペアを取るコンストラクタに対して、`std::from_range`を先頭に2つ目の引数で`range`オブジェクトを受け取る形のコンストラクタが追加されます。
 
-追加のパターンは全コンテナで同様で、大まかに例示すると次のようなコンストラクタが追加されます
+追加のパターンは全コンテナ（`std::array`を除く）で同様で、大まかに例示すると次のようなコンストラクタが追加されます
 
 ```cpp
 namespace std {
@@ -3369,18 +3370,18 @@ namespace std {
 
     // 既存のイテレータペアを取るコンストラクタ
     template<class InputIterator>
-    C(InputIterator first, InputIterator last, args...);
+    C(InputIterator first, InputIterator last, ...);
 
     // 追加されるfrom_rangeコンストラクタ
     template<container-compatible-range<value_type> R>
-    C(from_range_t, R&& rng, args...);
+    C(from_range_t, R&& rng, ...);
 
     ...
   };
 }
 ```
 
-`std::from_range_t`は単なるタグ型であり`std::from_range`はその事前定義オブジェクトです。イテレータペアを取るコンストラクタは追加の引数を取る場合がありますが（上記例中の`args...`）、その追加の引数の渡し方に関しては変化しません。
+`std::from_range_t`は単なるタグ型であり`std::from_range`はその事前定義オブジェクトです。イテレータペアを取るコンストラクタは追加の引数を取る場合がありますが（アロケータや比較関数オブジェクトなど）、その追加の引数の渡し方は変化しません。
 
 このコンストラクタによって、任意の`range`（`input_range`）からコンテナを構築することができます。
 
@@ -3395,6 +3396,14 @@ int main() {
   std::forward_list flst(std::from_range, in); // ok
   std::set set(std::from_range, in);    // ok
   std::stack stk(std::from_range, in);  // ok
+
+  std::pmr::monotonic_buffer_resource mr{};
+
+  // 追加の引数は入力範囲の後ろに指定
+  std::pmr::vector<int> pmrvec(std::from_range, in, &mr); // ok
+
+  // std::stringにもある
+  std::string str(std::from_range, std::views::iota('a', 'z')); // ok
 }
 ```
 
@@ -3464,6 +3473,28 @@ std::vector v{l}; // 要素型は何？
 
 このコードはC++20でも有効であり、`v`の型は`std::vector<std::list<int>>`になります。`std::from_range`タグを取ることで、この問題を回避しています。
 
+### 計算量について
+
+`from_range`コンストラクタにおける計算量は、入力範囲`rng`の型を`R`、長さを`N`とすると次のように指定されています
+
+- シーケンスコンテナ
+    - `std::vector`の場合
+      - $O(N)$回の要素コピー（ムーブ）
+      - `R`が`forward_range`であるか`sized_range`の場合、メモリ割り当ては1度だけ行われる
+        - そうではない場合、$log N$回のメモリ再割り当てが行われる
+    - それ以外のコンテナの場合
+      - $O(N)$回の要素コピー（ムーブ）
+- 連想コンテナ
+    - 順序付き連想コンテナ
+      - `rng`がソートされている場合$O(N)$
+      - そうでないなら$O(N log N)$
+    - 非順序連想コンテナ
+      - 平均$O(N)$、最悪$O(N^2)$
+
+おおよそ対応するイテレータペアを取るコンストラクタと同じになっています。
+
+ただし、`std::vector`の場合はメモリ確保についての要件が指定されており、これは予め`reserve`してから要素の挿入を行うことを意味しています。
+
 ## `_range`系関数
 
 コンテナの`range`対応のために次に、構築済みのコンテナへ要素を挿入する関数の`range`対応版としてサフィックスに`_range`の付くメンバ関数が追加されます。これも`from_range`コンストラクタと同様に、現在イテレータペアを取る挿入系関数のオーバーロードをベースとして、イテレータペアを`range`に置き換えたような関数として追加されます。
@@ -3514,6 +3545,8 @@ std::vector v{l}; // 要素型は何？
     - `std::stack`
 
 `std::basic_string`はコンテナではありませんが、`std::vector`と同じ性質を持っているので追加対象になっています。
+
+以下特に明記しませんが、これらの関数では挿入先コンテナの要素型`T`と入力範囲`R`について、`from_range`コンストラクタの時の`container-compatible-range<R, T>`を満たすようになっていなければ挿入できません。
 
 ### `insert_range`/`insert_range_after`
 
@@ -3743,6 +3776,408 @@ int main() {
 これも、入力範囲が右辺値であっても挿入される要素は全てコピーされています。ムーブしたい場合は`views::as_rvalue`を適用するなどして要素を右辺値にして渡す必要があります。
 
 ## `ranges::to`
+
+コンテナが`range`を直接受け取れるようになったのは大きな進歩でありかなり便利ですが、パイプラインを使用しているとコンテナの`from_range`コンストラクタを呼び出すのではなくパイプラインでつなげてコンテナへの変換まで行いたくなるでしょう。`ranges::to`はそのためのもので、パイプラインによって入力した`range`を任意のコンテナに変換して返します。
+
+```cpp
+int main () {
+  auto is_odd = [](auto n) {
+    return n % 2 == 1;
+  };
+
+  std::same_as<std::vector<int>> 
+    auto vec = std::views::iota(0)
+             | std::views::filter(is_odd)
+             | std::views::stride(3)
+             | std::views::take(5)
+             | std::ranges::to<std::vector>();  // 直接変換
+  
+  for (int n : vec) {
+    std::cout << std::format("{:d} ", n);
+  }
+}
+```
+```{style=planetext}
+1 7 13 19 25 
+```
+
+同様の記法によって他のコンテナへも変換できます。
+
+```cpp
+int main() {
+  auto is_odd = ...;
+
+  auto rng = std::views::iota(0)
+           | std::views::filter(is_odd)
+           | std::views::stride(3)
+           | std::views::take(5);
+
+  // 以下すべてokな例
+  auto lst = rng 
+           | std::ranges::to<std::list>();
+
+  auto deq = rng 
+           | std::ranges::to<std::deque>();
+
+  auto fwl = rng 
+           | std::ranges::to<std::forward_list>();
+
+  auto que = rng 
+           | std::ranges::to<std::queue>();
+  
+  auto pqu = rng 
+           | std::ranges::to<std::priority_queue>();
+
+  auto stk = rng 
+           | std::ranges::to<std::stack>();
+}
+```
+
+`ranges::to<C>()`のようにコンテナ型`C`を指定して呼び出すと、`C`への変換を行うRangeアダプタクロージャオブジェクトを返します。それにはRangeアダプタの場合と同様にパイプによって`range`を入力することができ、`range`を入力するとその要素列をコンテナ`C`へ詰めて返します。
+
+```cpp
+int main() {
+  namespace ranges = std::ranges;
+
+  auto is_odd = ...;
+
+  auto rng = std::views::iota(0)
+           | std::views::filter(is_odd)
+           | std::views::stride(3)
+           | std::views::take(5);
+
+  // vectorへの変換を行う呼び出し可能オブジェクトを構築
+  auto to_vec = ranges::to<std::vector>();
+
+  // Rangeアダプタ同様の方法でrangeを入力できる
+  auto vec1 = rng | to_vec; // ok
+  auto vec2 = to_vec(rng);  // ok
+
+  // ()で直接渡すこともできる
+  auto vec3 = ranges::to<std::vector>(rng); // ok
+
+  // 要素型を指定してもいい
+  auto vec4 = rng
+            | ranges::to<std::vector<int>>(); // ok
+
+  // 暗黙変換可能なら要素型は入力と異なってもいい
+  auto vec5 = rng
+            | ranges::to<std::vector<double>>();  // ok
+}
+```
+
+このような使用法からも分かるかもしれませんが、`ranges::to`は関数テンプレートです。そのため、使用時は最後に`()`が必須です。
+
+```cpp
+namespace std::ranges {
+
+  // A. 入力範囲からの変換を行うオーバーロード
+  template<class C, input_range R, class... Args>
+    requires (!view<C>)
+  constexpr C to(R&& rng, Args&&... args);
+  
+  template<template<class...> class C, input_range R, class... Args>
+  constexpr auto to(R&& rng, Args&&... args);
+
+  // B. Rangeアダプタクロージャオブジェクトを生成するオーバーロード
+  template<class C, class... Args>
+    requires (!view<C>)
+  constexpr auto to(Args&&... args);
+  
+  template<template<class...> class C, class... Args>
+  constexpr auto to(Args&&... args);
+}
+```
+
+全部で4つのオーバーロードがあり、大きく2種類に分けられます。範囲の入力から変換まで全てこなすのは第一引数に`input_range`を受け取る2つのオーバーロード（A）で、残りの2つ（B）はコンテナ型の指定と追加の引数を保存しておいて入力範囲を受けてAを呼び出すRangeアダプタクロージャオブジェクトを生成します。
+
+そのため、Bの戻り値は`range`ですらないRangeアダプタクロージャオブジェクトとなり、Aの戻り値は指定したコンテナ型`C`（の特殊化）のオブジェクト（*prvalue*）となります。
+
+全てのオーバーロードが追加の引数を受けるようになっていますが、これはコンテナ構築時の追加の引数を渡すために使用します。
+
+```cpp
+int main () {
+  namespace ranges = std::ranges;
+  
+  std::pmr::monotonic_buffer_resource mr{};
+  
+  auto rng = std::views::iota(0)
+           | std::views::stride(2)
+           | std::views::take(5);
+
+
+  auto vec1 = rng
+            | ranges::to<std::pmr::vector<int>>(&mr); // ok
+
+  auto vec2 = ranges::to<std::pmr::vector<int>>(rng, &mr);  // ok
+
+  auto pqu = rng 
+           | ranges::to<std::priority_queue>(std::greater<>{});  // ok
+}
+```
+
+### 要素型の推論
+
+`ranges::to<C>()`の`C`にはコンテナ型を指定しますがそこでは要素型を指定してもしなくても大丈夫になっています。それはテンプレートテンプレートパラメータを取るオーバーロード（ABそれぞれで2つ目のもの）が定義されているためで、そちらのオーバーロードでは変換後の要素型を含めたコンテナ型全体を導出してからAの1つ目のオーバーロードに委譲します。
+
+Bの2つ目のオーバーロードはAの2つ目に処理を委譲するため、要素型推論を行っているのはAの2つ目のオーバーロードです。
+
+```cpp
+namespace std::ranges {
+  
+  template<template<class...> class C, input_range R, class... Args>
+  constexpr auto to(R&& rng, Args&&... args);
+}
+```
+
+このオーバーロードは次のようにAの1つめに処理を委譲します
+
+```cpp
+return to<decltype(DEDUCE_EXPR)>(std​::​forward<R>(rng), std​::​forward<Args>(args)...);
+```
+
+この時、`ranges::to`のテンプレートパラメータの`decltype(DEDUCE_EXPR)`によって要素型も含めたコンテナ型全体を推論しており、この`DEDUCE_EXPR`は次のように決まります
+
+1. 次の式が有効な場合
+    - `C(declval<R>(), declval<Args>()...)`
+2. そうではなく、次の式が有効な場合
+    - `C(from_range, declval<R>(), declval<Args>()...)`
+3. そうではなく、次の式が有効な場合
+    - `C(declval<input-iterator>(), declval<input-iterator>(), declval<Args>()...)`
+4. それ以外の場合はill-formed
+
+ここでの`C`は要素型を欠いているコンテナ型であり、この3パターンの式はいずれもコンストラクタ呼び出し式です。
+
+この3パターンの式のいずれかを`decltype()`に入れることでコンテナ型を導出しており、つまりは`C`の初期化式におけるCTADを利用して要素型を推論しています。
+
+1つ目の式は直接`range`オブジェクトを渡すタイプのもので、標準のコンテナアダプタに対して内部コンテナを指定する場合などがこの経路で要素型が求められます。
+
+2つ目の式は前節で紹介した`from_range`コンストラクタを呼び出すもので、ほとんどの標準コンテナはこの経路で要素型が求められます。
+
+3つ目の式は従来のイテレータペアを取るコンストラクタを呼び出すものです。使われている`input-iterator`というのは次のように定義される、即席のダミーイテレータ型です。
+
+```cpp
+struct input-iterator {
+  using iterator_category = input_iterator_tag;
+  using value_type = range_value_t<R>;
+  using difference_type = ptrdiff_t;
+  using pointer = add_pointer_t<range_reference_t<R>>;
+  using reference = range_reference_t<R>;
+
+  reference operator*() const;
+  pointer operator->() const;
+
+  input-iterator& operator++();
+  input-iterator operator++(int);
+
+  bool operator==(const input-iterator&) const;
+};
+```
+
+これは*Cpp17InputIterator*要件を満たす少なくともC++17の入力イテレータとして（型レベルで）有効なイテレータ型で、入力範囲`R`に対応するC++17入力イテレータを即席でエミュレートするものです。
+
+```cpp
+int main() {
+  namespace ranges = std::ranges;
+  
+  auto rng = std::views::iota(0, 10);
+  std::list lst = {1, 2, 3};
+
+  // 1のパターンによる推論
+  auto stk = lst | ranges::to<std::stack>();
+  // std::stack(lst) -> std::stack<int, std::list<int>>
+
+  // 2のパターンによる推論
+  auto vec = rng | ranges::to<std::vector>();
+  // std::vector(std::from_range, rng) -> std::vector<int>
+
+  // 3のパターンによる推論
+  auto pqu = rng 
+           | ranges::to<std::priority_queue>(std::greater<>{});
+  // std::priority_queue(input-iterator{}, input-iterator{},
+  //                     std::greater<>{})
+  //   -> std::priority_queue<int, std::greater<>>
+}
+```
+
+ここで選択され呼び出されるコンストラクタはあくまで要素型推論のためだけのもので実際の変換に使用されているわけではありませんが、標準のコンテナの場合はこの推論時と変換時で異なるコンストラクタが選択されることは無いでしょう。
+
+### 変換の詳細
+
+結局、`range`からコンテナへの変換を担っているのはAの1つ目のオーバーロードです。
+
+```cpp
+namespace std::ranges {
+
+  template<class C, input_range R, class... Args>
+    requires (!view<C>)
+  constexpr C to(R&& rng, Args&&... args);
+}
+```
+
+残りのオーバーロードはそれぞれのステップで欠けているものを埋めながら最後はこのオーバーロードに行き着きます。そして、ここではコンテナ型`C`に応じた変換が選択され実行されています。
+
+入力が`input_range`であるのは当然として、追加の制約として変換先の型`C`が`view`ではないことが求められています。`view`は通常範囲を所有しない軽量な型であり、`ranges:to`の変換先としては適切ではありません。
+
+まず大まかに次の3つのいずれかに分岐します
+
+1. `C`が`input_range`ではないか、`range_reference_t<R>`が`range_value_t<C>`へ変換可能（`convertible_to`）な場合
+    - 後述
+2. そうではなく、`range_reference_t<R>`が`input_range`である場合
+    - すぐ下で説明
+3. それ以外の場合はill-formed
+
+1の場合はさらに分岐するので後で見ることにして、まず2の場合を見てみます。`range_reference_t<R>`が`input_range`である場合とはつまり、入力範囲が`range`の`range`になっているような場合です。この場合、次のような式の結果を返します
+
+```cpp
+to<C>(rng | views::transform([](auto&& elem) {
+  return to<range_value_t<C>>(std::forward<decltype(elem)>(elem));
+}), std::forward<Args>(args)...);
+```
+
+これは、入力範囲の要素の`range`を再帰的に`ranges::to`で処理しています。この場合、出力コンテナ型`C`の要素型もコンテナであるか`ranges::to<range_value_t<C>>`の変換が適用可能な型である必要があります。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  // 文字範囲の範囲からstringのvectorへ変換
+  auto vec = "split_view takes a view and a delimiter"
+           | views::split(' ')
+           | to<std::vector<std::string>>();
+
+  for (auto& str : vec) {
+    std::cout << std::format("{:s}\n", str);
+  }
+}
+```
+```{style=planetext}
+split_view
+takes
+a
+view
+and
+a
+delimiter
+```
+
+なお、この場合のネストに制限は特に設けられていません。2つは当然として3つでも4つでも変換は可能です。
+
+1の場合の「`C`が`input_range`ではないか、`range_reference_t<R>`が`range_value_t<C>`へ変換可能な場合」というのに該当する場合、さらに次の条件によって処理が分岐します
+
+1. `constructible_from<C, R, Args...>`である場合
+2. `constructible_from<C, from_range_t, R, Args...>`である場合
+3. 次の条件をすべて満たす場合
+    - `common_range<R>`
+    - `iterator_traits<iterator_t<R>>​::​iterator_category`がイテレータカテゴリとして有効である
+        - `input_iterator_tag`派生でなければならない
+    - `constructible_from<C, iterator_t<R>, sentinel_t<R>, Args...>`
+4. 次の条件をすべて満たす場合
+    - `constructible_from<C, Args...>`
+    - `C`が`.push_back()`か`.insert()`を備えていて入力`R`の要素を挿入可能である
+5. それ以外の場合はill-formed
+
+以後、こちらの4パターンの分岐はそれぞれ1-1や1-4の様に参照することにします。
+
+まず1-1の場合、次の式を実行して返します
+
+```cpp
+C(std::forward<R>(rng), std::forward<Args>(args)...)
+```
+
+これは要素型推論の1の場合に対応し、直接入力の`range`オブジェクト`rng`を転送して`C`を構築するものです。標準のコンテナアダプタなどがここに該当します。
+
+次に1-2の場合、次の式を実行して返します
+
+```cpp
+C(std::from_range, std::forward<R>(rng), std::forward<Args>(args)...)
+```
+
+これは要素型推論の2の場合に対応し、`from_range`コンストラクタによって`rng`を渡して`C`を構築します。標準のコンテナ型のほとんどがここに該当します。
+
+次に1-3の場合ですが、この一見複雑な条件は要するにC++17までのイテレータペアを取るコンストラクタが利用可能であるかをチェックしているものです。この場合は次の式を実行して返します
+
+```cpp
+C(ranges::begin(rng), ranges::end(rng), std::forward<Args>(args)...)
+```
+
+これは要素型推論の3の場合に対応し、`common_range`である`rng`の先頭と終端のイテレータを渡して`C`を構築します。
+
+最後の1-4の場合は次のような処理によって`C`を構築して返します
+
+```cpp
+C c(std::forward<Args>(args)...);
+
+if constexpr (sized_range<R> && reservable-container<C>) {
+  c.reserve(static_cast<range_size_t<C>>(ranges::size(rng)));
+}
+
+ranges::copy(rng, container-inserter<range_reference_t<R>>(c));
+```
+
+これは1-1から1-3までのいずれにも当てはまらないような型（おそらくコンテナ型）について、メンバ関数の`.insert()`もしくは`.push_back()`が可能であり、`rng`の各要素がそのいずれかによって挿入可能である場合に、それを使用して`rng`から`C`の構築を行うものです。
+
+`if constexpr`の分岐は、`C`が`.reserve()`を備えていて`R`が`sized_range`である場合に`rng`の要素数を用いて予め`.reserve()`しています。
+
+`container-inserter()`は`.insert()`と`.push_back()`の可能な方を使用して挿入するように切り替える説明専用の関数テンプレートで、おおよそ次のようなものです
+
+```cpp
+template<class Ref, class Container>
+constexpr auto container-inserter(Container& c) {
+  if constexpr (requires { c.push_back(declval<Ref>()); })
+    return back_inserter(c);
+  else
+    return inserter(c, c.end());
+}
+```
+
+1-4に該当するのは、入力範囲が`common_range`ではなく、`C`が`from_range`コンストラクタを持たないような場合だと思われます。なおこの場合でも、要素型の推論はイテレータペアを取るコンストラクタを用いて行われるため、それさえあれば要素型を指定せずに`ranges::to`することは可能です。
+
+```cpp
+#include <boost/container/vector.hpp>
+
+int main() {
+  namespace ranges = std::ranges;
+  
+  auto rng = std::views::iota(0, 10);
+  std::list lst = {1, 2, 3};
+
+  // 1-1の場合の構築
+  auto stk = lst | ranges::to<std::stack>();
+  // return std::stack(lst);
+
+  // 1-2の場合の構築
+  auto vec = rng | ranges::to<std::vector>();
+  // return std::vector(std::from_range, rng);
+
+  // 1-3の場合の構築
+  auto pqu = rng 
+           | ranges::to<std::priority_queue>(std::greater<>{});
+  // return std::priority_queue(ranges::begin(rng)
+  //                            ranges::end(rng),
+  //                            std::greater<>{});
+
+  // common_rangeではない範囲
+  // sized_rangeでもない
+  auto nc_rng = std::views::iota(0)
+              | std::views::take(10);
+
+  // 1-4の場合の構築
+  auto bvec = nc_rng
+            | ranges::to<boost::container::vector>(); // ok
+  // boost::container::vector<int> c();
+  // ranges::copy(rng, back_inserter(c));
+  // return c;
+}
+```
+
+1-4に該当するコンテナはおそらくC++23の標準ライブラリ内にはないため、Boost.Containerの`boost:container::vector`（ver 1.83時点）を持ってきました。
+
+Boostのコンテナを持ってきていることからも分かるように、`ranges::to`のこれらの変換仮定は標準のコンテナに対して制限されておらず、ユーザー定義のコンテナ、もっと言えば`range`を受け取ることのできるような任意の型に対して開かれています。
+
+そのため、`ranges::to<C>()`の`C`にはここまで説明した変換や推論の規則に当てはまる任意の型を渡すことができます。
+
+### 要素をムーブする
 
 # `std::generator`
 
