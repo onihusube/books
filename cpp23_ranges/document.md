@@ -4179,6 +4179,70 @@ Boostのコンテナを持ってきていることからも分かるように、
 
 ### 要素をムーブする
 
+`ranges::to`に入力する変換元の`range`の各要素は多くの場合デフォルトでは変換先のコンテナへコピーされています。何もしなくてもムーブされているのは、要素（間接参照結果）が右辺値になってる場合のみです。
+
+```cpp
+using namespace std::ranges;
+
+int main() {
+  // 文字範囲の範囲からstringのvectorへ変換
+  auto vec = "split_view takes a view and a delimiter"
+           | views::split(' ')
+           | to<std::vector<std::string>>();
+
+  // listへ変換、各要素のstringはコピー構築されている
+  auto lst = vec | to<std::list>();
+
+
+  // 要素が右辺値stringになっている範囲
+  auto rng = = "split_view takes a view and a delimiter"
+           | views::split(' ')
+           | views::transform([](auto rng) {
+               return to<std::string>(rng);
+             });
+
+  // この場合、dequeの要素のstringはムーブ構築されている
+  auto deq = rng | to<std::deque>();
+}
+```
+
+要素がムーブオンリーな型の場合はこのことはコンパイルエラーとして観測できます。
+
+```cpp
+int main() {
+  namespace ranges = std::ranges;
+  
+  std::vector<std::unique_ptr<int>> upvec;
+  upvec.emplace_back(std::make_unique<int>(10));
+  upvec.emplace_back(std::make_unique<int>(100));
+  upvec.emplace_back(std::make_unique<int>(17));
+  
+  // upvecの要素はunique_ptrの左辺値であるため、これだとコピーしようとしてエラー
+  auto up_list = upvec 
+               | std::ranges::to<std::list>;  // ng
+
+  // ムーブしてもダメ
+  auto up_list = std::move(upvec)
+               | std::ranges::to<std::list>;  // ng
+}
+```
+
+このサンプルコードは`views::as_rvalue`で例示したものと同じであり、これは`views::as_rvalue`によって範囲の各要素を右辺値に変換することで解決できます。すなわち、`ranges::to<C>(rng)`において`rng`の各要素をムーブして`C`を構築したいのならば、`views::as_rvalue`を用いて`rng`を右辺値の範囲に変換しておく必要があります。
+
+```cpp
+int main() {
+  ...
+
+  // 各要素を右辺値にしてから変換するとok
+  auto up_list = upvec 
+               | std::views::as_rvlaue
+               | std::ranges::to<std::list>;  // ok
+
+}
+```
+
+このことは`ranges::to`だけでなく、`from_range`コンストラクタや`_range`系のメンバ関数でも同様です。
+
 # `std::generator`
 
 C++20でコルーチンの言語サポートと、コルーチンユーによる機能作成のための最低限のライブラリ機能が用意されましたが、ユーザーが気軽に利用できるコルーチンアプリケーションは一切用意されていませんでした。
