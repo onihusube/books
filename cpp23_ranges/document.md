@@ -36,6 +36,12 @@ C++20でRangeライブラリが導入されましたがそれはRangeライブ�
 
 本書は『C++20 ranges』に引き続いて、C++23でのRangeライブラリ更新の様子を見ていくものです。
 
+C++23のRangeライブラリの更新も漸進的なもので、提案としても多数に及んでおり、全体像を掴みにくいものがあります。本書はそれらをまとめて、ある程度関連させながら紹介しています。また、機能が必要とされた理由や背景などもなるべく記載しています。
+
+本書を読むことで、C++23のRangeライブラリの全体像を掴み、C++プログラミングの要所でRangeライブラリとその関連機能を効果的に用いることができるようになるでしょう。
+
+## 注意など
+
 本書はC++23をベースとして記述されています。そのため、C++20までに導入されている機能については特に導入バージョンについて触れず、知っているものとして詳しい解説なども行いません。
 
 文中では、`std::ranges`もしくは`std::views`から始まるものについては`std::`を省略しています。また、通常の関数の表記（`func()`）に対してメンバ関数の表記（`.member_func()`）は先頭に`.`を付加して区別します。
@@ -75,7 +81,7 @@ namespace std {
 
 C++20における`<ranges>`、特にRangeアダプタまわりに関してはC++20規格完成後のC++23設計サイクル中にも多数の修正が行われ、その初期の時点ではまだ`<ranges>`の実装が無かったか出荷前だったことから、それらの修正は欠陥報告（*Defect Report* : DR）としてC++20に直接適用されました。
 
-そのような修正がC++23設計サイクルの中盤くらいまで相次いだ結果、C++20の`<ranges>`とはどこまでのことを言うのは分かりづらくなっています。この章では、提案という形でまとまっている大きな修正についてまとめておきます。DRとなる修正は過去のバージョンに遡って適用されるため、ここにまとめられている修正は全てC++23ではなくC++20に対するものです。そのため、これらの修正を適用済みのコンパイラにおいてはC++20モード（`-std=c++20`など）でコンパイルした時にも修正後の挙動となります。ただし、過渡期のコンパイラ（標準ライブラリ実装）では修正が間に合っていない場合もあり、その場合は修正前の挙動となります。
+そのような修正がC++23設計サイクルの中盤くらいまで相次いだ結果、C++20の`<ranges>`とはどこまでのことを言うのか分かりづらくなっています。この章では、提案という形でまとまっている大きな修正についてまとめておきます。DRとなる修正は過去のバージョンに遡って適用されるため、この章でまとめられている修正は全てC++23ではなくC++20に対するものです。そのため、これらの修正を適用済みのコンパイラにおいてはC++20モード（`-std=c++20`など）でコンパイルした時にも修正後の挙動となります。ただし、過渡期のコンパイラ（標準ライブラリ実装）では修正が間に合っていない場合もあり、その場合は修正前の挙動となります。
 
 C++20 ranges本でも執筆時点で把握していたものに関しては修正を適用していましたが、執筆後にもいくつかの修正が加えられたため完全ではありません。ここではその区別をせずに修正をまとめているため、一部の修正はC++20 ranges本で適用済みのものもあります。
 
@@ -122,7 +128,7 @@ int main() {
 }
 ```
 
-この例の場合、`views::join`の結果`join_view`のイテレータは`iterator_category`を提供していない一方で、`views::filter`の結果`filter_view`のイテレータは常に`iterator_category`を提供しようとしまずが、`join_view`のイテレータからはそれが取得できないためコンパイルエラーとなっています。
+この例の場合、`views::join`の結果`join_view`のイテレータは`iterator_category`を提供していない一方で、`views::filter`の結果`filter_view`のイテレータは常に`iterator_category`を提供しようとしまずが、`join_view`のイテレータからはそれが取得できないためコンパイルエラーとなっていました。
 
 `iterator_category`はC++17までのイテレータとしてイテレータカテゴリを表明するためのものであり、これはC++20イテレータコンセプトからは使用されずC++17のイテレータを扱うコードからのみ使用されます。C++20のイテレータはC++17イテレータとして使用可能である場合にのみ`iterator_category`を用意する（`iterator_traits`から取得できるようにする）ことで後方互換性を確保しています。後方互換性を確保する必要がない（できない）場合、`iterator_category`は用意されません。
 
@@ -137,15 +143,18 @@ int main() {
 
 ## `views::join`の*prvalue*対応
 
-他の言語等で`flat_map`と呼ばれているもの（`range`の`range`を変換しながら平坦化する）を作成しようとすると、C++20では次のような実装が考えられます
+他の言語等で`flat_map`と呼ばれている操作（`range`の`range`を変換しながら平坦化する）を作成しようとすると、C++20では次のような実装が考えられます
 
 ```cpp
-template<std::ranges::viewable_range R, std::invocable<std::ranges::range_reference_t<R>> F>
-  requires std::ranges::range<std::ranges::range_value_t<R>> and
-           std::ranges::range<std::invoke_result_t<F, std::ranges::range_reference_t<R>>>
+using namespace std::ranges:
+
+template<viewable_range R, 
+         std::invocable<range_reference_t<R>> F>
+  requires range<range_value_t<R>> and
+           range<std::invoke_result_t<F, range_reference_t<R>>>
 auto flat_map(R&& r, F&& f) {
-  return r | std::views::transform(f) // rの内側Rangeを変換し
-           | std::views::join;        // 平坦化する
+  return r | views::transform(f) // rの内側Rangeを変換し
+           | views::join;        // 平坦化する
 }
 ```
 
@@ -164,7 +173,7 @@ auto flat_map(R&& r, F&& f) {
 
 ただし、このキャッシュが使用される場合の`views::join`は`input_range`となり、`begin()`の呼び出しは1度しか行えません。また、内側`range`のキャッシュは`views::join`の結果の`view`オブジェクトのコピー/ムーブにおいて伝播しません。
 
-## `view`とイテレータのデフォルト構築可能要求の削除
+## `view`とイテレータのデフォルト構築可能性要求の削除
 
 当初の`view`コンセプトは`std::default_initializable`を包摂しており、`view`の要件としてデフォルト構築可能であることを要求していました。同様に、`std::input_iterator`コンセプト（が包摂している`std::weakly_incrementable`コンセプト）も入力イテレータ（と出力イテレータ）に対してデフォルト構築可能であることを要求していました。
 
@@ -222,7 +231,7 @@ concept weakly_incrementable =
   };
 ```
 
-どちらのコンセプトも意味論要件には変更がなく、この修正に関しては機能テストマクロ`__cpp_lib_ranges`が`201911L`から`202106L`にバンプアップされています。
+どちらのコンセプトも意味論要件には変更はありません。また、この修正に関しては機能テストマクロ`__cpp_lib_ranges`が`201911L`から`202106L`にバンプアップされています。
 
 ## Rangeアダプタの引数受け取りの修正
 
@@ -270,19 +279,21 @@ rng | std::move(t); // tからfをムーブする
 当初の`views::split`（`split_view`）は文字列分割に特化したものではなく、より一般的な`range`を`range`によって分割することができるものでした。そのため、主たる用途である文字列分割でむしろ使いづらくなっている部分がありました。
 
 ```cpp
-int main() {
-  using namespace std::string_view_literals;
-  using namespace std::views;
+using namespace std::string_view_literals;
+using namespace std::views;
 
+int main() {
   const auto str = "split_view takes a view and a delimiter"sv;
 
-  for (auto strv : str | split(' ')
-                       | transform([](auto subrng) {
-                           // どちらもできない・・・
-                           return std::string_view{subrng};
-                           return std::string_view{subrng.begin(), subrng.end()};
-                         })
-  ) {
+  // C++20のviews::splitによる分割
+  for (auto strv : str 
+                 | split(' ')
+                 | transform([](auto substr) {
+                     // どちらもできない・・・
+                     return std::string_view{substr};
+                     return std::string_view{substr.begin(), substr.end()};
+                   }))
+  {
     std::cout << strv << '\n';
   }
 }
@@ -292,21 +303,23 @@ int main() {
 
 これはまた、この例のように`views::split`の後段の`views::transform`内で文字列を対象とした他の操作（`std::from_chars`や`std::regex`など）を行おうとした時にもそれを妨げます。`std::regex`等標準ライブラリ内で文字列を受け取るところでは少なくとも`bidirectional_iterator`でなければならず、`std::from_chars`のようにより厳しいところではポインタでなければなりません。
 
-しかし当初の`views::split`の出力の内側`range`は最も強くても`forward_range`にしかならず、それを文字列として扱おうとすると非自明で面倒な変換を行わなければなりません。
+しかし当初の`views::split`の出力の内側`range`は最も強くても`forward_range`にしかならずしかも`common_range`ですらありません。それを文字列として扱おうとすると非自明で面倒な変換を行わなければなりません。
 
 この問題の解消のため、文字列分割に特化したRangeアダプタとして`views::split`が追加され、当初の`views::split`は`views::lazy_split`（`lazy_split_view`）にリネームされました。`views::split`の出力の内側`range`は入力文字列のイテレータをそのまま利用した`ranges::subrange`となり、これは`contiguous_range`となるためかなり扱いやすくなります。
 
 ```cpp
+using namespace std::string_view_literals;
+using namespace std::views;
+
 int main() {
-  using namespace std::string_view_literals;
-  using namespace std::views;
 
   const auto str = "split_view takes a view and a delimiter"sv;
 
-  for (auto strv : str | split(' ')
-                       | transform([](auto subrng) {
-                           return std::string_view{subrng.begin(), subrng.end()}; // ok
-                         }))
+  for (auto strv : str 
+                 | split(' ')
+                 | transform([](auto substr) {
+                     return std::string_view{substr.begin(), substr.end()}; // ok
+                   }))
   {
     std::cout << strv << '\n';
   }
@@ -356,12 +369,15 @@ namespace std::ranges {
 
   // basic_istream_viewクラス
   template<movable Val, class CharT, class Traits>
-    requires default_initializable<Val> && stream-extractable<Val, CharT, Traits>
-  class basic_istream_view : public view_interface<basic_istream_view<Val, CharT, Traits>>;
+    requires default_initializable<Val> &&
+             stream-extractable<Val, CharT, Traits>
+  class basic_istream_view : 
+    public view_interface<basic_istream_view<Val, CharT, Traits>>;
 
   // ranges::istrem_view関数
   template<class Val, class CharT, class Traits>
-  basic_istream_view<Val, CharT, Traits> istream_view(basic_istream<CharT, Traits>& s);
+  basic_istream_view<Val, CharT, Traits>
+    istream_view(basic_istream<CharT, Traits>& s);
 }
 ```
 
@@ -372,8 +388,10 @@ namespace std::ranges {
 
   // basic_istream_viewクラスはそのまま
   template<movable Val, class CharT, class Traits>
-    requires default_initializable<Val> && stream-extractable<Val, CharT, Traits>
-  class basic_istream_view : public view_interface<basic_istream_view<Val, CharT, Traits>>;
+    requires default_initializable<Val> &&
+             stream-extractable<Val, CharT, Traits>
+  class basic_istream_view :
+    public view_interface<basic_istream_view<Val, CharT, Traits>>;
 
   // charとwchar_tの型エイリアスを追加
   // ranges::istrem_viewは型名になった
@@ -436,8 +454,7 @@ int main() {
 そして、この`view`コンセプトの変更によって許可された範囲を所有するタイプの`view`として`ranges::owning_view`が追加されました。`owning_view`は渡された右辺値のRangeを所有してその寿命を延長させる`view`で、`views::all`に右辺値のRangeを渡したときに`owning_view`にラップされて返されます。これによって、パイプラインにおいて右辺値のRangeの取り扱いが安全になりました。
 
 ```cpp
-using namespace std::views;
-using namespace std::ranges::view;
+using namespace std::ranges;
 
 // 右辺値の範囲を返す
 auto rv() -> std::vector<int>;
@@ -446,10 +463,10 @@ auto lv() -> std::vector<int>&;
 
 int main() {
   // パイプライン処理の事前組み立て
-  auto pipe = drop(2)
-            | filter(...)
-            | transform(...)
-            | take(5);
+  auto pipe = views::drop(2)
+            | views::filter(...)
+            | views::transform(...)
+            | views::take(5);
   
   // rv()の戻り値はowning_viewによって保存されている
   view auto rvpipe = rv() | pipe;
@@ -478,7 +495,7 @@ Rangeライブラリの主役であるRangeアダプタ/RangeファクトリはC
 
 ## `views::repeat`
 
-`views::repeat`は与えられた値を指定された回数の繰り返しによる範囲を生成する`view`です。これは、Rangeに対して作用するRangeアダプタではなく範囲を生成するRangeファクトリです。
+`views::repeat`は与えられた値の指定された回数の繰り返しによる範囲となる`view`です。これは、Rangeに対して作用するRangeアダプタではなく範囲を生成するRangeファクトリです。
 
 ```cpp
 int main() {
@@ -510,7 +527,7 @@ int main() {
 
 `repeat_view`は`views::repeat`の実装詳細であり、`views::repeat`は常にこの`view`型を返します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // repeat_viewの宣言例
@@ -583,25 +600,25 @@ int main() {
 int main() {
   auto inf_rep = std::views::repeat(23);
   
-  // 無限`repeat_view`に対するtake/drop
+  // 無限repeat_viewに対するtake/drop
   auto t1 = inf_rep | std::views::take(10);
-  // t1 = std::views::repeat(23, 10) と等価
+  // t1 = views::repeat(23, 10) と等価
   auto d1 = inf_rep | std::views::drop(10);
   // d1 = auto(inf_rep) と等価
   
   auto fin_rep = std::views::repeat(23, 10);
   
-  // 有限`repeat_view`に対するtake/drop、元の長さに収まる場合
+  // 有限repeat_viewに対するtake/drop、元の長さに収まる場合
   auto t2 = fin_rep | std::views::take(5);
-  // t2 = std::views::repeat(23, 5) と等価
+  // t2 = views::repeat(23, 5) と等価
   auto d2 = fin_rep | std::views::drop(5);
-  // d2 = std::views::repeat(23, 10 - 5) と等価
+  // d2 = views::repeat(23, 10 - 5) と等価
   
-  // 有限`repeat_view`に対するtake/drop、元の長さを超える場合
+  // 有限repeat_viewに対するtake/drop、元の長さを超える場合
   auto t3 = fin_rep | std::views::take(15);
-  // t3 = std::views::repeat(23, 10) と等価
+  // t3 = views::repeat(23, 10) と等価
   auto d2 = fin_rep | std::views::drop(15);
-  // d3 = std::views::repeat(23, 10 - 10) と等価
+  // d3 = views::repeat(23, 10 - 10) と等価
 }
 ```
 
@@ -698,7 +715,7 @@ int main() {
 
 `views::as_rvalue`に左辺値を要素とする範囲を入力する場合は`as_rvalue_view`が返されます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // as_rvalue_viewの宣言例
@@ -752,7 +769,7 @@ bool b = it == arv.end();
 
 ## `views::join_with`
 
-`views::join_with`は指定されたパターンによって接合しながら入力の`range`の`range`を平坦化する`view`です。
+`views::join_with`は指定されたパターンによって接合しながら入力の`range`の`range`を平坦化した範囲となる`view`です。
 
 ```cpp
 int main() {
@@ -803,14 +820,14 @@ int main() {
 
 `join_with_view`は`views::join_with`の実装詳細であり、`views::join_with`は常にこの`view`型を返します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // join_with_viewの宣言例
   template<input_range V, forward_range Pattern>
-    requires view<V> && input_range<range_reference_t<V>>
-          && view<Pattern>
-          && compatible-joinable-ranges<range_reference_t<V>, Pattern>
+    requires view<V> && input_range<range_reference_t<V>> &&
+             view<Pattern> &&
+             compatible-joinable-ranges<range_reference_t<V>, Pattern>
   class join_with_view {
     ...
   };
@@ -834,9 +851,9 @@ join_with_view(R&&, range_value_t<range_reference_t<R>>)
   -> join_with_view<views::all_t<R>, single_view<range_value_t<range_reference_t<R>>>>;
 ```
 
-1つ目の推論補助は入力範囲とパターン範囲の両方を`views::all`に通すもので、他のRangeアダプタの`view`型でも多用されているものです。
+1つ目の推論補助は入力範囲と接合パターン範囲の両方を`views::all`に通すもので、他のRangeアダプタの`view`型でも多用されているものです。
 
-2つ目の推論補助が`forward_range`ではない値1つを渡されたときに使用されるもので、渡された値の型を`views::single`でラップして`join_with_view`のパターン型を求めています。これによって、パターンは常に`forward_range`な範囲として一貫して扱われています。見てわかるように、この場合には入力範囲の内側`range`の値型に一致する型だけを受け入れます。
+2つ目の推論補助が`forward_range`ではない値1つを渡されたときに使用されるもので、渡された値の型を`views::single`でラップして`join_with_view`の接合パターン型を求めています。これによって、接合パターンは常に`forward_range`な範囲として一貫して扱われています。見てわかるように、この場合には入力範囲の内側`range`の値型に一致する型だけを受け入れます。
 
 `join_with_view`はこのように渡された2つの範囲を内部で保存しており、内側`range`が*prvalue*となる（左辺値ではない）場合はさらに内側`range`もキャッシュしています。内側`range`のキャッシュが行われる場合、`join_with_view`は`input_range`になり、`.begin()`の呼び出しは最初の一回だけが有効になります。
 
@@ -844,13 +861,13 @@ join_with_view(R&&, range_value_t<range_reference_t<R>>)
 
 ### 動作詳細
 
-`join_with_view`の構築時は入力範囲とパターンを保持し、キャッシュが必要となる場合は各種キャッシュ領域を用意しますが、この時点ではほぼ何もしません。
+`join_with_view`の構築時は入力範囲と接合パターンを保持し、キャッシュが必要となる場合は各種キャッシュ領域を用意しますが、この時点ではほぼ何もしません。
 
-`join_with_view`のイテレータが取得されるとき、パターンのイテレータと入力範囲の外側イテレータを取得しそこから内側`range`と内側イテレータを取得するとともに、`join_with_view`内の必要なキャッシュを初期化します。その後、内側イテレータ（およびパターンのイテレータ）の終端判定を行いながらまず最初の要素まで管理するイテレータを進行させます。
+`join_with_view`のイテレータが取得されるとき、接合パターンのイテレータと入力範囲の外側イテレータを取得しそこから内側`range`と内側イテレータを取得するとともに、`join_with_view`内の必要なキャッシュを初期化します。その後、内側イテレータ（および接合パターンのイテレータ）の終端判定を行いながらまず最初の要素まで管理するイテレータを進行させます。
 
-`join_with_view`内では、外側のイテレータと内側イテレータおよびパターンのイテレータの3つを管理していますが、同時に保持しているのは外側のイテレータと内側イテレータもしくはパターンのイテレータのどちらかのみです。後者は、内側イテレータとパターンのイテレータをそれぞれ`II, PI`とすると`std::variant<PI, II>`によって保持されています。その`std::variant<PI, II>`オブジェクトは、現在位置が内側`range`内にあるときは内側イテレータを、パターン内にあるときはパターンのイテレータを保持するように管理されます。
+`join_with_view`内では、外側のイテレータと内側イテレータおよび接合パターンのイテレータの3つを管理していますが、同時に保持しているのは外側のイテレータと内側イテレータもしくは接合パターンのイテレータのどちらかのみです。後者は、内側イテレータと接合パターンのイテレータをそれぞれ`II, PI`とすると`std::variant<PI, II>`によって保持されています。その`std::variant<PI, II>`オブジェクトは、現在位置が内側`range`内にあるときは内側イテレータを、接合パターン内にあるときは接合パターンのイテレータを保持するように管理されます。
 
-`join_with_view`のイテレータの進行時は、`std::variant<PI, II>`の現在のイテレータを1つ進めた後、その終端チェックを行います。終端チェック時では、内側イテレータが終端に達しているときは外側イテレータを1つ進めて`std::variant<PI, II>`をパターンのイテレータの先頭で更新し、そのパターンのイテレータの終端チェックを再び行います。パターンのイテレータが終端に達しているときは内側`range`と内側イテレータを更新し、内側イテレータの終端チェックを再び行います。
+`join_with_view`のイテレータの進行時は、`std::variant<PI, II>`の現在のイテレータを1つ進めた後、その終端チェックを行います。終端チェック時では、内側イテレータが終端に達しているときは外側イテレータを1つ進めて`std::variant<PI, II>`を接合パターンのイテレータの先頭で更新し、その接合パターンのイテレータの終端チェックを再び行います。接合パターンのイテレータが終端に達しているときは内側`range`と内側イテレータを更新し、内側イテレータの終端チェックを再び行います。
 
 `join_with_view`が`bidirectional_range`となっている場合、後退（`--`）時はこの逆のことをします。まず外側イテレータが終端に達しているなら内側`range`の一番最後の要素の`end`イテレータを取得し`std::variant<PI, II>`に保存します。その後、`std::variant<PI, II>`のイテレータを取得し、その終端チェックを行いながら空の範囲のスキップとイテレータの切り替えを行います。最後に、`std::variant<PI, II>`の現在のイテレータを1つ後退させます。
 
@@ -880,7 +897,7 @@ auto elem = *it;
 bool b = it == jwv.end();
 ```
 
-パターンの範囲とそのイテレータの管理が追加されてはいますが、基本的には`join_view`と同じような方法で平坦化をおこなっています。
+接合パターンの範囲とそのイテレータの管理が追加されてはいますが、基本的には`join_view`と同じような方法で平坦化をおこなっています。
 
 ### `join_with_view`(`views::join_with`)の諸特性
 
@@ -961,7 +978,7 @@ int main() {
 
 `as_const_view`は`views::as_const`が入力範囲の各要素を`const`化するための作業を行う際の実装詳細です。とはいえ、`views::as_rvalue`に対する`as_rvalue_view`の時とほぼ同じように、その実態は`std::const_iterator`に委譲されています。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // as_const_viewの宣言例
@@ -983,7 +1000,7 @@ namespace std::ranges {
 }
 ```
 
-`ranges::cbegin()/cend()`はC++23で確実に要素変更不可能なイテレータ（`const_iterator`）を返すように改修され、ここでは入力`V`の`begin()/end()`から取得されたイテレータを`std::basic_const_iterator`に通して返します。
+`ranges::cbegin()/cend()`はC++23で確実に要素変更不可能なイテレータ（定数イテレータ）を返すように改修され、ここでは入力`V`の`begin()/end()`から取得されたイテレータを`std::basic_const_iterator`に通して返します。
 
 ### `std::basic_const_iterator`
 
@@ -1019,7 +1036,7 @@ it += 3;
 it -= 3;
 
 // 元のイテレータの間接参照結果をconst化して返す
-auto& cv = *it;
+const auto& cv = *it;
 
 // 元のイテレータ同士の比較になる
 bool b = it == crg.end();
@@ -1030,20 +1047,25 @@ bool b = it == crg.end();
 入力範囲`R`の参照型（`range_reference_t<R>`）を`T`とすると、`views::as_const`の全ての場合において（`as_const_view`が使用されない場合も含めて）次のようになります
 
 - `reference`
-    - `T`が`const`ではない参照型の場合 : `const T`
-    - `T`が`const`参照型の場合 : `T`
-    - それ以外（`T`が*prvalue*）の場合 : `std::remove_cv_t<T>`
+    - `range_const_reference_t<R>`、おおよそ次のようになる
+      - `T`が`const`ではない参照型の場合 : `const T`
+      - `T`が`const`参照型の場合 : `T`
+      - それ以外（`T`が*prvalue*）の場合 : `std::remove_cv_t<T>`
 - `range`カテゴリ : `R`のカテゴリと同じ
 - `common_range` : `R`が`common_range`である時
 - `sized_range` : `R`が`sized_range`である時
 - `const-iterable` : `R`が`const-iterable`である時
 - `borrowed_range` : `R`が`borrowed_range`の場合
 
+`range_const_reference_t<R>`は`R`の要素型（参照型）を`const`化した型を表す、C++23で追加されたエイリアステンプレートです。
+
 `R`の間接参照結果が*prvalue*の場合は`const`化されず元の*prvalue*のまま返されます。これは、*prvalue*として得られた間接参照結果をどうしても元の範囲の要素を変更することはできないためです。
+
+詳しくは後の方で説明しますが、`range_const_reference_t<R>`はもう少し複雑な結果になる場合があります。
 
 ## `views::enumerate`
 
-`views::enumerate`は入力範囲の各要素にそのインデックスを紐付けた要素からなる範囲を生成する`view`です。
+`views::enumerate`は入力範囲の各要素にそのインデックスを紐付けた要素からなる範囲となる`view`です。
 
 ```cpp
 int main() {
@@ -1086,7 +1108,7 @@ int main() {
 
 `enumerate_view`は`views::enumerate`の実装詳細であり、`views::enumerate`は常にこの`view`型を返します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // enumerate_viewの宣言例
@@ -1102,13 +1124,11 @@ namespace std::ranges {
 
 ### 動作詳細
 
-`enumerate_view`は入力範囲を保持するだけで動作のほとんどはそのイテレータが担っています。そのため、`enumerate_view`を初期化した段階ではまだ何も行われていません。
-
 `enumerate_view`のイテレータは入力範囲のイテレータ（`current`）と現在のインデックス値（`pos`）を保持しており、`enumerate_view`からイテレータを取得すると最初は`pos`は`0`に初期化されています。`pos`の型は入力の範囲`R`の距離型（`ranges::range_difference_t<R>`）が使用されます。
 
 その後、`enumerate_view`のイテレータのインクリメント等による進行に伴って`current`を進行させますが、同時に移動量を`pos`メンバに加算していくことでインデックス計算を行います。
 
-間接参照では、`pos`の値と`*current`（参照）を`std::tuple`にラップして返します。
+間接参照では、`pos`の値と`*current`を直接`std::tuple`にラップして返します。
 
 ```cpp
 // enumerate_view構築時は何もしない
@@ -1175,7 +1195,7 @@ int main() {
 
 ## `views::zip`
 
-`views::zip`は複数の範囲を入力に取り、それらの対応するインデックスの要素を一纏めにした要素からなる1つの範囲を生成する`view`です。
+`views::zip`は複数の範囲を入力に取り、それらの対応するインデックスの要素を一纏めにした要素からなる1つの範囲となる`view`です。
 
 ```cpp
 int main() {
@@ -1266,7 +1286,7 @@ int main() {
 
 `views::zip`に1つ以上の範囲を入力する場合は`zip_view`が返されます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // zip_viewの宣言例
@@ -1327,9 +1347,11 @@ bool b = it == zip.end();
 - `const-iterable` : `const Rs`が全て`range`である場合
 - `borrowed_range` : `Rs`が全て`borrowed_range`の場合
 
+`common_range`条件は少し複雑ですが`Rs`の中に1つでも`bidirectional_range`があると`common_range`にはなりません。それは、一番短い範囲の長さを定数時間で求められないからです。同様の要求のため、`Rs`が全て`random_access_range`である場合は同様にすべて`sized_range`でないと`common_range`にはなりません。
+
 ## `views::zip_transform`
 
-`views::zip_transform`は、複数の範囲とそれらの要素全てを受け取る変換関数を受けて、入力範囲の対応する要素をまとめて変換関数に渡して呼び出した結果からなる1つの範囲を生成する`view`です。
+`views::zip_transform`は、複数の範囲とそれらの要素全てを受け取る変換関数を受けて、入力範囲の対応する要素をまとめて変換関数に渡して呼び出した結果からなる1つの範囲となる`view`です。
 
 ```cpp
 int main() {
@@ -1384,7 +1406,7 @@ int main() {
 
 `views::zip_transform`に1つ以上の範囲を入力する場合は`zip_transform_view`が返されます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // zip_transform_viewの宣言例
@@ -1452,7 +1474,7 @@ bool b = it == zip_map.end();
 
 ## `views::adjacent`
 
-`views::adjacent`は、`views::adjacent`による範囲上での現在位置に対応する入力範囲の位置から、連続する`N`個分の要素を一纏めにした要素からなる範囲を生成する`view`です。
+`views::adjacent`は、`views::adjacent`による範囲上での現在位置に対応する入力範囲の位置から、連続する`N`個分の要素を一纏めにした要素からなる範囲となる`view`です。
 
 ```cpp
 int main() {
@@ -1524,7 +1546,7 @@ int main() {
 
 `views::adjacent<N>`で`N`が1以上の場合は`adjacent_view`が返されます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // adjacent_viewの宣言例
@@ -1542,7 +1564,7 @@ namespace std::ranges {
 
 ### 動作詳細
 
-`adjacent_view`のイテレータは元の範囲のイテレータを`N`個分保持しています。元の範囲のイテレータ型を`I`とすると`std::array<I, N>`のような形で保存されており、先頭のイテレータ（``）から最後（`.back()`）2め1つづつインクリメントされます（実際には保存方法がこう指定されているわけではありませんが、説明のために以下ではそうなっているものとします）。`adjacent_view`のイテレータの進行時には保持している`N`個のイテレータを同様に進行させます。
+`adjacent_view`のイテレータは元の範囲のイテレータを`N`個分保持しています。元の範囲のイテレータ型を`I`とすると`std::array<I, N>`のような形で保存されており、インクリメント時は保存している先頭のイテレータ（`.front()`）から最後（`.back()`）のイテレータまで順番にインクリメントされます。`adjacent_view`のイテレータのインクリメント以外の進行（後退やランダムアクセス）時は、保持している`N`個のイテレータを同様に進行させます。
 
 `adjacent_view`のイテレータの間接参照時は、そのように保持している`N`個のイテレータに対して`*i`した結果を直接`std::tuple`にラップしてその`std::tuple`オブジェクトを返します。ここで行われることは`zip_view`のイテレータとほぼ同じことで、それと同様に参照は参照のままラップされます。
 
@@ -1567,10 +1589,6 @@ auto tuple = *it;
 bool b = it == adj.end();
 ```
 
-なお、イテレータの進行時に`N`個のイテレータを同時に進行させるかは実装によります。例えばインクリメント時に、`.back()`のイテレータをコピーしたものをインクリメントしてから`.front()`のイテレータを捨てるように保持しているイテレータを移動させて`.back()`のイテレータを更新する、ような実装も可能です。ただ、この場合でも`N`回のインクリメントの代わりに`N`回のムーブ代入が行われます。
-
-おそらくですが、イテレータを1つだけ保持して間接参照時にそれを`N`個分コピーして進行させてから間接参照するような実装は、間接参照のコストが大きくなり実装が複雑化するため行われないと思われます（明確に禁止されてはいないようですが）。そのため、`adjacent_view`のイテレータは`O(N)`の空間コストがかかるでしょう。
-
 ### `adjacent_view`（`views::adjacent`）の諸特性
 
 指定した隣接数を`N`、入力範囲を`R`とすると次のようになります
@@ -1585,7 +1603,7 @@ bool b = it == adj.end();
 
 ## `views::adjacent_transform`
 
-`views::adjacent_transform`は`views::adjacent`の各要素に対して指定した変換を適用した結果からなる範囲を生成する`view`です。
+`views::adjacent_transform`は`views::adjacent`の各要素に対して指定した変換を適用した結果からなる範囲をとなる`view`です。
 
 ```cpp
 int main() {
@@ -1604,7 +1622,7 @@ int main() {
 15 105 385 1001 2431 4199
 ```
 
-`views::adjacent_transform<N>(func, rng)`は`views::adjacent<N>(rng)`の要素から元の`N`個の要素`func`に渡して呼び出し、その結果を要素として返します。すなわち、`rng | views::adjacent<N> | views::transform(func)`と同じですが、`views::zip`に対する`views::zip_transform`と同様に`std::tuple`に詰めて取り出すという中間過程をスキップすることで間接参照の効率化と変換関数の引数が元の要素型を直接受け取れるようにしています。
+`views::adjacent_transform<N>(func, rng)`は`views::adjacent<N>(rng)`の要素から元の`N`個の要素を取り出して`func`に渡して呼び出し、その結果を要素として返します。すなわち、`rng | views::adjacent<N> | views::transform(func)`と同じですが、`views::zip`に対する`views::zip_transform`と同様に`std::tuple`に詰めて取り出すという中間過程をスキップすることで間接参照の効率化と変換関数の引数が元の要素型を直接受け取れるようにしています。
 
 そのため、要素に関する部分以外のほとんどの性質は`views::adjacent`と共通しています。
 
@@ -1642,7 +1660,7 @@ int main() {
 
 `views::adjacent_transform<N>`で`N`が1以上の場合は`adjacent_transform_view`が返されます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // adjacent_transform_viewの宣言例
@@ -1713,7 +1731,7 @@ bool b = it == adj_map.end();
 
 ## `views::chunk`
 
-`views::chunk`は入力の範囲の要素を指定された数まとめたチャンクを要素とする範囲を生成する`view`です。
+`views::chunk`は入力の範囲の要素を指定された数まとめたチャンクを要素とする範囲となる`view`です。
 
 ```cpp
 int main() {
@@ -1744,7 +1762,7 @@ int main() {
 
 `chunk_view`は`views::chunk`の実装詳細であり、`views::chunk`は常にこの型を返します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // chunk_viewの宣言例（プライマリテンプレート）
@@ -1898,7 +1916,7 @@ int main() {
 
 `views::slide`は常に`slide_view`を返します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // slide_viewの宣言例
@@ -1952,7 +1970,7 @@ auto subrng = *it;
 // 保持するイテレータ同士の比較になる
 // 保持するイテレータが1つの場合、そのイテレータの比較
 // 保持するイテレータが2つの場合、2つ目のイテレータの比較
-bool b = it == sld.end();
+bool b = it == se;
 ```
 
 `views::counted`の`views::take`との違い及びそのメリットとしては次のものがあります
@@ -1999,7 +2017,7 @@ int main() {
 
 入力範囲を`R`とすると次のようになります
 
-- `reference` : 入力範囲の現在のイテレータを`it`、ウィンドウサイズを`n`とすると
+- `reference` : `R`のイテレータを`it`、ウィンドウサイズを`n`とすると
     - `views::counted(it, n)`
 - `range`カテゴリ : `R`のカテゴリと同じ（ただし、`contiguous_range`にはならない）
 - `common_range` : `R`について次のどちらか
@@ -2060,7 +2078,7 @@ int main() {
 
 `views::chunk_by`は常に`chunk_by_view`を返します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // chunk_by_viewの宣言例
@@ -2188,7 +2206,7 @@ int main() {
 
 `views::stride`は常に`stride_view`を返します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // stride_viewの宣言例
@@ -2204,7 +2222,7 @@ namespace std::ranges {
 
 ### 動作詳細
 
-`stride_view`のイテレータは入力範囲の先頭と終端のイテレータペア（`current, end`）と指定されたスキップ幅及び進行時に進めなかった距離（`stride, missing`）を保存する変数を保持しています。
+`stride_view`のイテレータは入力範囲の先頭と終端のイテレータペア（`current, end`）と指定されたスキップ幅及び進行時に進めなかった距離（`stride, missing`）を保持しています。
 
 `stride_view`のイテレータの進行時には保持するイテレータを`ranges::advance(current, stride, end)`のように進めて、この戻り値を`missing`に保存します。`missing`は`current`が終端に到達した時に非ゼロになります。
 
@@ -2245,7 +2263,7 @@ bool b = it == cby.end();
 
 ### 後退と逆転
 
-`views::stride`による範囲は、先頭から辿っても末尾から辿っても同じ要素列を生成するようになっています。そのため、末尾から`views::stride`するのと、`views::stride`を`views::reverse`するのでは結果が異なります。
+`views::stride`による範囲は、先頭から辿っても末尾から辿っても同じ要素列を生成するようになっています。そのため、`views::stride`を`views::reverse`するのと、末尾から`views::stride`するのでは結果が異なります。
 
 ```cpp
 int main() {
@@ -2367,7 +2385,7 @@ int main() {
 
 `views::cartesian_product`に1つ以上の範囲を入力する場合は`cartesian_product_view`が返されます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // cartesian_product_viewの宣言例
@@ -2380,6 +2398,8 @@ namespace std::ranges {
 ```
 
 入力範囲に関して、1つ目の範囲は`input_range`ですが2つ目以降の範囲は`forward_range`であることが求められています。1つ目だけ制約が異なるのは、`views::cartesian_product`の列挙は1つ目の範囲について行われるためで、1つ目の範囲のある要素が参照されるタイミングは連続的になりますが（1つのイテレータが進むだけで良い）、2つ目以降の範囲の要素は異なるタイミングで複数回参照されるため（マルチパス保証が必要になるため）です。
+
+すなわち、入力の範囲のうち先頭のものは1度しかイテレートされませんが、2つ目以降の範囲は複数回イテレートされ、より下位のものほどイテレート回数は多くなります。
 
 `cartesian_product_view`は入力範囲をそれぞれ`views::all`に通したものを`std::tuple`に詰めて保持しています。
 
@@ -2422,7 +2442,7 @@ auto crp = std::views::cartesian_product(rngs...);
 // 全ての入力範囲のイテレータを取り出し保存する
 auto it = crp.begin();
 
-// 進行時は後のイテレータから進めていく
+// 進行時は後（下位）のイテレータから進めていく
 // 進めたイテレータが終端に達した時のみその1つ前のイテレータを進める
 ++it;
 --it;
@@ -2449,7 +2469,7 @@ bool b = it == crp.end();
 - `range`カテゴリ : 次のいずれか
     - 次の全てを満たす場合 : `random_access_range`
       - `Rs`は全て`random_access_range`
-      - `R0`を除いた`Rs`はは全て`sized_range`
+      - `R0`を除いた`Rs`は全て`sized_range`
     - 次の全てを満たす場合 : `bidirectional_range`
       - `Rs`は全て`bidirectional_range`
       - `R0`を除いた`Rs`は全て次ののどちらか
@@ -2472,7 +2492,7 @@ Rangeアダプタは`views::cartesian_product`で打ち止めで、ここから�
 
 `ranges::range_adaptor_closure`はRangeアダプタを自作する場合に標準アダプタとの間でパイプライン演算子（`|`）による接続が行えるようにするためのサポートを提供するクラス型です。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
   template<class D>
     requires is_class_v<D> && same_as<D, remove_cv_t<D>>
@@ -2671,7 +2691,7 @@ int main() {
 }
 ```
 
-Rangeアダプタの実装においてはおそらく、ほとんどの場合この例のように入力範囲も含めた必要なものをすべて受けてRangeダプタとしての処理を実行する関数呼び出し演算子と、追加の引数だけを受けて対応するRangeアダプタクロージャオブジェクトを作成する関数呼び出し演算子の2つを記述することになると思われます。
+Rangeアダプタの実装においてはおそらく、ほとんどの場合この例のように入力範囲も含めた必要なものをすべて受けてRangeアダプタとしての処理を実行する関数呼び出し演算子と、追加の引数だけを受けて対応するRangeアダプタクロージャオブジェクトを作成する関数呼び出し演算子の2つを記述することになると思われます。
 
 おそらく、この`my_closure_adaptor`のより汎用なもの（汎用的なRangeアダプタクロージャオブジェクト型）はRangeアダプタとは別で作成できて、かつこの例のような典型的な実装になるはずです。そのため、自作のRangeアダプタ毎にこのようなものを作る必要は無いでしょう。この部分がC++23で追加されなかったのは、この部分の最適な実装がまだ確立されていないためだったようです。
 
@@ -2688,7 +2708,7 @@ C++20のRangeアダプタのうち、ユーザー定義の型を追加で受け�
 - `take_while_view`
 - `drop_while_view`
 
-これらの`view`型ではムーブオンリーな型の値を渡して保持させることができるようになり、その場合その`view`もムーブオンリーになります。
+これらの`view`型ではムーブオンリーな型の値（`single_view`以外は述語オブジェクト）を渡して保持させることができるようになり、その場合その`view`もムーブオンリーになります。
 
 \clearpage
 
