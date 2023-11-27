@@ -32,7 +32,13 @@ okuduke:
 
 # はじめに
 
-本書はC++23をベースとして記述されています。そのため、C++20までに導入されている機能については特に導入バージョンについて触れません。ただし、一部C++23に関する部分があり、それについてはC++23で変更・追加された機能であることを明示します。
+C++20でRangeライブラリが導入されましたがそれはRangeライブラリの全体ではなく、最初の部分だけでした（それでも巨大なものでしたが）。C++23では、Rangeライブラリの拡張や改善がC++20ほどの規模ではないとはいえ大きく行われています。
+
+本書は『C++20 ranges』に引き続いて、C++23でのRangeライブラリ更新の様子を見ていくものです。
+
+本書はC++23をベースとして記述されています。そのため、C++20までに導入されている機能については特に導入バージョンについて触れず、知っているものとして詳しい解説なども行いません。
+
+文中では、`std::ranges`もしくは`std::views`から始まるものについては`std::`を省略しています。また、通常の関数の表記（`func()`）に対してメンバ関数の表記（`.member_func()`）は先頭に`.`を付加して区別します。
 
 ## サンプルコードのお約束
 
@@ -464,6 +470,8 @@ int main() {
 
 この例の場合、`lv()`の戻り値の参照元の寿命が十分に長いとすると、どちらのパイプライン処理も安全に実行可能となります。また、`views::all`はパイプラインにおいて自動適用されるため、`owning_view`や`ref_view`の存在をユーザーは気にする必要がなく、おそらく直接使用することはほとんど無いでしょう。
 
+\clearpage
+
 # Rangeアダプタ/ファクトリ
 
 Rangeライブラリの主役であるRangeアダプタ/RangeファクトリはC++23でさらに拡充されており、パイプラインによるより多彩な範囲操作が可能になっています。
@@ -893,7 +901,146 @@ bool b = it == jwv.end();
 
 「`range_reference_t<R>`が参照型であり」のような要求は内側`range`が左辺値であることを要求しており、そうではなく内側`range`が*prvalue*の場合は`join_with_view`内に内側`range`が都度キャッシュされます。そのためその場合は`input_range`になりその他の性質も制限されます。
 
-## `views::as_cosnt`
+## `views::as_const`
+
+`views::as_const`は、入力範囲の各要素を`std::as_const`したような定数要素からなる範囲となる`view`です。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+  
+  for (auto& n : vec | std::views::as_const) {
+    n = 0; // ng!
+  }
+}
+```
+
+`views::as_const`した範囲は各要素が`const`化されており、以降その操作を通して元の要素を変更することができなくなります。
+
+`views::as_const`は自分の所有する範囲をライブラリ関数に安全に渡したい場合により有効でしょう。
+
+```cpp
+// 渡した範囲が内部でどう使われるかわからない
+auto iterate_range(std::ranges::range auto&& r) {
+  ...
+}
+
+int main() {
+  // 知らないところで変更されたくない範囲
+  std::vector rng = {1, 2, 3, 4};
+  
+  // もしかしたら要素を勝手に変更されるかもしれない
+  iterate_range(rng);
+  // 変更の心配がない
+  iterate_range(rng | std::views::as_const);
+  
+  ...
+
+  // 後で使用するのでvecをconstにしたくない
+  rng.push_back(5);
+}
+```
+
+あるいは、この場合の`rng`を`const`化してもその要素まで`const`にならない場合があり（`std::span`など）、`views::as_const`はその場合でもその要素を`const`化できます。
+
+`views::as_const`そのものはRangeアダプタオブジェクトであり、入力範囲`r`（型を`R`、修飾を取り除いた型を`U`とする）を受けて次のいずれかの動作をします
+
+- `views::all_t<R>`が`constant_range`である時 : `views::all(r)`
+    - `R`が既に`constant_range`である時、`view`に変換するだけ
+- `U`が`empty_view<X>`である時 : `views::empty<const X>`をコピーして返す
+- `U`が`span<X, E>`である時 : `r`をそのまま転送して`span<const X, E>`を構築して返す
+- `U`が`ref_view<X>`であり、`const X`が`constant_range`のモデルとなる時 : `ref_view(static_cast<const X&>(r.base()))`
+- `r`が左辺値であり、`const U`が`constant_range`のモデルとなる時 : `ref_view(static_cast<const U&>(r))`
+- それ以外の場合 : `r`をそのまま転送して`as_const_view`を構築して返す
+
+`constant_range`とは新しいコンセプトで、要素が`const`である`range`を表すものです。
+
+少し複雑ですが、ここで行われている分岐は、単に型を少し工夫するだけでその要素の`const`化が達成できる場合にそうするようにしているだけです。要素の`const`化のために追加の作業が必要となる場合（一番最後のケース）は、`as_const_view`に委譲されます。
+
+### `as_const_view`
+
+`as_const_view`は`views::as_const`が入力範囲の各要素を`const`化するための作業を行う際の実装詳細です。とはいえ、`views::as_rvalue`に対する`as_rvalue_view`の時とほぼ同じように、その実態は`std::const_iterator`に委譲されています。
+
+```cpp
+namespace std::ranges {
+
+  // as_const_viewの宣言例
+  template<view V>
+    requires input_range<V>
+  class as_const_view : public view_interface<as_const_view<V>> {
+    ...
+    
+    // 非const begin()
+    constexpr auto begin() requires (!simple-view<V>)
+    { return ranges::cbegin(base_); }
+
+    // 非const end()
+    constexpr auto end() requires (!simple-view<V>)
+    { return ranges::cend(base_); }
+
+    ...
+  };
+}
+```
+
+`ranges::cbegin()/cend()`はC++23で確実に要素変更不可能なイテレータ（`const_iterator`）を返すように改修され、ここでは入力`V`の`begin()/end()`から取得されたイテレータを`std::basic_const_iterator`に通して返します。
+
+### `std::basic_const_iterator`
+
+`std::basic_const_iterator<I>`はC++23で追加されたイテレータラッパであり、イテレータ`I`の間接参照結果を`const`化するものです。
+
+```cpp
+int main() {
+  std::vector input = {1, 2, 3, 4};
+  auto it = input.begin();
+  
+  *it = 0;  // ok
+  
+  std::basic_const_iterator cit = it;
+  
+  *cit = 0; // ng
+}
+```
+
+`std::basic_const_iterator`の仕事はほぼ間接参照時に元のイテレータの間接参照結果を`const`化（単純なキャストによる）することにあり、それ以外の部分は元のイテレータと同じ振る舞いとなります。
+
+`as_const_view<R>`はそのイテレータとして`R`のイテレータをラップした`std::basic_const_iterator`を常に用いることによって入力範囲の要素を`const`化し、`views::as_const`は必要な場合に`as_const_view`を返すことで全ての場合において入力範囲をその要素が`const`化された`view`に変換します。
+
+```cpp
+auto crg = rng | std::views::as_const;
+
+// 入力範囲のイテレータをラップしたbasic_const_iteratorを返す
+auto it = crg.begin();
+
+// 進行は元のイテレータに同じ操作を適用する
+++it;
+--it;
+it += 3;
+it -= 3;
+
+// 元のイテレータの間接参照結果をconst化して返す
+auto& cv = *it;
+
+// 元のイテレータ同士の比較になる
+bool b = it == crg.end();
+```
+
+### `as_const_view`（`views::as_const`）の諸特性
+
+入力範囲`R`の参照型（`range_reference_t<R>`）を`T`とすると、`views::as_const`の全ての場合において（`as_const_view`が使用されない場合も含めて）次のようになります
+
+- `reference`
+    - `T`が`const`ではない参照型の場合 : `const T`
+    - `T`が`const`参照型の場合 : `T`
+    - それ以外（`T`が*prvalue*）の場合 : `std::remove_cv_t<T>`
+- `range`カテゴリ : `R`のカテゴリと同じ
+- `common_range` : `R`が`common_range`である時
+- `sized_range` : `R`が`sized_range`である時
+- `const-iterable` : `R`が`const-iterable`である時
+- `borrowed_range` : `R`が`borrowed_range`の場合
+
+`R`の間接参照結果が*prvalue*の場合は`const`化されず元の*prvalue*のまま返されます。これは、*prvalue*として得られた間接参照結果をどうしても元の範囲の要素を変更することはできないためです。
+
 ## `views::enumerate`
 
 `views::enumerate`は入力範囲の各要素にそのインデックスを紐付けた要素からなる範囲を生成する`view`です。
@@ -1349,7 +1496,7 @@ length = 0
 
 `views::adjacent<N>`そのものはRangeアダプタオブジェクトであり、`N`と1つの範囲を受け取って次のどちらかの動作をします
 
-- `N == 0` : `views​::​empty<std::tuple<>>`を返す
+- `N == 0` : `views​::​empty<std::tuple<>>`をコピーして返す
 - それ以外の場合 : と受けた引数を転送して`adjacent_view<N>`を構築して返す
 
 `N == 2`の場合のより適切な命名のために`views::pairwise`も用意されています。`views::pairwise`は単に`views::adjacent<2>`の別名です。
@@ -2543,6 +2690,8 @@ C++20のRangeアダプタのうち、ユーザー定義の型を追加で受け�
 
 これらの`view`型ではムーブオンリーな型の値を渡して保持させることができるようになり、その場合その`view`もムーブオンリーになります。
 
+\clearpage
+
 # Rangeアルゴリズム
 
 ## `find_last`系アルゴリズム
@@ -3321,6 +3470,47 @@ true
 正確には`ranges::in_value_result<iterator_t<R>, U>`という構造体で、1つ目のメンバ変数`in`にイテレータを保持し、2つ目のメンバ変数`value`に計算結果の値を保持しています。
 
 ## 非Rangeアルゴリズムでのコンセプトの使用
+
+Rangeアダプタの`view`型のイテレータはC++20イテレータとして設計されており、C++20イテレータはイテレータコンセプトによって定義されています。そして、その定義はC++17以前のイテレータ（各種名前付き要件によって定義されている）に対して互換性がありません。
+
+C++20イテレータは`iterator_category`や`iterator_traits`を介して情報を取得するとC++17イテレータとして見えるように振る舞い、Rangeアダプタの`view`型のイテレータのうちいくつかのものは`iterator_category`を`inpute_iterator`であると通知することで、C++17の入力イテレータとして使用できるようになっています。
+
+C++17までの従来のアルゴリズム（非Rangeアルゴリズムは）C++17までのイテレータを前提にしており、イテレータコンセプトを用いたチェック等を行いません。そのため、Rangeアダプタを通した後の範囲は非Rangeアルゴリズムから使用できないか、使用できても`input_iterator`に制限された形になります。
+
+C++23ではその対応のために次の条件に該当するアルゴリズムにおいて、入力のイテレータに対する要件として名前付き要件の代わりにイテレータコンセプトによるチェックを行います。
+
+- `forward_iterator`以上を要求していたもの
+    - テンプレートパラメータが`ForwardIterator`、`BidirectionalIterator`、`RandomAccessIterator`などのように指定されていたもの
+- 入力範囲を変更しないもの
+    - 定数イテレータを入力しても動作するアルゴリズム
+
+イテレータコンセプトを用いて要件チェックを行うということは、これに該当するアルゴリズムではC++20イテレータはC++20イテレータのまま使用可能になるということです。
+
+これによる利点は、C++23時点でもRange化されていない並行アルゴリズム（第一引数に`ExecutionPolicy`を取るもの）をC++20以降のRangeライブラリの`view`型でも使用可能になることです。
+
+```cpp
+using namespace std::ranges;
+
+int main () {
+  std::vector<int> data = ...;
+  auto v = data 
+         | views::transform([](int x){ return x * x; });
+
+  int sum_of_squares = std::reduce(std::execution::par, 
+                                   begin(v), end(v));
+
+
+  auto idxs = std::views::iota(0, N);
+  auto sqrt = [](int x) { return std::sqrt(float(x)); };
+
+  std::transform(std::execution::par,
+                 begin(idxs), end(idxs), begin(sqrts), sqrt);
+}
+```
+
+また、アルゴリズムではありませんが`std::regex_match`と`std::regex_search`のイテレータを取るオーバーロードについての`BidirectionalIterator`に対しても同じ変更が適用されています。
+
+\clearpage
 
 
 # `range` to `range`の変換
@@ -4177,7 +4367,7 @@ Boostのコンテナを持ってきていることからも分かるように、
 
 そのため、`ranges::to<C>()`の`C`にはここまで説明した変換や推論の規則に当てはまる任意の型を渡すことができます。
 
-### 要素をムーブする
+### 要素をムーブして変換する
 
 `ranges::to`に入力する変換元の`range`の各要素は多くの場合デフォルトでは変換先のコンテナへコピーされています。何もしなくてもムーブされているのは、要素（間接参照結果）が右辺値になってる場合のみです。
 
@@ -4185,7 +4375,7 @@ Boostのコンテナを持ってきていることからも分かるように、
 using namespace std::ranges;
 
 int main() {
-  // 文字範囲の範囲からstringのvectorへ変換
+  // vecの各要素は左辺値のstring
   auto vec = "split_view takes a view and a delimiter"
            | views::split(' ')
            | to<std::vector<std::string>>();
@@ -4195,7 +4385,7 @@ int main() {
 
 
   // 要素が右辺値stringになっている範囲
-  auto rng = = "split_view takes a view and a delimiter"
+  auto rng = "split_view takes a view and a delimiter"
            | views::split(' ')
            | views::transform([](auto rng) {
                return to<std::string>(rng);
@@ -4243,9 +4433,13 @@ int main() {
 
 このことは`ranges::to`だけでなく、`from_range`コンストラクタや`_range`系のメンバ関数でも同様です。
 
+これは、これらの処理における宛先コンテナでの各要素`elem`の構築が、入力範囲のイテレータ`it`について単に`std::construct_at(&elem, *it)`のように行われるためで、左辺値の要素は左辺値としてコンストラクタに与えられた結果としてコピーされています。ここでムーブをするためには`*it`を`iter_move(it)`とする必要がありますが、`views::as_rvalue`はまさに範囲全体に対してこれを適用するRangeアダプタです。
+
+\clearpage
+
 # `std::generator`
 
-C++20でコルーチンの言語サポートと、コルーチンユーによる機能作成のための最低限のライブラリ機能が用意されましたが、ユーザーが気軽に利用できるコルーチンアプリケーションは一切用意されていませんでした。
+C++20でコルーチンの言語サポートと、コルーチンユーザーによる機能作成のための最低限のライブラリ機能が用意されましたが、ユーザーが気軽に利用できるコルーチンアプリケーションは一切用意されていませんでした。
 
 C++23では、その第一弾として範囲をオンデマンドで生成していくためのコルーチンジェネレータクラスである`std::generator`が`<generator>`ヘッダに用意されます。
 
@@ -4263,7 +4457,8 @@ auto random_number_sequence() -> std::generator<std::uint64_t> {
 
 int main() {
   // 乱数を10個出力
-  for (auto rnd : random_number_sequence() | std::views::take(10))
+  for (auto rnd : random_number_sequence() 
+                | std::views::take(10))
   {
     std::cout << rnd << '\n';
   }
@@ -4602,7 +4797,185 @@ namespace std::ranges {
 }
 ```
 
+\clearpage
+
 # その他の関連する変更
+
+## `ranges::cbegin/ranges::cend`の改修
+
+C++20の`ranges::cbegin`と`ranges::cend`は渡された`range`オブジェクト`r`に対して、`std::as_const(r).begin()`のような呼び出しによって定数イテレータ（要素が`const`なイテレータ）を取得していました。標準のコンテナの場合はこれでいつも定数イテレータが得られるのですが、一部そうではないものがあります。
+
+```cpp
+int main() {
+  std::vector vec = {1, 2, 3};
+  std::span sp{vec};
+
+  std::cout << vec[0];
+
+  // 定数イテレータを取得しているつもり
+  auto it = std::ranges::cbegin(sp);
+  *it = 0;  // ok
+
+  std::cout << vec[0];
+}
+```
+```{style=planetext}
+1
+0
+```
+
+`std::span`は参照セマンティクスを持つ型であり、`std::span`そのものの`const`はその要素が`const`であることを表しません。そのため、`ranges::cbegin`は`std::span`オブジェクトから定数イテレータを取得できませんでした。
+
+これはRangeアダプタの`view`型にも当てはまる場合があります（`const-iterable`は要素が`const`であることを表さない）。
+
+`ranges::cbegin`と`ranges::cend`はその役割として定数イテレータを取得することが求められているはずで、そうではない場合があるというのは直感に反しています。そのため、C++23では`ranges::cbegin`と`ranges::cend`は確実に定数イテレータを取得するようになります。
+
+また同時に、そのような定数イテレータを簡単に表すためのエイリアステンプレートとして`ranges::const_iterator_t`と`ranges::const_sentinel_t`が追加されます。
+
+```cpp
+using namespace std::ranges;
+
+template<range R>
+void f(R& rng) {
+  const_iterator_t<R> cit = cbegin(rng);  // Rに関わらずok
+  const_sentinel_t<R> cse = cend(rng);    // Rに関わらずok
+
+  *cit = ...; // ngもしくは無意味
+}
+```
+
+`ranges::const_iterator_t<R>`と`ranges::const_sentinel_t<R>`はそれぞれ、`R`のオブジェクトに対する`ranges::cbegin`と`ranges::cend`の結果となる定数イテレータ型と一致します。
+
+C++23の`ranges::cbegin`と`ranges::cend`はC++20の方法で取得したイテレータを`std::const_iterator`に通して返しています。
+
+### `std::const_iterator`
+
+`std::const_iterator<I>`はエイリアステンプレートであり、`I`に応じて次のどちらかの型となります
+
+- `I`が既に定数イテレータならば`I`
+- そうでないならば、`basic_const_iterator<I>`
+
+`basic_const_iterator<I>`は`views::as_const`でも使用されていた、イテレータを定数イテレータ化するイテレータラッパです。
+
+すなわち、`std::const_iterator<I>`は常に定数イテレータとなり、かつ定数イテレータに対して`basic_const_iterator`を被せるようなことを回避しています。
+
+番兵に対応する`std::const_sentinel<S>`も用意されており、次のどちらかの型となります
+
+- `S`が`input_iterator`ならば`const_iterator<S>`
+- そうでないならば、`S`
+
+### `constant_range`
+
+`costant_range`はその要素を変更できない`range`を表すコンセプトです。
+
+```cpp
+namespace std::ranges {
+
+  // constant_rangeの宣言例
+  template<class T>
+  concept constant_range = 
+    input_range<T> && 
+    constant-iterator<iterator_t<T>>;
+}
+```
+
+`input_range`かつそのイテレータが`constant-iterator`であることを要求し、`constant-iterator`はイテレータが定数イテレータであることを表す説明専用のコンセプトです。
+
+このコンセプトは`views::as_const`の判定で使用されていました。それ以外でも、任意の範囲を受け取る関数のインターフェースで、その要素を変更しないことを表明するためにも使用できます。この場合は逆に、変更可能な（`constant_range`ではない）範囲を渡すとコンパイルエラーになります。
+
+```cpp
+// constant_rangeコンセプトで制約することで、受け取ったrangeの要素を変更しないことを表明
+void f(constant_range auto&& rng) {
+  // constant_rangeを満たしているため、内部では要素を変更しようとしてもできない
+  auto it = begin(rng);
+  *it = ...; // ngもしくは無意味
+
+  ...
+}
+
+int main() {
+  std::vector vec = {1, 2, 3, 4, 5};
+  const auto& crv = vec;
+
+  f(vec); // ng
+  f(crv); // ok
+  f(vec | std::views::as_const); // ok
+}
+```
+
+定義にある`constant-iterator`は次のように定義される説明専用のコンセプトです。
+
+```cpp
+template<class I>
+concept constant-iterator =
+  input_iterator<I> && 
+  same_as<iter_const_reference_t<I>, iter_reference_t<I>>;
+```
+
+入力イテレータ型`I`の参照型と`iter_const_reference_t`が一致していることを求めています。
+
+### `std::iter_const_reference_t`
+
+`std::iter_const_reference_t<I>`はイテレータ型`I`の間接参照結果型を`const`化した型を求めるエイリアステンプレートです。
+
+```cpp
+namespace std {
+  template<indirectly_readable It>
+  using iter_const_reference_t =
+    common_reference_t<const iter_value_t<It>&&, iter_reference_t<It>>;
+  
+  namespace ranges {
+    // range版も用意される
+    template<range R>
+    using range_const_reference_t = 
+      iter_const_reference_t<iterator_t<R>>;
+  }
+}
+```
+
+この定義を見ても何しているのかよくわかりませんが、イテレータ型`I`と任意の修飾なしの型`T`について、この結果は次のようになります
+
+|`iter_reference_t<I>`|`iter_const_reference_t<I>`|
+|---|---|
+|`T&`|`const T&`|
+|`T&&`|`const T&&`|
+|`const T&`|`const T&`|
+|`const T&&`|`const T&&`|
+|`T`|`T`|
+|`const T`|`T`|
+
+`iter_reference_t<I>`が*prvalue*である場合を除いて、適切に`const`が付加されるわけです。
+
+`std::iter_const_reference_t`は定数イテレータの間接参照結果を表すと同時に、非定数イテレータの間接参照結果を`const`として受ける際の型でもあります。
+
+ただし、特殊なイテレータ型や`iterator_traits`か`common_reference`をカスタマイズしている型などの場合は上記のように単純にはならず、少し異なる結果になります。その時でも、要素の`const`化は達成されるようになっています。例えば次のものがあります
+
+- `std::vector<bool>`
+    - `range_value_t` : `bool`
+    - `range_reference_t` : `std::vector<bool>::reference`
+- `views::zip`とそのファミリ
+    - `range_value_t` : `std::tuple<T, U>`
+    - `range_reference_t` :  `std::tuple<T&, U&>`
+- `views::enumrate`
+    - `range_value_t` : `std::tuple<D, T>`
+    - `range_reference_t` : `std::tuple<D, T&>`
+
+ここでの`T, U`は`views::zip`や`views::enumarate`の入力範囲の`range_value_t`/`range_reference_t`/`range_difference_t`によって変化するためそのプレースホルダーとします。`T, U`は任意の型の可能性がありますがここでは参照修飾は考えないことにして、`D`は*prvalue*の整数型です。
+
+これらの型の場合は、参照型（`range_reference_t`）と`const`参照型（`range_const_reference_t`）はそれぞれ以下のようになります
+
+|`range`|`range_reference_t`|`range_const_reference_t`|
+|---|---|---|
+|`vector<bool>`|`vector<bool>::reference`|`bool`|
+|`const vector<bool>`|`bool`|`bool`|
+|`views::zip`|`tuple<T&, U&>`|`tuple<const T&, const D&>`|
+|`views::enumrate`|`tuple<D, T&>`|`tuple<D, const T&>`|
+
+※一時的に`std::`を省略しています
+
+`views::zip`などの場合、直接の要素型は`std::tuple`に包まれていますが、実質的にはその中身の各要素こそが要素型であり、`const`化もそちらに作用します。
+
+`views::as_const`や`ranges::cbegin`（`cend`）などの範囲/イテレータの要素`const`化に関する部分は全てつながっており、その接続は非常に複雑ですが最終的にはこの`iter_const_reference_t<I>`に行き着きます。
 
 ## `std::string_view`の`range`コンストラクタ
 
@@ -5186,8 +5559,6 @@ int main() {
     - *stashing iterator*を検出できないため、`input_range`全般に対して適用
 
 これによって、上記の例を含めた標準ライブラリでの*stashing iterator*の扱いが改善されます。
-
-## P2609R3?
 
 \clearpage
 
