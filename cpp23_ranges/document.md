@@ -2714,6 +2714,8 @@ C++20のRangeアダプタのうち、ユーザー定義の型を追加で受け�
 
 # Rangeアルゴリズム
 
+C++23では範囲に対するアルゴリズムにいくつか新しいものが追加されています。なお、この章で紹介するものは基本的に`<algorithm>`ヘッダに追加されています。
+
 ## `find_last`系アルゴリズム
 
 `find_last`系アルゴリズムは`find`系のアルゴリズムに対して逆の探索を行うもので、範囲の末尾から指定された条件によって探索を行います。
@@ -2727,11 +2729,13 @@ C++20のRangeアダプタのうち、ユーザー定義の型を追加で受け�
 - `ranges::find_last_if_not`
     - 条件を満たさない最後の要素を検索する
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
+
   template<forward_range R, class T, class Proj = identity>
     requires
-      indirect_binary_predicate<ranges::equal_to, projected<iterator_t<R>, Proj>, const T*>
+      indirect_binary_predicate<ranges::equal_to, 
+                                projected<iterator_t<R>, Proj>, const T*>
   constexpr borrowed_subrange_t<R>
     find_last(R&& r, const T& value, Proj proj = {});
 
@@ -2749,7 +2753,7 @@ namespace std::ranges {
 
 ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。
 
-使用感は`find`系アルゴリズムと同様になりますが戻り値だけが異なっており、`find_last`系アルゴリズムは戻り値として末尾の情報も含めて返します。すなわち、終端のイテレータを`end`、指定されたものを見つけた場合にその位置を指すイテレータを`it`とすると
+使用感は`find`系アルゴリズムと同様になりますが戻り値だけが異なっており、`find_last`系アルゴリズムは戻り値として末尾の情報も含めて返します。すなわち、入力範囲の終端イテレータを`end`、指定されたものを見つけた場合にその位置を指すイテレータを`it`とすると
 
 - 指定されたものを見つけた場合 : `[it, end)`
 - 何も見つからなかった場合 : `[end, end)`
@@ -2801,13 +2805,15 @@ int main() {
 
 `.empty()`は空の（見つからない）場合に`true`を返すのに対して、`operator bool`は空の場合に`false`を返します。少し注意が必要かもしれません。
 
+計算量は全て、入力範囲の要素数を`L`とすると、高々`L`回の述語（と射影）の適用が行われます。
+
 なお、これらのアルゴリズムは`ranges`版のものしか用意されておらず、`std::find_last`などは利用できません。
 
 ## `ranges::starts_with`/`ranges::ends_with`
 
 `ranges::starts_with`及び`ranges::ends_with`はC++20で`std::string/std::string_view`に追加された同名のメンバ関数をベースとして一般化したもので、範囲の先頭（末尾）が指定された範囲で始まっている（終わっている）かを判定するものです。どちらの関数も判定結果は`bool`値で得られます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   template<input_range R1, input_range R2, class Pred = ranges::equal_to,
@@ -2875,6 +2881,8 @@ true
 true
 ```
 
+文字列の比較において、大文字小文字を区別しない比較を行う例。
+
 ```cpp
 using namespace std::ranges;
 using namespace std::string_view_literals;
@@ -2910,10 +2918,10 @@ true
 
 計算量は、1つ目の入力範囲の要素数を`L`とすると
 
-- `starts_with` : 高々`L`回の述語の適用
+- `starts_with` : 高々`L`回の述語（と射影）の適用
 - `ends_with` : 2つ目の範囲の要素数を`M`として
     - `L < M` : 何もしない
-    - それ以外の場合 : 高々`min(L, M)`回の述語の適用
+    - それ以外の場合 : 高々`min(L, M)`回の述語（と射影）の適用
       - 1つ目の範囲の長さが定数時間で求められない場合、加えて`L`回のイテレータのインクリメント
       - 2つ目の範囲の長さが定数時間で求められない場合、加えて`M`回のイテレータのインクリメント
 
@@ -2921,7 +2929,7 @@ true
 
 `ranges::contains`及び`ranges::contains_subrange`はC++20で連想コンテナに対して追加され、C++23で`std::string/std::string_view`に追加された同名のメンバ関数をベースとして一般化したもので、範囲に指定された値、あるいは指定された範囲が含まれているかを判定するものです。どちらの関数も判定結果は`bool`値で得られます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   template<input_range R, class T, class Proj = identity>
@@ -2941,7 +2949,7 @@ namespace std::ranges {
 }
 ```
 
-ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。また、これらのアルゴリズムも`ranges`版のものしか用意されていません。
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。また、これらのアルゴリズムも`ranges`版のものしか用意されていません。どうやら、C++23以降に新しいアルゴリズムを追加する場合は基本的にRange版のみが追加されるようです。
 
 ```cpp
 using namespace std::ranges;
@@ -2970,7 +2978,7 @@ false
 false
 ```
 
-これらのアルゴリズムは`find`や`search`などの既存アルゴリズムと全く同じことをします。その違いは戻り値が直接`bool`で得られるかにあります。`find`や`search`だと、結果がイテレータや`subrange`で得られるため、見つかるかだけが重要で見つかったものにアクセスする必要がない場合にその結果の取得が冗長になり、コードの意図を読み取りづらくします。
+これらのアルゴリズムはそれぞれ既存アルゴリズムである`find`と`search`と全く同じことをします。その違いは戻り値が直接`bool`で得られるかにあります。`find`や`search`だと、結果がイテレータや`subrange`で得られるため、見つかるかだけが重要で見つかったものにアクセスする必要がない場合にその結果の取得が冗長になり、コードの意図を読み取りづらくします。
 
 ```cpp
 using namespace std::ranges;
@@ -3013,9 +3021,9 @@ true
 
 計算量は、入力範囲の要素数を`L`とすると
 
-- `contains` : 高々`L`回の比較
+- `contains` : 高々`L`回の比較（と射影の適用）
 - `contains_subrange` : 2つ目の範囲の要素数を`M`とすると
-    - 高々`L * M`回の比較もしくは述語の適用
+    - 高々`L * M`回の比較もしくは述語（と射影）の適用
 
 ## `ranges::iota`
 
@@ -3051,7 +3059,7 @@ true
 10
 ```
 
-戻り値は、書き込んだ範囲の終端位置（入力範囲終端）を指すイテレータと書き込むために計算した値の最終値（書き込んだ値の1つ次）のペアとなる構造体（集成体）です。
+戻り値は、書き込んだ範囲の終端位置（入力範囲終端）を指すイテレータと書き込むために計算した値の最終値（最後に書き込んだ値の1つ次）のペアとなる構造体（集成体）です。
 
 `std::iota`に対してはコンセプトによる制約がなされていることや`range`を直接指定できるところなどがメリットであり、`views::iota`に対しては書き込む要素数を事前計算する必要が無くなり（入力範囲の要素数によって自動で決定できるため）効率的になることなどがメリットとなります。
 
@@ -3063,7 +3071,7 @@ true
 
 `ranges::shift_left`及び`ranges::shift_right`はC++20で追加された同名のアルゴリズムのRange版です。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
   
   template<forward_range R>
@@ -3076,7 +3084,7 @@ namespace std::ranges {
 }
 ```
 
-ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。どうやら、C++23以降に新しいアルゴリズムを追加する場合は基本的にRange版のみが追加されるようです。
+ここでは`range`を受け取るものしか示していませんが、イテレータペアを受け取るオーバーロードも用意されています。
 
 入力範囲`r`の要素を`n`だけ左/右シフト（非循環シフト）させます。元のアルゴリズム同様に、`n`は0以上の整数である必要があります（違反すると未定義動作）。
 
@@ -3084,10 +3092,8 @@ namespace std::ranges {
 using std::ranges::subrange;
 
 int main() {
-
   std::vector vec = {1, 2, 3, 4, 5};
-  
-  // 戻り値はシフト後の終端位置
+
   range auto res = shift_left(vec, 2);
 
   for (int n : res) {
@@ -3096,7 +3102,6 @@ int main() {
   
   std::cout << '\n';
 
-  // 戻り値はシフト後の開始位置
   range auto res = shift_right(vec, 2);
 
   for (int n : res) {
@@ -3151,7 +3156,7 @@ true
 
 基本形は初期値を指定するもので、その計算順序によって左（*left*）と右（*right*）の2種類があります。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // 左方向のfold
@@ -3182,15 +3187,18 @@ namespace std::ranges {
 using namespace std::ranges;
 
 int main() {
+  // 入力
   range auto rng = views::iota(1, 11);
+  // 初期値
   const int init = 0;
+  // 二項演算
   auto op = std::plus<>{};
   
-  int res1 = fold_left(rng, init, op);
-  int res2 = fold_right(rng, init, op);
+  int resl = fold_left(rng, init, op);
+  int resr = fold_right(rng, init, op);
 
-  std::cout << std::format("{:d}\n", res1);
-  std::cout << std::format("{:d}\n", res2);
+  std::cout << std::format("{:d}\n", resl);
+  std::cout << std::format("{:d}\n", resr);
 }
 ```
 ```{style=planetext}
@@ -3198,7 +3206,7 @@ int main() {
 55
 ```
 
-戻り値の型は入力範囲`rng`のイテレータを`it`とすると、`decltype(op(init, *it))`の結果の型を`decay`したものになります。つまりは、二項演算`op`の戻り値型から参照修飾を取り除いたものであり、変なことをしていなければ初期値`init`と同じ型になります。
+戻り値の型は入力範囲`rng`のイテレータを`it`とすると、`decltype(op(init, *it))`の結果の型を`decay`したものになります。これは多くの場合二項演算`op`の戻り値型から参照修飾を取り除いたものであり、変なことをしていなければ初期値`init`と同じ型になります。
 
 ```cpp
 using namespace std::ranges;
@@ -3208,11 +3216,11 @@ int main() {
   const int init = 1;
   auto op = std::plus<>{};
   
-  std::same_as<float> auto res1 = fold_left(rng, init, op);
-  std::same_as<float> auto res2 = fold_right(rng, init, op);
+  std::same_as<float> auto resl = fold_left(rng, init, op);
+  std::same_as<float> auto resr = fold_right(rng, init, op);
 
-  std::cout << std::format("{:g}\n", res1);
-  std::cout << std::format("{:g}\n", res2);
+  std::cout << std::format("{:g}\n", resl);
+  std::cout << std::format("{:g}\n", resr);
 }
 ```
 ```{style=planetext}
@@ -3222,7 +3230,7 @@ int main() {
 
 `std::plus`の場合は入力を`a, b`とすると`decltype(a + b)`の結果型が戻り値型になり、これはどちらかが浮動小数点数型ならその型になります。これによって、`std::accumulate`に存在していた初期値の罠は回避されています。
 
-`fold_left`と`fold_right`の違いは入力範囲をどちらから走査するかの違いであり、入力範囲が左->右の順序で1列になっているとすると、それを左側（先頭）から走査して集計していくのが`fold_left`で、右側（末尾）から集計していくのが`fold_right`です。どちらの場合も初期値はそれぞれの走査開始位置の前に添加される形になります。
+`fold_left`と`fold_right`の違いは入力範囲をどちらから走査するかの違いであり、入力範囲が左->右の順序で1列になっているとすると、それを左側（先頭）から集計していくのが`fold_left`で、右側（末尾）から集計していくのが`fold_right`です。どちらの場合も初期値はそれぞれの走査開始位置の前に添加される形になります。
 
 ```{style=planetext}
 0 : init
@@ -3269,11 +3277,11 @@ int main() {
     return acc;
   };
   
-  auto res1 = fold_left(rng, init, op_left);
-  auto res2 = fold_right(rng, init, op_right);
+  auto resl = fold_left(rng, init, op_left);
+  auto resr = fold_right(rng, init, op_right);
 
-  std::cout << std::format("{:s}\n", res1);
-  std::cout << std::format("{:s}\n", res2);
+  std::cout << std::format("{:s}\n", resl);
+  std::cout << std::format("{:s}\n", resr);
 }
 ```
 ```{style=planetext}
@@ -3291,7 +3299,7 @@ init -> f -> e -> d -> c -> b -> a
 
 制約に使用されている`indirectly-binary-left-foldable`とか`indirectly-binary-right-foldable`は説明専用のコンセプトです。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   template<class F, class T, class I, class U>
@@ -3331,7 +3339,7 @@ namespace std::ranges {
 
 集計処理の場合などは必ずしも初期値を指定する必要が無い場合もあります。そのための変種が用意されており、`fold_left`と`fold_right`に対してそれぞれ`_first`と`_last`のサフィックスが付きます。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   template<input_range R, 
@@ -3359,11 +3367,11 @@ int main() {
   range auto rng = views::iota(1, 11);
   auto op = std::plus<>{};
 
-  auto res1 = fold_left_first(rng, op);
-  auto res2 = fold_right_last(rng, op);
+  auto resl = fold_left_first(rng, op);
+  auto resr = fold_right_last(rng, op);
 
-  std::cout << std::format("{:d}\n", res1.value_or(-1));
-  std::cout << std::format("{:d}\n", res2.value_or(-1));
+  std::cout << std::format("{:d}\n", resl.value_or(-1));
+  std::cout << std::format("{:d}\n", resr.value_or(-1));
 }
 ```
 ```{style=planetext}
@@ -3379,7 +3387,7 @@ int main() {
 using namespace std::ranges;
 
 int main() {
-  range auto rng = views::iota(1, 1);
+  range auto rng = views::empty<int>;
   auto op = std::plus<>{};
 
   auto res1 = fold_left_first(rng, op);
@@ -3443,7 +3451,7 @@ f -> e -> d -> c -> b -> a
 
 ただし、`fold_right`系で得られるのは先頭のイテレータであり、それは`ranges::begin()`で労せずして得られるためこちらのバージョンに対応するものはありません。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   template<input_range R, class T, 
@@ -3497,7 +3505,7 @@ C++20イテレータは`iterator_category`や`iterator_traits`を介して情報
 
 C++17までの従来のアルゴリズム（非Rangeアルゴリズムは）C++17までのイテレータを前提にしており、イテレータコンセプトを用いたチェック等を行いません。そのため、Rangeアダプタを通した後の範囲は非Rangeアルゴリズムから使用できないか、使用できても`input_iterator`に制限された形になります。
 
-C++23ではその対応のために次の条件に該当するアルゴリズムにおいて、入力のイテレータに対する要件として名前付き要件の代わりにイテレータコンセプトによるチェックを行います。
+C++23ではその対応のために次の条件に該当する非Rangeアルゴリズムにおいて、入力のイテレータに対する要件として名前付き要件の代わりにイテレータコンセプトによるチェックを行います。
 
 - `forward_iterator`以上を要求していたもの
     - テンプレートパラメータが`ForwardIterator`、`BidirectionalIterator`、`RandomAccessIterator`などのように指定されていたもの
@@ -3530,6 +3538,8 @@ int main () {
 
 また、アルゴリズムではありませんが`std::regex_match`と`std::regex_search`のイテレータを取るオーバーロードについての`BidirectionalIterator`に対しても同じ変更が適用されています。
 
+ただし、基本的に`common_range`を要求する点は変化していないため、`views::common`を通してから使用した方がいいでしょう。
+
 \clearpage
 
 
@@ -3553,7 +3563,7 @@ int main() {
   std::vector<int> vec2(in.begin(), in.end());    // ng
   vec2.insert(vec2.end(), in.begin(), in.end());  // ng
 
-　// common rangeにする
+  // common rangeにする
   common_range auto inc = in | std::views::common;
 
   std::vector<int> vec3(in.begin(), in.end());    // ok
@@ -3561,15 +3571,15 @@ int main() {
 }
 ```
 
-`std::vector`で代表させましたが全てのコンテナでこの事は変わりません。イテレータペアを取るコンストラクタ/関数はあれど`range`を取るものはなく、イテレータペアを取るものもイテレータと番兵が同じ型でなければ使用できません。
+`std::vector`で代表させましたが全てのコンテナでこの事は変わりません。イテレータペアを取るコンストラクタ/関数はあれど`range`を取るものはなく、イテレータペアを取るものも`common_range`（イテレータと番兵が同じ型）でなければ使用できません。
 
 ## `std::from_range`
 
-コンテナの`range`対応のためにまず、現在の既存コンテナに存在するイテレータペアを取るコンストラクタに対して、`std::from_range`を先頭に2つ目の引数で`range`オブジェクトを受け取る形のコンストラクタが追加されます。
+コンテナの`range`対応のためにまず、現在の既存コンテナに存在するイテレータペアを取るコンストラクタをベースにして、`std::from_range`を先頭に2つ目の引数で`range`オブジェクトを受け取る形のコンストラクタが追加されます。
 
 追加のパターンは全コンテナ（`std::array`を除く）で同様で、大まかに例示すると次のようなコンストラクタが追加されます
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std {
 
   // 何らかのコンテナ型とする
@@ -3591,7 +3601,7 @@ namespace std {
 }
 ```
 
-`std::from_range_t`は単なるタグ型であり`std::from_range`はその事前定義オブジェクトです。イテレータペアを取るコンストラクタは追加の引数を取る場合がありますが（アロケータや比較関数オブジェクトなど）、その追加の引数の渡し方は変化しません。
+`std::from_range_t`は単なるタグ型であり`std::from_range`はその事前定義オブジェクトです。イテレータペアを取るコンストラクタは追加の引数を取る場合がありますが（アロケータや比較関数オブジェクトなど）、その追加の引数の渡し方も継承します。
 
 このコンストラクタによって、任意の`range`（`input_range`）からコンテナを構築することができます。
 
@@ -3621,7 +3631,7 @@ int main() {
 
 これらのコンストラクタの制約に使用されている`container-compatible-range<R, T>`は説明専用のコンセプトで、入力範囲`R`の参照型がコンテナの要素型`T`に変換可能であることを要求するものです。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std {
 
   template<class R, class T>
@@ -3631,7 +3641,7 @@ namespace std {
 }
 ```
 
-つまりは`from_range`コンストラクタでは、入力範囲の要素型からコンテナの要素型に暗黙変換可能であればその入力範囲から構築することができます。
+つまりは`from_range`コンストラクタでは、入力範囲の要素型（参照型）からコンテナの要素型に暗黙変換可能であればその入力範囲から構築することができます。
 
 `container-compatible-range<R, T>`の`T`は大抵の場合コンテナ型`C<T>`の`T`に一致しますが、`std::map`等の連想コンテナではそうではありません。その場合は、入力範囲の要素型に注意する必要があります。
 
@@ -3672,7 +3682,7 @@ int main() {
 }
 ```
 
-なお、要素は全てコピーして構築されます。入力範囲が右辺値であっても同様です。ムーブしたい場合は`views::as_rvalue`を適用してから渡すと良いでしょう。
+なお、`from_range`コンストラクタでは基本的に要素は全てコピーされて構築されます。入力範囲が右辺値であっても同様で、要素をムーブしたい場合は`views::as_rvalue`を適用してから渡すと良いでしょう。
 
 コンテナの`range`コンストラクタが`std::from_range`というタグを取るのは、次のようなコードにおいて構築後の要素型が変化してしまうことを回避するためです
 
@@ -3689,11 +3699,11 @@ std::vector v{l}; // 要素型は何？
 
 - シーケンスコンテナ
     - `std::vector`の場合
-      - $O(N)$回の要素コピー（ムーブ）
+      - `N`回の要素コピー（ムーブ）
       - `R`が`forward_range`であるか`sized_range`の場合、メモリ割り当ては1度だけ行われる
-        - そうではない場合、$log N$回のメモリ再割り当てが行われる
+        - そうではない場合、`log N`回のメモリ再割り当てが行われる
     - それ以外のコンテナの場合
-      - $O(N)$回の要素コピー（ムーブ）
+      - `N`回の要素コピー（ムーブ）
 - 連想コンテナ
     - 順序付き連想コンテナ
       - `rng`がソートされている場合$O(N)$
@@ -3703,13 +3713,13 @@ std::vector v{l}; // 要素型は何？
 
 おおよそ対応するイテレータペアを取るコンストラクタと同じになっています。
 
-ただし、`std::vector`の場合はメモリ確保についての要件が指定されており、これは予め`reserve`してから要素の挿入を行うことを意味しています。
+ただし、`std::vector`の場合はメモリ確保についての要件が指定されており、これは可能ならば予め`reserve`してから要素の挿入が行われることを意味しています。
 
 ## `_range`系関数
 
 コンテナの`range`対応のために次に、構築済みのコンテナへ要素を挿入する関数の`range`対応版としてサフィックスに`_range`の付くメンバ関数が追加されます。これも`from_range`コンストラクタと同様に、現在イテレータペアを取る挿入系関数のオーバーロードをベースとして、イテレータペアを`range`に置き換えたような関数として追加されます。
 
-追加される関数とそのもとになった関数は次のようになっています
+追加される関数とその元になった関数は次のようになっています
 
 |新しい関数|元の関数|意味|
 |---|---|---|
@@ -3723,33 +3733,33 @@ std::vector v{l}; // 要素型は何？
 
 これらの関数は全てのコンテナに対して追加されるわけではなく、それぞれ次のコンテナで追加され使用可能になります
 
-- `insert_range`
+- `.insert_range()`
     - `std::vector`
     - `std::deque`
     - `std::list`
     - `std::forward_list`
     - `std::basic_string`
     - 全ての連想コンテナ
-- `insert_range_after`
+- `.insert_range_after()`
     - `std::forward_list`
-- `append_range`
+- `.append_range()`
     - `std::vector`
     - `std::deque`
     - `std::list`
     - `std::basic_string`
-- `prepend_range`
+- `.prepend_range()`
     - `std::deque`
     - `std::list`
     - `std::forward_list`
-- `assign_range`
+- `.assign_range()`
     - `std::vector`
     - `std::deque`
     - `std::list`
     - `std::forward_list`
     - `std::basic_string`
-- `replace_with_range`
+- `.replace_with_range()`
     - `std::basic_string`
-- `push_range`
+- `.push_range()`
     - `std::queue`
     - `std::priority_queue`
     - `std::stack`
@@ -3760,7 +3770,7 @@ std::vector v{l}; // 要素型は何？
 
 ### `insert_range`/`insert_range_after`
 
-`.insert_range()`は`.insert()`同様に、指定した位置（の後ろ）に指定した範囲を挿入するものです。
+`.insert_range()`は`.insert()`同様に、指定した位置の後ろに指定した範囲を挿入するものです。
 
 ```cpp
 using std::ranges::next;
@@ -3776,7 +3786,7 @@ int main() {
 }
 ```
 
-`.insert_range()`の戻り値は、挿入した位置（挿入した範囲の先頭要素の挿入後コンテナ内での位置）を指すイテレータを返します。`deque`や`list`でも同様ですが、`forward_list`はその特有の事情により少し異なります。
+`.insert_range()`の戻り値は、挿入した位置（挿入した範囲の先頭要素の挿入後コンテナ内での位置）を指すイテレータを返します。`deque`や`list`でも同様ですが、`forward_list`はその特有の事情により少し異なり、`.insert_range()`ではなく`.insert_range_after()`という名前になります。
 
 ```cpp
 using std::ranges::next;
@@ -3844,9 +3854,9 @@ int main() {
 int main() {
   std::deque deq = {1, 2, 3};
 
-  auto append = std::views::iota(-3, 0);
-  auto prepend = std::views::iota(4)
+  auto append = std::views::iota(4)
                | std::views::take(3);
+  auto prepend = std::views::iota(-3, 0);
 
   // 戻り値なし
   deq.append_range(append);
@@ -3865,9 +3875,9 @@ int main() {
   std::list lst(std::from_range, vec);
   std::forward_list fwl(std::from_range, vec);
 
-  auto append = std::views::iota(-3, 0);
-  auto prepend = std::views::iota(4)
+  auto append = std::views::iota(4)
                | std::views::take(3);
+  auto prepend = std::views::iota(-3, 0);
 
   vec.append_range(append); // ok
   lst.append_range(append); // ok
@@ -3926,7 +3936,7 @@ int main() {
 `.replace_with_range()`は`std::basic_string`のみに追加される関数で、元となった`.replace()`同様に指定された範囲の文字列を挿入する文字範囲によって置き換えるものです。
 
 ```cpp
-using std::ranges::next;
+using namespace std::ranges;
 
 int main() {
   std::string str = "abcdefg";
@@ -3937,7 +3947,8 @@ int main() {
   auto pos2 = next(pos1, 2);
 
   auto& res = str.replace_with_range(pos1, pos2, rep);
-  // str : "abxxxxefg"
+
+  std::cout << str << '\n';
 
   // 戻り値としては*thisが返されている
   assert(&res == &str);
@@ -3947,11 +3958,16 @@ int main() {
 
   // 3文字目から3文字分を"ww"で置換
   str.replace_with_range(pos1, pos2, views::repeat('w', 2));
-  // str : "abwwxefg"
+
+  std::cout << str << '\n';
 }
 ```
+```{style=planetext}
+abxxxxefg
+abwwxefg
+```
 
-挿入する範囲はイテレータによって指定して、挿入する文字範囲の長さは指定範囲の長さと一致している必要はありません。指定範囲より後ろの文字列は、挿入する長さが指定範囲の長さより短ければ詰められ、長ければ後ろにずらされます。
+置換対象の文字列上の範囲はイテレータによって指定して、挿入する文字範囲の長さは指定範囲の長さと一致している必要はありません。指定範囲より後ろの文字列は、挿入する長さが指定範囲の長さより短ければ詰められ、長ければ後ろにずらされます。
 
 戻り値は元のオブジェクトへの左辺値参照が得られます。メソッドチェーンのように処理を連結したい場合以外はあまり使い道は無いでしょうか。
 
@@ -4078,7 +4094,7 @@ int main() {
 
 このような使用法からも分かるかもしれませんが、`ranges::to`は関数テンプレートです。そのため、使用時は最後に`()`が必須です。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // A. 入力範囲からの変換を行うオーバーロード
@@ -4132,7 +4148,7 @@ int main () {
 
 Bの2つ目のオーバーロードはAの2つ目に処理を委譲するため、要素型推論を行っているのはAの2つ目のオーバーロードです。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
   
   template<template<class...> class C, input_range R, class... Args>
@@ -4146,7 +4162,7 @@ namespace std::ranges {
 return to<decltype(DEDUCE_EXPR)>(std​::​forward<R>(rng), std​::​forward<Args>(args)...);
 ```
 
-この時、`ranges::to`のテンプレートパラメータの`decltype(DEDUCE_EXPR)`によって要素型も含めたコンテナ型全体を推論しており、この`DEDUCE_EXPR`は次のように決まります
+この時、ここで呼ばれている`ranges::to`のテンプレートパラメータの`decltype(DEDUCE_EXPR)`によって要素型も含めたコンテナ型全体を推論しており、この`DEDUCE_EXPR`は次のように決まります
 
 1. 次の式が有効な場合
     - `C(declval<R>(), declval<Args>()...)`
@@ -4160,13 +4176,13 @@ return to<decltype(DEDUCE_EXPR)>(std​::​forward<R>(rng), std​::​forward<
 
 この3パターンの式のいずれかを`decltype()`に入れることでコンテナ型を導出しており、つまりは`C`の初期化式におけるCTADを利用して要素型を推論しています。
 
-1つ目の式は直接`range`オブジェクトを渡すタイプのもので、標準のコンテナアダプタに対して内部コンテナを指定する場合などがこの経路で要素型が求められます。
+1つ目の式は直接`range`オブジェクトを渡すタイプのもので、標準のコンテナアダプタに対して内部コンテナを指定する場合などが該当します。
 
-2つ目の式は前節で紹介した`from_range`コンストラクタを呼び出すもので、ほとんどの標準コンテナはこの経路で要素型が求められます。
+2つ目の式は前節で紹介した`from_range`コンストラクタを呼び出すもので、ほとんどの標準コンテナはここに該当します。
 
 3つ目の式は従来のイテレータペアを取るコンストラクタを呼び出すものです。使われている`input-iterator`というのは次のように定義される、即席のダミーイテレータ型です。
 
-```cpp
+```cpp{style=cppstddecl}
 struct input-iterator {
   using iterator_category = input_iterator_tag;
   using value_type = range_value_t<R>;
@@ -4216,7 +4232,7 @@ int main() {
 
 結局、`range`からコンテナへの変換を担っているのはAの1つ目のオーバーロードです。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   template<class C, input_range R, class... Args>
@@ -4331,7 +4347,7 @@ ranges::copy(rng, container-inserter<range_reference_t<R>>(c));
 
 `container-inserter()`は`.insert()`と`.push_back()`の可能な方を使用して挿入するように切り替える説明専用の関数テンプレートで、おおよそ次のようなものです
 
-```cpp
+```cpp{style=cppstddecl}
 template<class Ref, class Container>
 constexpr auto container-inserter(Container& c) {
   if constexpr (requires { c.push_back(declval<Ref>()); })
@@ -4383,9 +4399,9 @@ int main() {
 
 1-4に該当するコンテナはおそらくC++23の標準ライブラリ内にはないため、Boost.Containerの`boost:container::vector`（ver 1.83時点）を持ってきました。
 
-Boostのコンテナを持ってきていることからも分かるように、`ranges::to`のこれらの変換仮定は標準のコンテナに対して制限されておらず、ユーザー定義のコンテナ、もっと言えば`range`を受け取ることのできるような任意の型に対して開かれています。
+Boostのコンテナを持ってきていることからも分かるように、`ranges::to`のこれらの変換過程は標準のコンテナに対して制限されておらず、ユーザー定義のコンテナ、もっと言えば`range`を受け取ることのできるような任意の型に対して開かれています。そのため、`ranges::to<C>()`の`C`にはここまで説明した変換や推論の規則に当てはまる任意の型を渡すことができます。
 
-そのため、`ranges::to<C>()`の`C`にはここまで説明した変換や推論の規則に当てはまる任意の型を渡すことができます。
+1の条件の「`C`が`input_range`ではないか、`range_reference_t<R>`が`range_value_t<C>`へ変換可能な場合」という2つの条件は、前者が非コンテナ型をハンドルするための条件で、後者が非標準も含めたコンテナ型をハンドルするための条件です。
 
 ### 要素をムーブして変換する
 
@@ -4485,7 +4501,7 @@ int main() {
 }
 ```
 
-拙著「C++20 ライブラリ機能1」では簡易的ながらもこれと同等のクラスを例として作成していましたが、それよりも洗練されたものが標準ライブラリ機能として利用できるようになります。この例のように、`std::generator`はそれそのものが`range`（常に`input_range`）となるため、範囲`for`文や`<ranges>`の各種アダプタ、Rangeアルゴリズムなどと容易に組み合わせて使用できます
+拙著「C++20 ライブラリ機能1」では簡易的ながらもこれと同等のクラスを例として作成していましたが、それよりも洗練されたものが標準ライブラリ機能として利用できるようになります。この例のように、`std::generator`はそれそのものが`range`（常に`input_range`）となるため、範囲`for`文や`<ranges>`の各種アダプタ、Rangeアルゴリズムなどと容易に組み合わせて使用できます。
 
 `std::generator`を返す関数内で`co_yield value;`とすると`value`を呼び出し元に返し、この関数（コルーチン）の実行はそこで中断します。コルーチンの中断中はその実行は中断箇所で停止しており、関数の状態（自動変数やスタック）等は保持されています。コルーチンの直接の戻り値である`std::generator`オブジェクトをイテレートするごとに（より正確にはそのイテレータをインクリメントするごとに）、コルーチンの実行が再開され、関数の実行は次の`co_yield`まで進行し、そこでまた値を返して中断します。
 
@@ -4493,12 +4509,27 @@ int main() {
 
 実のところ、`std::generator`を使用しようと思って思いつく単純な例の多くは、RangeファクトリとRangeアダプタを組み合わせることでより効率的に実現可能だったりします。ある処理を`range`とその反復で表現することができる場合で新しいイテレータを作成しないとそれを達成できそうもない場合に、`std::generator`を利用することでイテレータを作成することなくそのような処理を単純な関数（コルーチン）の形で記述して`range`化することができます。
 
+## `std::generator`の諸特性
+
+Rangeアダプタの時のような特性を表示すると次のようになります
+
+- `reference` : `std::generator<T>`の`T`
+    - 詳しくは後述
+- `range`カテゴリ : `input_range`
+- `common_range` : ×
+- `sized_range` : ×
+- `const-iterable` : ×
+- `borrowed_range` : ×
+
+`input_range`として最低限`range`である以外はほぼ何もできません。
+
 ## 生成する値などの型の決定
 
 `std::generator<T>`を利用する際、テンプレートパラメータ`T`には生成したい値の型を指定します。ほとんどの場合はこれは修飾なしの素の方を指定すれば事足りるはずですが、稀に参照を返したい場合もあるかもしれません。そういう場合でも`T`には参照型や`const`参照型を渡すことができます。ただ、その場合に`std::generator<T>`は`T`に応じて`co_yield`に渡せる型（正確には、プロミス型の`.yield_value()`の引数型）や、それらに応じてコルーチン呼び出し側で生成される値の型（イテレータの間接参照の結果型）を調整します。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std {
+
   // std::generatorの宣言例
   template<class Ref, class V = void, class Allocator = void>
   class generator : public ranges::view_interface<generator<Ref, V, Allocator>> {
@@ -4529,7 +4560,7 @@ namespace std {
 |`T&&`|`T&&, const T&`|`T&&`|
 |`const T&`|`const T&`|`const T&`|
 
-どちらの場合も、表にない組み合わせはコンパイルエラーとなります。
+どちらの場合も、`co_yield`に渡せる型について表にない組み合わせはコンパイルエラーとなります。
 
 ほとんどの場合、`V`を明示的に指定する必要はありません。指定が必要なのは、イテレータの参照型（`reference`）と値型（`value_type`）の関係性が特殊となり、それが問題となる場合のみです。おそらくそれは、`Ref`としてプロキシ型のようなものを使用し、なおかつ一部のイテレータ/Rangeアルゴリズムを使用しているような場合が該当するでしょう。
 
@@ -4539,9 +4570,9 @@ namespace std {
 
 `std::generator`を使用したコルーチン内部で`co_yield`してから、呼び出し側のイテレータの間接参照（`operator*`）の結果を受けるまでの間は、コルーチン仕様に隠蔽されているため自明ではありません。そこで何回コピーが起こりうるのかは当然気になってくるでしょう。
 
-`std::generator`は基本的に、`co_yield`に渡された値をコピーもムーブもすることなく、そのポインタだけをプロミス型内部に格納します。先ほどの表の「`co_yield`に渡せる型」は全て参照型であるため、`co_yield expr;`（及び`.yield_value()`）に渡しているオブジェクト（`expr`）が例え右辺値であったとしても、そこの`co_yield`式で中断している間は`expr`のオブジェクトは生存し続けています。その状態で呼び出し側でイテレータの間接参照を通してその値を取得する場合、ポインタを通して取得したその参照を`reference`型にキャストして返すことでコピーを回避します。
+`std::generator`は基本的に、`co_yield`に渡された値をコピーもムーブもすることなく、そのポインタだけをプロミス型内部に格納します。先ほどの表の「`co_yield`に渡せる型」は全て参照型であるため、`co_yield expr;`（及び`yield_value(expr)`）に渡しているオブジェクト（`expr`）が例え右辺値であったとしても、そこの`co_yield`式で中断している間は`expr`で生成されたオブジェクトは生存し続けています。その状態で呼び出し側でイテレータの間接参照を通してその値を取得する場合、ポインタを通して取得したその参照を`reference`型にキャストして返すことでコピーを回避します。
 
-ただし、`reference`が右辺値（`T`もしくは`T&&`）である場合に`co_yield`に左辺値を渡すと、`const T&`をとる`.yield_value()`が呼ばれます。この場合、`co_yield expr;`の呼び出しは、`expr`をコピーします。この場合、`co_yield(const T&)`が返す`awaitable`型オブジェクト内部に`expr`はコピーされており、プロミス型はそのオブジェクトへのポインタを保持します。この場合もその後すぐコルーチンを中断させることでこの`awaitable`型オブジェクトは次に再開されるまで生存しており、呼び出し側でイテレータの間接参照を通してその値を取得する場合には同じようにそのオブジェクトへの参照を`reference`にキャストするだけです。そのため、この経路ではコピーが1回だけ発生します。
+ただし、`reference`が右辺値（`T`もしくは`T&&`）である場合に`co_yield`に左辺値を渡すと、`const T&`をとる`.yield_value()`が呼ばれます。この場合、`co_yield expr;`の呼び出しは、`expr`をコピーします。この場合、`yield_value(const T&)`が返す`awaitable`型オブジェクト内部に`expr`はコピーされており、プロミス型はそのオブジェクトへのポインタを保持します。この場合もその後すぐコルーチンを中断させることでこの`awaitable`型オブジェクトは次に再開されるまで生存しており、呼び出し側でイテレータの間接参照を通してその値を取得する場合には同じようにそのオブジェクトへの参照を`reference`にキャストするだけです。そのため、この経路ではコピーが1回だけ発生します。
 
 まとめると
 
@@ -4567,10 +4598,13 @@ int main() {
   auto&  v2 = *it;  // ng、右辺値を受けられない
   auto&& v3 = *it;  // ok、コピーなし、寿命に注意
   const auto& v4 = *it;  // ok、コピーなし、寿命に注意
+
+  ++it;
+  // v3, v4はダングリング参照となる
 }
 ```
 
-とりあえず`auto&&`で受けておけばジェネリックかるゼロコピーになるのですが、それは参照で取得されており右辺値に対しても寿命の延長は行われていません（正確にはある1経路だけは行われます）。そのため、取得後にコルーチンを再開すると、その参照（上記例の`v3, v4`）はダングリング参照となります。とはいえこれを気にする必要があるのは、この例のように`std::generator`のイテレータを直接触ってる場合のみです。範囲`for`で使用する分には、要素を受ける変数宣言は常に`auto&&`にしておいても危険性はありません。
+とりあえず`auto&&`で受けておけばジェネリックかつゼロコピーになるのですが、それは参照で取得されており右辺値に対しても寿命の延長は行われていません（正確にはある1経路だけは行われます）。そのため、取得後にコルーチンを再開すると、その参照（上記例の`v3, v4`）はダングリング参照となります。とはいえこれを気にする必要があるのは、この例のように`std::generator`のイテレータを直接触ってる場合のみです。範囲`for`で使用する分には、要素を受ける変数宣言は常に`auto&&`にしておいても危険性はありません。
 
 ```cpp
 auto gen_coro() -> std::generator<...>;
@@ -4733,11 +4767,12 @@ auto gen_coro(auto&&... args) -> std::pmr::generator<int> {
   }
   // 2, 3, 4, 5, 6と生成
 
-  co_yield std::ranges::elements_of(arr); // ok、2, 3, 4, 5, 6と生成
+  co_yield std::ranges::elements_of(arr); // ok
+  // 2, 3, 4, 5, 6と生成
 }
 ```
 
-パイプラインで`range`を`views::join`するのと同じことをコルーチンジェネレータ内で行ってくれます。
+すなわち、`views::join`が行なっているような平坦化をコルーチンジェネレータ内で行ってくれます。
 
 `elements_of`を使用しない場合、範囲`for`で展開して順次`co_yiled`していくコードを書かなければなりませんが、`elements_of`を使用することでそれを簡略化することができます。
 
@@ -4788,9 +4823,18 @@ auto dfs_traverse(Tree& tree) -> std::generator<int> {
     }
   }
 }
+
+int main() {
+  tree node = ...;
+
+  for (int x : dfs_traverse(node)) {
+    std::cout << x;
+    ...
+  }
+}
 ```
 
-最初に`dfs_traverse()`を呼び出した側（一番外側）から見ると、`dfs_traverse()`を再開すると各`for`では、外側の`dfs_traverse()`の中断とネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）の再開がループの度に行われます。この例がそうですが、ネストが深くなると一番外側の1回のループでその深さの分だけ中断と再開が連鎖することになります（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って`N`回中断と再開が再帰的に行われる）。
+最初に`dfs_traverse()`を呼び出した側（`main()`関数内）から見ると、`dfs_traverse()`を再開すると各`for`では、外側の`dfs_traverse()`の中断とネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）の再開がループの度に行われます。この例がそうですが、ネストが深くなると一番外側の1回のループでその深さの分だけ中断と再開が連鎖することになります（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って`N`回中断と再開が再帰的に行われる）。
 
 `elements_of`を使用すると、`co_yield elements_of(...);`の評価で一番外側の`dfs_traverse()`が中断し、ネストして呼ばれているコルーチン（再帰した`dfs_traverse()`）が起動され、以降外側のコルーチンへの再開はこのネストしたコルーチンを直接再開するようになります。これは何段ネストしていたとしても、大元のコルーチンの制御が直接一番深いところのコルーチンを制御するようになります。このため、ネストの深さによらず、一番外側の1回のループで中断と再開は一回だけ発生します（`N`段ネストしているとき、大元の`std::generator`のイテレータの進行に伴って1回だけ中断と再開が行われる）。
 
@@ -4798,7 +4842,7 @@ auto dfs_traverse(Tree& tree) -> std::generator<int> {
 
 `elements_of`はこれらの最適化を単一の`std::generator`型のみで実現するためにそのネスト構造を検出するためのマーカーであり、実のところ関数ではなく構造体（集成体）です（そのため、`elements_of{...}`としても使用できます）。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // elements_ofの実装例
@@ -4866,7 +4910,7 @@ void f(R& rng) {
 
 `ranges::const_iterator_t<R>`と`ranges::const_sentinel_t<R>`はそれぞれ、`R`のオブジェクトに対する`ranges::cbegin`と`ranges::cend`の結果となる定数イテレータ型と一致します。
 
-C++23の`ranges::cbegin`と`ranges::cend`はC++20の方法で取得したイテレータを`std::const_iterator`に通して返しています。
+C++23の`ranges::cbegin`と`ranges::cend`はC++20の方法で取得したイテレータをさらに`std::const_iterator`に通して返しています。
 
 ### `std::const_iterator`
 
@@ -4888,7 +4932,7 @@ C++23の`ranges::cbegin`と`ranges::cend`はC++20の方法で取得したイテ�
 
 `costant_range`はその要素を変更できない`range`を表すコンセプトです。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std::ranges {
 
   // constant_rangeの宣言例
@@ -4901,11 +4945,11 @@ namespace std::ranges {
 
 `input_range`かつそのイテレータが`constant-iterator`であることを要求し、`constant-iterator`はイテレータが定数イテレータであることを表す説明専用のコンセプトです。
 
-このコンセプトは`views::as_const`の判定で使用されていました。それ以外でも、任意の範囲を受け取る関数のインターフェースで、その要素を変更しないことを表明するためにも使用できます。この場合は逆に、変更可能な（`constant_range`ではない）範囲を渡すとコンパイルエラーになります。
+このコンセプトは`views::as_const`の判定で使用されていました。それ以外でも、任意の範囲を受け取る関数のインターフェースで、その要素を変更しないことを表明するためにも使用できます。この場合は変更可能な（`constant_range`ではない）範囲を渡すとコンパイルエラーになります。
 
 ```cpp
 // constant_rangeコンセプトで制約することで、受け取ったrangeの要素を変更しないことを表明
-void f(constant_range auto&& rng) {
+void f(constant_range auto& rng) {
   // constant_rangeを満たしているため、内部では要素を変更しようとしてもできない
   auto it = begin(rng);
   *it = ...; // ngもしくは無意味
@@ -4925,7 +4969,7 @@ int main() {
 
 定義にある`constant-iterator`は次のように定義される説明専用のコンセプトです。
 
-```cpp
+```cpp{style=cppstddecl}
 template<class I>
 concept constant-iterator =
   input_iterator<I> && 
@@ -4938,8 +4982,9 @@ concept constant-iterator =
 
 `std::iter_const_reference_t<I>`はイテレータ型`I`の間接参照結果型を`const`化した型を求めるエイリアステンプレートです。
 
-```cpp
+```cpp{style=cppstddecl}
 namespace std {
+
   template<indirectly_readable It>
   using iter_const_reference_t =
     common_reference_t<const iter_value_t<It>&&, iter_reference_t<It>>;
@@ -5008,13 +5053,14 @@ int main() {
 
   const auto str = "split_view takes a view and a delimiter"sv;
 
-  for (auto strv : str | split(' ')
-                       | transform([](auto subrng) {
-                           // C++20だと例えばこう書いていた
-                           return std::string_view{subrng.begin(), subrng.end()};
-                           // C++23はそのまま渡せる
-                           return std::string_view{subrng}; // ok
-                         }))
+  for (auto strv : str 
+                 | split(' ')
+                 | transform([](auto subrng) {
+                     // C++20だと例えばこう書いていた
+                     return std::string_view{subrng.begin(), subrng.end()};
+                     // C++23はそのまま渡せる
+                     return std::string_view{subrng}; // ok
+                   }))
   {
     std::cout << strv << '\n';
   }
@@ -5039,7 +5085,7 @@ int main() {
 
 このコンストラクタの宣言及び制約はおおよそ次のようになっています
 
-```cpp
+```cpp{style=cppstddecl}
 template <class charT, class traits = char_traits<charT>>
 class basic_string_view {
   ...
@@ -5073,7 +5119,7 @@ int main() {
 }
 ```
 
-これは選択されるコンストラクタによって終端`\0`の位置判定が異なることから生じており、このことはこのコンストラクタに`explicit`が付加されている理由でもあります。`char`の配列は単なるバイト配列としても広く利用されているため、その全体を常に文字列として見做すのは正しくない場合があるため、`range`からの変換はプログラマの意図を確認するために`explicit`指定されています。
+これは選択されるコンストラクタによって文字終端の位置判定が異なることから生じており、このことはこのコンストラクタに`explicit`が付加されている理由でもあります。`char`の配列は単なるバイト配列としても広く利用されているため、その全体を常に文字列として見做すのは正しくない場合があるため、`range`からの変換はプログラマの意図を確認するために`explicit`指定されています。
 
 ## `std::format`の`range`対応
 
@@ -5121,7 +5167,7 @@ int main() {
 
 `std::format`で出力可能な型というのを識別する方法はC++20では提供されていませんでしたが、C++23ではそれは`std::formattable`コンセプトとして提供されるようになります。
 
-```cpp
+```cpp{style=cppstddecl}
 // 説明専用formattable-withコンセプト
 template<class T, class Context,
          class Formatter = typename Context::template formatter_type<remove_const_t<T>>>
@@ -5473,7 +5519,7 @@ auto &&range = f().at(0) ;  // UB
 
 `auto&&`による変数宣言では初期化式が右辺値ならばその寿命を延長するため、1つ目の場合は`f()`の直接の戻り値はループの間生存しています。しかし、2つ目の場合、`auto&&`が受けているのは`f().at(0)`であり、`f()`の直接の戻り値はどこにも受け止められていません。このため、`f()`の直接の戻り値の寿命はこの初期化式の完了後に終了し、そこから取り出した参照はダングリング参照となります。
 
-この例は恣意的かもしれませんが、`std::optional`で範囲を返し`*/.value()`から取得しようとする場合や、`std::tuple`に含まれる範囲を`std::get`で取り出そうとする場合などにも同じ問題があります。しかもこのことは範囲`for`の構文に隠蔽されているため、問題を知っていてもそれが起きていることに気づくのは困難です。
+この例は恣意的かもしれませんが、`std::optional`で範囲を返し`.value()`から取得しようとする場合や、`std::tuple`に含まれる範囲を`std::get`で取り出そうとする場合などにも同じ問題があります。しかもこのことは範囲`for`の構文に隠蔽されているため、問題を知っていてもそれが起きていることに気づくのは困難です。
 
 この問題はC++11発行前から認識されていたものの解決されず、緩和のためにC++20で範囲`for`に初期化式（`init-statement`）を書けるようになりましたが、本質的な問題は解決されていませんでした。C++23にてこの問題は解決され、範囲`for`の初期化式（`for-range-initializer`）内で作成されたすべての一時オブジェクトの寿命は範囲`for`文の完了（ループ終了）まで延長される、と規定されるようになります。
 
@@ -5516,7 +5562,7 @@ int main() {
 
 この場合にコンストラクタに`explicit`が付加されていたとしても、特に何か利益があるわけではありません。しかし、このことはC++20と23の間で一貫していなかったため、最終的に`view`型の2引数以上のコンストラクタには`explicit`を付加することをデフォルトとすることに決定されました。
 
-これによって、C++20の`view`型ではコピーリスト初期化ができなくなります。これは一応は快適変更ではありますが、標準ライブラリの`view`型は全てRangeアダプタ/ファクトリオブジェクトを通して取得することがデフォルトかつ推奨されているため`view`型を直接初期化することは稀であり、また、この変更の影響を受けたとしても`=`を削除する（リスト初期化に変更する）だけで問題を解決できるため、影響は小さいだろうと判断されたようです。
+これによって、C++20の`view`型ではコピーリスト初期化ができなくなります。これは一応破壊的変更ではありますが、標準ライブラリの`view`型は全てRangeアダプタ/ファクトリオブジェクトを通して取得することがデフォルトかつ推奨されているため`view`型を直接初期化することは稀であり、また、この変更の影響を受けたとしても`=`を削除する（リスト初期化に変更する）だけで問題を解決できるため、影響は小さいだろうと判断されたようです。
 
 ## *stashing iterator*の修正
 
