@@ -5579,7 +5579,9 @@ using std::ranges;
 
 int main() {
   char const text[] = "Hello";
-  std::regex regex{"[a-z]"};  // 小文字アルファベット1文字にマッチング
+
+  // 小文字アルファベット1文字にマッチング
+  std::regex regex{"[a-z]"};
 
   // 範囲（sub_match）の範囲（match_results）
   subrange regex_range(std::cregex_iterator(
@@ -5590,7 +5592,7 @@ int main() {
                        std::cregex_iterator{}
                       );
 
-    // string_viewの範囲
+  // string_viewの範囲
   auto lower = regex_range
     | views::join  // sub_matchの範囲へと平坦化
     | views::transform([](auto const& sm) {
