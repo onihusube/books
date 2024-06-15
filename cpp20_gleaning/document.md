@@ -516,7 +516,260 @@ int main() {
 
 TODO: 展開したうえで順序付けを求める例をもう一つ追加する。例えば前項で計算してた例など。
 
-# 一貫比較仕様、比較演算子の合成について
+# `<=>`演算子における他比較演算子の合成について
+
+`<=>`演算子をデフォルト定義することによって、残りの比較演算子が自動で実装されるようになり、C++20からは比較演算子の実装が著しく簡単になります。しかし、そのためには基底クラス及びメンバ型のすべてが`<=> ==`を定義している必要があります。`==`はともかく、`<=>`はC++20で追加された新しい演算子であり、C++17以前で定義されたクラス型で備えているものはありません。そのため、C++17以前のクラスに対して`<=>`演算子を追加しない場合、`<=>`演算子のデフォルト実装は利用できないことになります。
+
+```cpp
+// C++17以前から使用されてきた型、従来の比較演算子は実装されている
+struct old_type {
+  int n = 10;
+
+  // 共に実装は省略
+  bool operator< (const old_type&) const;
+  bool operator==(const old_type&) const;
+};
+
+
+// C++20環境で定義された新しい型
+struct new_type {
+  int m = 10;
+  old_type l = {20}; // <=>を持たない
+  int n = 30;
+
+  // old_typeは<=>を持たないため、実装不可、暗黙delete
+  auto operator<=>(const new_type&) const = default;
+
+  // ==があるため実装可能（明示的な宣言は実は不要）
+  bool operator== (const new_type&) const = default;
+};
+
+int main() {
+  new_type n1{}, n2 = {20, {30}, 40};
+
+  auto comp = n1 <=> n2;  // ng
+  bool eq   = n1 == n2;   // ok
+}
+```
+
+このような例は珍しいものではなく、既存のコードベースをC++20環境へ移行した後に良く遭遇する光景となるでしょう。また、この`old_type`のような型が変更できない場所（外部ライブラリや他人の管轄コードベースなど）に存在していると`<=>`を追加することもできません。
+
+このような場合でも`<=>`演算子をなるべく書かなくて済むようにするために、`< ==`の2つの演算子を使用して`<=>`を自動実装する仕組みが用意されています。
+
+```cpp
+struct new_type {
+  int m = 10;
+  old_type l = {20};  // <=>を備えていない
+  int n = 30;
+
+  // 指定した戻り値型とold_typeの持つ比較演算子を用いて実装してもらう
+  std::strong_ordering operator<=>(const new_type&) const = default;
+};
+
+int main() {
+  new_type n1{}, n2 = {20, {30}, 40};
+
+  auto comp = n1 <=> n2;  // ok
+  bool eq   = n1 == n2;   // ok
+}
+```
+
+このように、戻り値の比較カテゴリ型を明示的に指定したうえで`default`指定することで、`<=>`演算子が利用可能ではない型がある場合は`< ==`を用いて比較を実装するようになります。
+
+この場合の`default`実装を明示的に書くと次のようになります
+
+```cpp
+struct new_type {
+  int m = 10;
+  old_type l = {20};
+  int n = 30;
+
+  //std::strong_ordering operator<=>(const new_type&) const = default;
+  std::strong_ordering operator<=>(const new_type&) const = default {
+    // <=>が使える場合はそれを使用
+    if (auto comp = static_cast<std::strong_ordering>(m <=> that.m); comp != 0) return comp;
+
+    // <=>が使えない場合は< ==から比較を実装
+    std::strong_ordering comp = (l == that.l) ? std::strong_ordering::equal :　
+                                (l <  that.l) ? std::strong_ordering::less
+                                              : std::strong_ordering::greater;
+    if (comp != 0) return comp;
+
+    return static_cast<std::strong_ordering>(n <=> that.n);
+  }
+};
+```
+
+比較しようとするメンバ（基底クラスサブオブジェクト）を`a, b`、指定された戻り値型を`R`としたときに、このように戻り値型を明示的に指定する場合の比較の実装は`R`によって次のようになります
+
+```cpp
+// a <=> bが使用可能な場合
+static_cast<R>(a <=> b);
+
+// Rがstd::strong_orderingであり
+// a < b, a == bが共に使用可能な場合
+a == b ? std::strong_ordering::equal : 
+a < b  ? std::strong_ordering::less
+       : std::strong_ordering::greater;
+
+// Rがstd::weak_orderingであり
+// a < b, a == bが共に使用可能な場合
+a == b ? std::weak_ordering::equivalent :
+a < b  ? std::weak_ordering::less :
+       : std::weak_ordering::greater;
+
+// Rがstd::partial_orderingであり
+// a < b, a == bが共に使用可能な場合
+a == b ? std::partial_ordering::equivalent : 
+a < b  ? std::partial_ordering::less : 
+b < a  ? std::partial_ordering::greater
+       : std::partial_ordering::unordered;
+```
+
+実装内では、この結果（必ず比較カテゴリ型のいずれかになる）を受け取って、それが`0`と等しくなければそれを返して終了、`0`と等しければ次へ、のような実装を行います（この部分は戻り値型を`auto`にする場合と同じ）。
+
+このように戻り値型の指定を明示的に行った場合にのみ`< ==`を使用した実装を行っているのは、`partial_ordering`の`unordered`の判定および`weak_ordering`の`equivalent`を正しくハンドルするためです。戻り値型を指定しない場合、これらの値は全て`strong_ordering::equal`として扱われてしまうため、適切な比較にならない可能性があります。
+
+## クラステンプレートにおける適応的な比較演算子自動生成
+
+より汎用的というなら、戻り値型を常に指定して`<=>`を`default`実装する方がより広い状況で`<=>`を実装することができます。ただし、戻り値型を明示的に指定してしまうと、各メンバ・基底クラスの比較がその戻り値型に明示的に変換可能ではない場合にエラーになってしまいます。また、`auto`で本来導出される比較カテゴリ型とは異なる最適ではないカテゴリになってしまう可能性もあります。
+
+```cpp
+template<typename T>
+struct wrap {
+  T v;
+
+  // Tの<=>の結果がweak_orderingに変換できない場合にエラーになる
+  std::weak_ordering operator<=>(const wrap&) const = default;
+};
+
+int main() {
+  wrap<double> w1{0.0}, w2{1.0}; // ok。ここではエラーにならない
+
+  bool cmp = w1 < w2; // ng、<=>はdeleteされている
+}
+```
+
+`double`の`<=>`の比較結果は`std::partial_ordering`であり、`std::weak_ordering`は`std::partial_ordering`に変換できないため比較演算子を使用しようとするとエラーになります。
+
+つまり、`<=>`が使用できる場合は戻り値`auto`の宣言を、使用できない場合は戻り値型を指定した宣言を使ってほしいのですが、そのようなことはできません。
+
+```cpp
+template<typename T>
+struct wrap {
+  T v;
+
+  // この2つの宣言を同居できない
+  auto operator<=>(const wrap&) const = default;
+  std::weak_ordering operator<=>(const wrap&) const = default;
+};
+```
+
+この`wrap<T>`のように、メンバとして持つ型がテンプレートパラメータによって指定されているような場合、この問題は悩ましいものになるでしょう。
+
+このような場合のために、`<compare>`に用意されている機能を使用して1つの宣言でこの要求を叶えるソリューションを考えることができます。
+
+```cpp
+// Tが<=>を使用できない場合、Catにフォールバックする
+template<typename T, typename Cat>
+using fallback_comp3way_t = std::conditional_t<
+        std::three_way_comparable<T>,
+          std::compare_three_way_result<T>,
+          std::type_identity<Cat>
+      >::type;
+```
+
+`std::three_way_comparable<T>`は`T`が`<=>`によって比較可能であることを定義するコンセプトです、それによって`<=>`の利用可否を判定して、利用できる場合は`std::compare_three_way_result<T>`によってその結果型を取得して返し、できない場合はフォールバック先の比較カテゴリ型`Cat`を返します。
+
+結局、`fallback_comp3way_t<T, Cat>`は、`T`が`<=>`を利用可能であればその結果型、利用できなければ`Cat`になります。
+
+これを使って先程の`wrap`を書き換えると
+
+```cpp
+template<typename T>
+struct wrap {
+  T t;
+
+  // <=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
+  auto operator<=>(const wrap&) const
+    -> fallback_comp3way_t<T, std::weak_ordering>
+      = default;
+};
+
+// <=>は定義していないが、< ==は定義してあるクラス
+struct no_spaceship {
+  int n;
+
+  bool operator<(const no_spaceship& that) const noexcept {
+    return n < that.n;
+  }
+
+  bool operator==(const no_spaceship& that) const noexcept {
+    return n == that.n;
+  }
+};
+
+int main() {
+  { 
+    wrap<double> w1{0.0}, w2{1.0};
+
+    // 全て利用可能
+    bool b1 = w1 < w2;  // true
+    bool b2 = w1 <= w2; // true
+    bool b3 = w1 > w2;  // false
+    bool b4 = w1 >= w2; // false
+  }
+  { 
+    wrap<no_spaceship> w1{0}, w2{1};
+
+    // 全て利用可能
+    bool b1 = w1 < w2;  // true
+    bool b2 = w1 <= w2; // true
+    bool b3 = w1 > w2;  // false
+    bool b4 = w1 >= w2; // false
+  }
+}
+```
+
+厳密には`auto`のままで定義しているわけではありませんが、`<=>`が利用できる場合の結果型は`auto`で宣言した場合と同じ結果になり、なおかつ利用できない場合でも指定した比較カテゴリ型にフォールバックすることでなるべく自動実装してもらうことができます。
+
+対象となるテンプレートパラメータが複数ある場合は`std::common_comparison_category_t`を組み合わせて使用することでこのソリューションを引き続き使用することができます。
+
+```cpp
+// フォールバック先のカテゴリ
+using category = std::weak_ordering;
+
+template<typename T1, typename T2, typename T3>
+struct triple {
+  T1 t1;
+  T2 t2;
+  T3 t3;
+
+  // <=>を使用可能ならそれを、そうでないなら< ==を使ってdefault実装
+  auto operator<=>(const triple&) const
+    -> std::common_comparison_category_t<
+          fallback_comp3way_t<T1, category>,
+          fallback_comp3way_t<T2, category>,
+          fallback_comp3way_t<T3, category>
+        >
+      = default;
+};
+
+int main() {
+  triple<int, double, no_spaceship> t1 = {10, 3.14, {20}}, 
+                                    t2 = {10, 3.14, {30}};
+
+  // 全て利用可能        
+  bool b1 = t1 < t2;  // true
+  bool b2 = t1 <= t2; // true
+  bool b3 = t1 > t2;  // false
+  bool b4 = t1 >= t2; // false
+}
+```
+
+実はこの`fallback_comp3way_t`はライブラリ機能1でも紹介していました。しかし、そこでは戻り値型を指定した`<=>`の`default`宣言をほとんど説明していなかったため、その説明と合わせて改めて解説を行いました。
+
+これをさらに発展させて`<`だけから`<=> ==`を定義する、みたいなことも考えることもできます（さらに複雑にはなりますが・・・）。
 
 # `<chrono>`のスキップしたもの
 
