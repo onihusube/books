@@ -932,6 +932,86 @@ int main() {
 AM 01:01:01
 ```
 
+## 時間単位の`duration`値に対する関数
+
+### 午前・午後の判定
+
+時間単位の`duration`値が午前と午後どちらの時間を表しているのかを判定する関数が用意されます。
+
+```{style=cppstddecl}
+namespace std::chrono {
+  // 午前かどうかの判定
+  constexpr bool is_am(const hours& h) noexcept;
+
+  // 午後かどうかの判定
+  constexpr bool is_pm(const hours& h) noexcept;
+}
+```
+
+これは、名前と宣言から想像できるような動作をします。
+
+```cpp
+void print(auto d) {
+  std::cout << std::format("{:%Hh} : {:<5} / {}\n", d, is_am(d), is_pm(d));
+}
+
+int main() {
+  print(0h);
+  print(11h);
+  print(12h);
+  print(23h);
+  print(24h);
+  print(27h);
+}
+```
+```
+00h : true  / false
+11h : true  / false
+12h : false / true
+23h : false / true
+24h : false / false
+27h : false / false
+```
+
+`is_am(d)`は`duration`値`d`について`0h <= d && d <= 11h`の結果を返し、`is_pm(d)`は`d`について`12h <= d && d <= 23h`の結果を返します。そのため、30時間制のような時間の表現はどちらも`false`を返します。
+
+なお、この2つの関数の引数型は`hours`であるため、それに暗黙変換できない精度（分単位以下）をもつ`duration`型の値を渡すとエラーになります。とはいえ、`hours`に暗黙変換できる精度（`days`など）の値を渡しても常に`false`になります。この関数は、`hours`の値のうち`0 ~ 23`の範囲内でしか正しく動作しません。
+
+### 12時間時計/24時間時計における時間値の変換
+
+時間単位の`duration`値の値を、12時間時計における値と24時間時計における値に相互に変換する関数が用意されます。
+
+```{style=cppstddecl}
+namespace std::chrono {
+  // 24時間時計の時間値を12時間時計の時間値に変換する
+  constexpr hours make12(const hours& h) noexcept;
+
+  // 12時間時計の時間値を24時間時計の時間値に変換する
+  constexpr hours make24(const hours& h, bool is_pm) noexcept;
+}
+```
+
+`make12()`は24時間時計における時間の値（`[0, 23]`）を12時間時計における時間の値（`[0, 11]`）に変換するもので、`mak24()`は12時間時計における時間の値（`[1, 12]`）を24時間時計における時間の値（`[0, 23]`）に変換するものです。
+
+`make12()`にはそのまま`0 ~ 23`の範囲内の`hours`の値を渡すだけですが、`make24()`には`1 ~ 12`の値に加えてその値が午後の値であるかの`bool`値を渡す必要があります。
+
+```cpp
+int main() {
+  std::cout << make12(11h) << '\n';
+  std::cout << make12(23h) << '\n';
+  std::cout << make24(9h, true) << '\n';
+  std::cout << make24(9h, false) << '\n';
+}
+```
+```
+11h
+11h
+21h
+9h
+```
+
+これらの関数に範囲外の値を渡したときに得られる値はどちらも未規定とされています。また、`is_am()`等と同様にこれらの関数も実質的に`hours`型の値の限られた範囲の値に対してのみ正しく動作します。
+
 ## タイムゾーンデータベース
 
 # `consteval`コンストラクタによるコンパイル時検査について
