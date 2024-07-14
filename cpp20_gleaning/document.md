@@ -1014,6 +1014,425 @@ int main() {
 
 ## タイムゾーンデータベース
 
+C++20`<chrono>`ライブラリにおけるタイムゾーンの扱いについてはライブラリ機能の1で紹介していました。ここでは、そこで取り扱っていなかったタイムゾーンデータベースに関する部分について補足します。
+
+### タイムゾーンデータベースの取得と利用
+
+タイムゾーンデータベースとは全世界の各地域で使用されているタイムゾーンに関する情報を収集し、記録しているデータベースです。タイムゾーンに関する情報を取得する場合はこのデータベースから取得するのが確実かつ正確です。C++の`<chrono>`のタイムゾーンに関するAPIも同様にこのデータベースから情報を得ており、このデータベースそのものを直接的に扱うラッパも提供しています。
+
+最新のタイムゾーンデータベースを取得するには`get_tzdb()`フリー関数を使用します。
+
+```cpp
+int main() {
+  const auto& db1 = get_tzdb();
+  const auto& db2 = get_tzdb();
+
+  assert(&db1 == &db2); // 常にパスする
+}
+```
+
+戻り値型は`const tzdb&`であり、プログラム内で共通のシングルトンオブジェクトとして存在している`tzdb`オブジェクトへの`const`参照が得られます。
+
+`get_tzdb()`の呼び出しは、そのプログラムの最初の一回のみプログラム中のタイムゾーンデータベースの初期化（すなわち、シングルトン`tzdb`オブジェクトの初期化）を行い、その後初期化したタイムゾーンデータベースを保持する`tzdb`オブジェクトへの参照を返します。2回目以降の呼び出しは、初期化済みの`tzdb`オブジェクトへの参照を返すため、1つのプログラム中の`get_tzdb()`の呼び出しはタイムゾーンデータベースが更新されるまでの間同じオブジェクトへの参照を返します。
+
+返される`tzdb`型は単純な構造体であり、次のように定義されています
+
+```{style=cppstddecl}
+namespace std::chrono {
+  struct tzdb {
+    string                 version;
+    vector<time_zone>      zones;
+    vector<time_zone_link> links;
+    vector<leap_second>    leap_seconds;
+
+    const time_zone* locate_zone(string_view tz_name) const;
+    const time_zone* current_zone() const;
+  };
+}
+```
+
+`version`メンバ変数は、タイムゾーンデータベースのバージョン文字列を保持しています。
+
+```cpp
+int main() {
+  const auto& db = get_tzdb();
+ 
+  std::cout << db.version << '\n';
+}
+```
+
+GCC14.1の出力
+
+```
+2024a
+```
+
+MSVC 2022 17.8の出力
+
+```
+2021a.27
+```
+
+全世界のタイムゾーンの情報を収集している団体は大きく3つあり、OSから利用されている（間接的にC++が利用する）ものはそのうちの2つ、IANA Time Zone Databaseとマイクロソフトの収集するタイムゾーンデーターベースのどちらかです。当然、後者はWindowsのみが利用しています。そのため、Windowsとそれ以外とでは微妙に結果が異なる場合があるかもしれません。ただし、C++の標準ライブラリとしてのタイムゾーンデータベースはIANA Time Zone Databaseに基づいて規定されているため、chronoのAPIを通して得られるタイムゾーンの情報には大きな差はないはずです。
+
+ちなみに、IANA Time Zone DatabaseはGithub上で管理されています
+
+- eggert/tz : https://github.com/eggert/tz
+
+2つのメンバ関数`locate_zone()`と`current_zone()`は同名のフリー関数と同じ結果となります。
+
+```cpp
+int main() {
+  const auto& db = get_tzdb();
+
+  const time_zone* tz1 = db.current_zone();
+  std::cout << tz1->name() << '\n';
+
+  const time_zone* tz2 = db.locate_zone("America/New_York");
+  std::cout << tz2->name() << '\n';
+}
+```
+```
+Asia/Tokyo
+America/New_York
+```
+
+より正確には、`std::chrono::locate_zone()`と`std::chrono::current_zone()`は`get_tzdb()`の戻り値に対して対応する関数を呼び出すように実装されています。
+
+`zones`メンバはデータベースに保存されているすべてのタイムゾーンについての情報を保持しており、`links`メンバは各タイムゾーンの略称に関する情報を保持しています。
+
+```cpp
+int main() {
+  const auto& db = get_tzdb();
+
+  for (auto tz : db.zonez | std::views::take(5)) {
+    std::cout << tz.name() << '\n';     // タイムゾーン名
+  }
+}
+```
+```
+Africa/Abidjan
+Africa/Accra
+Africa/Addis_Ababa
+Africa/Algiers
+Africa/Asmera
+```
+
+```cpp
+int main() {
+  const auto& db = get_tzdb();
+
+  for (auto name : db.links | std::views::take(5)) {
+    std::cout << name.name() << " : ";  // 略称
+    std::cout << name.target() << '\n'; // 略称に対応する元のタイムゾーン名
+  }
+}
+```
+```
+ACT : Australia/Darwin
+AET : Australia/Sydney
+AGT : America/Buenos_Aires
+ART : Africa/Cairo
+AST : America/Anchorage
+```
+
+タイムゾーンは全部で350個以上あるので、最初の5個だけを表示しています。略称を持たないタイムゾーンもあるので、`links`の長さは`zonez`の長さよりも短くなります。
+
+タイムゾーンの略称は、`Asia/Tokyo`に対する`JST`や`Etc/UTC`に対する`UTC`などのように、`locate_zone()`で本来のタイムゾーン名の代わりに使用することができるものです。一部のタイムゾーン名は一般に略称で表されることの方が多いかもしれません（日本における`JST`と`UTC`はどちらも本来の名前よりも略称の方が浸透している）。
+
+この結果を見ると分かりますが、タイムゾーンのリスト`zonez`及びタイムゾーン略称のリスト`links`は、予めソート（アルファベットの昇順）されています。
+
+`leap_seconds`メンバはそのデータベースに保存されているうるう秒に関する情報を保持しています。
+
+```cpp
+int main() {
+  const auto& db = get_tzdb();
+
+  for (auto ls : db.leap_seconds
+               | std::views::reverse
+               | std::views::take(5))
+  {
+    std::cout << ls.date() << ": " << ls.value() << '\n';
+  }
+}
+```
+```
+2017-01-01 00:00:00: 1s
+2015-07-01 00:00:00: 1s
+2012-07-01 00:00:00: 1s
+2009-01-01 00:00:00: 1s
+2006-01-01 00:00:00: 1s
+```
+
+`leap_seconds`も予めソート（時系列）されているため、うるう秒の挿入履歴を時系列で取得することができます。この例では、最新（2024年6月末時点）の履歴から5件を表示しています。なお、うるう秒は廃止されるらしいので、このリストは今後更新されることはなさそうです。
+
+`tzdb::links`の要素型である`time_zone_link`および`tzdb::leap_seconds`の要素型である`leap_second`は次のように定義されている型です
+
+```{style=cppstddecl}
+namespace std::chrono {
+  class time_zone_link {
+  public:
+    time_zone_link(time_zone_link&&)            = default;
+    time_zone_link& operator=(time_zone_link&&) = default;
+
+    // 未規定の追加のコンストラクタが定義されうる
+
+    string_view name()   const noexcept;
+    string_view target() const noexcept;
+  };
+
+  class leap_second {
+  public:
+    leap_second(const leap_second&)            = default;
+    leap_second& operator=(const leap_second&) = default;
+
+    // 未規定の追加のコンストラクタが定義されうる
+
+    constexpr sys_seconds date() const noexcept;
+    constexpr seconds value() const noexcept;
+  };
+
+  // どちらも、非メンバで比較演算子（== <=> etc）を定義している
+}
+```
+
+### タイムゾーンデータベースのリストと更新
+
+サマータイムをはじめとして、世界各地域で使用されているタイムゾーンは時とともに変化しています。したがって、ある時点で取得したタイムゾーンデータベースはしばらくたつと古くなってしまいます。短時間で処理を終えて直ぐに終了するプログラムならばそれを気にする必要はありませんが、1月や1年などの長時間稼働し続けるプログラムだとタイムゾーン情報を最新のものに追随したい場合があります。そのため、`chrono`ライブラリでもタイムゾーンデータベースの更新に対応しています。
+
+まず、`tzdb`クラスの`.version`メンバによってローカルタイムゾーンデータベースのバージョンを取得することができ、`remote_version()`フリー関数によってリモートのタイムゾーンデータベースのバージョンを取得することができます。
+
+```cpp
+int main() {
+  const auto& local_db = get_tzdb();
+  std::string remote_ver = remote_version();
+
+  std::cout << local_db.version << '\n';
+  std::cout << remote_ver << '\n';
+}
+```
+
+GCC14.1の出力
+
+```
+2024a
+2024a
+```
+
+MSVC 2022 17.8の出力
+
+```
+2021a.27
+2021a.27
+```
+
+プログラムを開始してすぐの時点ではこの2つのバージョンが違っているということはほとんど無いと思われます。長時間稼働していてリモートのタイムゾーンデータベースが更新された場合、この2つのバージョン文字列が異なるようになります。
+
+そして、`reload_tzdb()`というフリー関数によってタイムゾーンデータベースの更新が行えます。
+
+```cpp
+int main() {
+  // ローカルのタイムゾーンデータベース
+  const auto& db_prev = get_tzdb();
+
+  // タイムゾーンデータベースを更新して新しいものを取得
+  const auto& db_latest = reload_tzdb();
+
+  // 更新されていれば異なる
+  assert(&db_prev != &db_latest);
+}
+```
+
+`reload_tzdb()`はローカルのタイムゾーンデータベースを更新したうえで、更新後のタイムゾーンデータベースを返します。無駄打ちしてもしょうがないので、この関数はたいてい次のように呼ばれることになるでしょう
+
+```cpp
+void update_tzdv() {
+  // リモートのバージョンが更新されていたら、リロードする
+  if (get_tzdb().version != remote_version()) {
+    reload_tzdb()
+  }
+}
+```
+
+`remote_version()`および`reload_tzdb()`の両関数はおそらくネットワーク接続を必要とします。そのため、オフライン環境ではうまく動かないでしょう。`reload_tzdb()`はその場合おそらく`runtime_error`例外を送出します（明確に規定はありませんが`remote_version()`も同様と思われます）。
+
+タイムゾーンデータベースの更新後に古いデータベースが直ぐに削除されるわけではなく、そのプログラムの実行中はタイムゾーンデータベースのリストに保存されています。`get_tzdb_list()`フリー関数によってそのリストを取得することができます。
+
+```cpp
+int main() {
+  // タイムゾーンデータベースのリストを取得
+  auto& db_list = get_tzdb_list();
+}
+```
+
+返されるのは`tzdb_list`型の`const`参照で、これはシングルトンオブジェクトを参照しています。あるプログラムの実行中最初の`get_tzdb_list()`の呼び出しによってシングルトンのタイムゾーンデータベースのリストは初期化され、リストの先頭にはその時点で最新のタイムゾーンデータベースを保持する`tzdb`型オブジェクトが挿入されます。`get_tzdb_list()`の2回目以降の呼び出しはそのオブジェクトへの参照を返します。
+
+`reload_tzdb()`が呼び出されてタイムゾーンデータベースが更新されると、タイムゾーンデータベースのリストの先頭には更新されたデータベースが挿入され、古いタイムゾーンデータベースはその後ろに並ぶことになります。
+
+`tzdb_list`型は`range`となるオブジェクトではありますが、操作はかなり限定的です。
+
+```cpp
+int main() {
+  // タイムゾーンデータベースのリストを取得
+  auto& db_list = get_tzdb_list();
+
+  // リストの先頭（最新のデータベース）を取得
+  const auto& db = db_list.front();
+
+  // リストのイテレート
+  for (auto& db : db_list) {
+    ...
+  }
+
+  // 指定した要素の後ろの要素を削除
+  // 戻り値は削除された要素の後ろの要素のイテレータ（もしくはendイテレータ）
+  auto it = db_list.erase_after(db_list.begin());
+}
+```
+
+あとは`cbegin()/cend()`もありますが、これだけの操作しかできません。インターフェース的には`forward_list`が近しく見えますが、異なる型となり内部がどのようなデータ構造を使用するかは規定がありません。最新のデータベースを得る場合は`.front()`を使用すればいいのですが、古いものが欲しい場合はイテレータを用いて使いたいバージョンのデータベースを引き当てる必要があります。
+
+実際のところ、`<chrono>`のタイムゾーンデータベース周りの関数の中核にはこのタイムゾーンデータベースのリストが居ます。`get_tzdb()`は`get_tzdb_list().front()`を返しており、`reload_tzdb()`は取得したリモートタイムゾーンデータベースをこのタイムゾーンデータベースのリストの先頭に挿入しています。また前述のように、フリー関数の`locate_zone()`と`current_zone()`は`get_tzdb()`で得られるデータベースに対して対応するメンバ関数を呼び出します。
+
+このような関係性と、大本のタイムゾーンデータベースのリストがプログラム中で一意なシングルトンオブジェクトであることから、`get_tzdb_list()`の呼び出しはスレッドセーフであり、`reload_tzdb()`の呼び出しは`tzdb_list`の`.front()`と`.erase_after()`の呼び出しに対してスレッドセーフであることが保証されています。
+
+最新のタイムゾーンの情報が欲しいだけならフリー関数の`locate_zone()`と`current_zone()`を使用すればよく、タイムゾーンデータベースそのものを直接触る必要は無いでしょう。長期間稼働するプログラムでも、サマータイムやタイムゾーンの変化をハンドルするような処理を必要としなければ、タイムゾーンデータベースにアクセスする必要はありません。逆に必要となるのはそのようにタイムゾーンの変化に追随する必要がある日付時刻の処理を行っている場合です。さらにタイムゾーンデータベースの履歴を使用する必要があるのは、更新に伴ってタイムゾーンの名前が変化することが問題となる場合だと思われます。
+
+## `sys_info`
+
+タイムゾーンデータベース1つは各地域のタイムゾーンに関する情報を`zones`メンバにリスト（`std::vector`）として保持しており、その要素型は`time_zone`型です。`time_zone`型の操作についてはライブラリ機能1でも触れていましたが、そこでは`.to_sys()/.to_local()`を使用した時刻変換のみを説明していました。
+
+`time_zone`型におけるシステム時刻とは`system_clock`の指す時刻のことで、これのタイムゾーンはUTC（ただしうるう秒カウント無し）となり、`time_zone`型におけるローカル時刻とはその`time_zone`オブジェクトが保持するタイムゾーンに基づく時刻となります（すなわち、UTC時刻に対してタイムゾーンを適用した時刻）。
+
+`.to_sys()/.to_local()`はシステムUTC時刻と`time_zone`オブジェクトが表すタイムゾーンにおける時刻との間の相互変換を行うもので、そのような時刻変換のためにはタイムゾーンに関する詳細な情報が必要です。`time_zone`型が保持するそれらの情報は`.get_info()`によって取得でき、引数にシステム時刻を指定するとシステム時刻->ローカル時刻の変換に使用されるタイムゾーン情報が`sys_info`型のオブジェクトとして得られ、引数にローカル時刻を指定するとローカル時刻->システム時刻の変換に使用されるタイムゾーン情報が`local_info`型のオブジェクトとして得られます。
+
+```{style=cppstddecl}
+namespace std::chrono {
+  // time_zone型の定義
+  class time_zone {
+  public:
+    time_zone(time_zone&&) = default;
+    time_zone& operator=(time_zone&&) = default;
+
+    // 未規定の追加のコンストラクタが定義されうる
+
+    // タイムゾーン名取得
+    string_view name() const noexcept;
+
+    // タイムゾーン詳細の取得
+    template<class Duration>
+    sys_info   get_info(const sys_time<Duration>& st)   const;
+
+    template<class Duration>
+    local_info get_info(const local_time<Duration>& tp) const;
+
+    // システム時刻 <-> ローカル時刻の変換
+    template<class Duration>
+      sys_time<common_type_t<Duration, seconds>>
+        to_sys(const local_time<Duration>& tp) const;
+
+    template<class Duration>
+      sys_time<common_type_t<Duration, seconds>>
+        to_sys(const local_time<Duration>& tp, choose z) const;
+
+    template<class Duration>
+      local_time<common_type_t<Duration, seconds>>
+        to_local(const sys_time<Duration>& tp) const;
+  };
+}
+```
+
+```cpp
+int main() {
+  // キリバス（UT+14）のタイムゾーン
+  const time_zone* tz = locate_zone("Pacific/Kiritimati");
+  const auto now = system_clock::now(); // 2024/07/07のある時刻とする
+  sys_info tz_info = tz->get_info(now);
+  
+  std::cout << "begin: "  << tz_info.begin  << '\n'
+            << "end: "    << tz_info.end    << '\n'
+            << "offset: " << tz_info.offset << '\n'
+            << "save: "   << tz_info.save   << '\n'
+            << "abbrev: " << tz_info.abbrev;
+}
+```
+```
+begin: 1994-12-31 00:00:00
+end: 32767-12-31 00:00:00
+offset: 50400s
+save: 0min
+abbrev: +14
+```
+
+`sys_info`は集成体型でありちょうどこの5つのメンバ変数のみを持ちます。これらのメンバの型と意味は次のようになります
+
+|メンバ|型|意味|
+|---|---|---|
+|`begin`|`sys_seconds`|この`sys_info`の情報が有効である期間の開始時刻。`[begin, end)`の範囲内の時刻に対してのみその`sys_info`は有効|
+|`end`|`sys_seconds`|この`sys_info`の情報が有効である期間の終了時刻|
+|`offset`|`seconds`|そのタイムゾーンの指定時刻におけるUTCとの差分（秒単位）|
+|`save`|`minutes`|夏時間中のタイムゾーンの場合、夏時間外の時間に対して減ずるオフセットの値|
+|`abbrev`|`std::string`|タイムゾーン名の略称|
+
+`save`メンバは多くの場合は`0`となり、`0`ではない場合にはこの`sys_info`（あるいは、指定したタイムゾーンにおける指定した時刻）は夏時間内にあります。夏時間内にある場合、`offset - save`の値はその`sys_info`に対応する夏時間ではないタイムゾーンにおけるシステムUTC時刻に変換するためのオフセットとして使用できます。
+
+ただし、この情報は信頼度の高いものではなく、あるタイムゾーンにおける夏時間内のUTC時刻を同じタイムゾーンで夏時間を適用しない場合のUTC時刻に変換するためのオフセットの正確な値は、そのタイムゾーンにおいて`save`メンバが`0`になっているような`sys_info`から取得することが推奨されます。通常それは、夏時間内にある`sys_info`の`[begin, end)`範囲外のUTC時刻を指定して、同じタイムゾーンに対して`.get_info()`を呼ぶことで取得できます。
+
+```cpp
+int main() {
+  // ニューヨークのタイムゾーン情報を取得
+  const time_zone* tz = locate_zone("America/New_York");
+  const auto now = system_clock::now(); // 2024/07/07のある時刻とする
+  sys_info tz_info = tz->get_info(now);
+  
+  std::cout << "begin: "  << tz_info.begin  << '\n'
+            << "end: "    << tz_info.end    << '\n'
+            << "offset: " << tz_info.offset << '\n'
+            << "save: "   << tz_info.save   << '\n'
+            << "abbrev: " << tz_info.abbrev;
+}
+```
+```
+begin: 2024-03-10 07:00:00
+end: 2024-11-03 06:00:00
+offset: -14400s
+save: 60min
+abbrev: EDT
+```
+
+この例のように、サマータイムを実施しているタイムゾーンに対してサマータイム中の時刻を与えて`.get_info()`すると、`save != 0min`となっている`sys_info`を取得できます。この場合の`[begin, end)`の範囲は丁度そのタイムゾーンにおける夏時間の期間になっており、`offset`の値はサマータイム中におけるUTCとのオフセットを示しており、`save`の値はその値から通常の（非サマータイムにおける）UTCとのオフセットに変換するための差分となっています（アメリカ東部夏時間EDTはUTC-4、非サマータイムのアメリカ東部標準時ESTはUTC-5、夏時間->通常へのオフセット差分は`-1h = -60min`）。
+
+また、`zoned_time`（`time_point`値とタイムゾーン情報のペア）の`.get_info()`によって、`zoned_time`が保持するタイムゾーン情報を`sys_info`オブジェクトとして取得することができます。
+
+```cpp
+int main() {
+  // JSTのタイムゾーン情報付きの時刻
+  zoned_time zt{"Asia/Tokyo", system_clock::now()};
+
+  // 保持するタイムゾーン情報をsys_infoで取得
+  sys_info tz_info = zt.get_info();
+  
+  std::cout << "begin: "  << tz_info.begin  << '\n'
+            << "end: "    << tz_info.end    << '\n'
+            << "offset: " << tz_info.offset << '\n'
+            << "save: "   << tz_info.save   << '\n'
+            << "abbrev: " << tz_info.abbrev;
+}
+```
+```
+begin: 1951-09-08 15:00:00
+end: 32767-12-31 00:00:00
+offset: 32400s
+save: 0min
+abbrev: JST
+```
+
+これは、`zoned_time`が保持するタイムゾーン情報である`time_zone`のポインタを介した`get_info()`に、同じく保持する時刻情報（`sys_time<duration>`の値）を渡した結果を返しています。`zoned_time`の場合はこれによってそれが保持している時刻について適用されるタイムゾーン情報の詳細を取得することができます。
+
+## `local_info`
+
+## `zoned_traits`
+
 # `consteval`コンストラクタによるコンパイル時検査について
 
 # 謝辞
