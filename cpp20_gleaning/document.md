@@ -1508,7 +1508,276 @@ second: [2024-11-03 06:00:00,2025-03-09 07:00:00,-05:00:00,0min,EST]
 
 `result == 1`の場合の`first`および`result == 2`の場合の`second`はどちらも非サマータイムの`sys_info`（アメリカ東部標準時、EST）となっており、`result == 1`の場合の`second`および`result == 2`の場合の`dirst`はどちらもサマータイムの`sys_info`（アメリカ東部夏時間、EDT）となっています。このように、存在しない/曖昧なローカル時間が`get_info()`に渡された場合、そのようなローカル時間帯を挟む有効なタイムゾーンについての`sys_info`が2つのメンバに登録されており、そのローカル時間帯よりも前のタイムゾーン情報が`first`、後ろが`second`となります。
 
-## `zoned_traits`
+## `zoned_time`におけるタイムゾーンのカスタマイズ
+
+`zoned_time`はあるタイムゾーンにおける時刻を表現するための型であり、`time_point<system_clock>`（`sys_time`）と`time_zone`（のポインタ）のペアとなる型です。ライブラリ機能1で説明したときはクラス構造の詳細には踏み込まず、簡単なインターフェースの利用法のみを解説していました。
+
+`zoned_time`はクラステンプレートであり、テンプレートパラメータとしてシステム時刻の時間間隔（時間分解能、`duration`型）とタイムゾーン型の2つを受け取るようになっています。
+
+```{style=cppstddecl}
+namespace std::chrono {
+  template <class Duration, class TimeZonePtr = const time_zone*>
+  class zoned_time;
+
+  using zoned_seconds = zoned_time<seconds>;
+}
+```
+
+2つ目のテンプレートパラメータである`TimeZonePtr`のデフォルトは`const time_zone*`ですが、ユーザーが定義したタイムゾーン型を渡すことができます。その際に最低限のカスタマイズポイントを提供するために`zoned_traits`という型特性が用意されています。
+
+```{style=cppstddecl}
+namespace std::chrono {
+  // プライマリテンプレート
+  template<class T>
+  struct zoned_traits {};
+
+  // const time_zone*の特殊化
+  template<>
+  struct zoned_traits<const time_zone*> {
+    static const time_zone* default_zone() {
+      return std::chrono::locate_zone("UTC")
+    }
+
+    static const time_zone* locate_zone(string_view name) {
+      return std::chrono::locate_zone(name)
+    }
+  };
+}
+```
+
+`zoned_time`のタイムゾーンのカスタマイズのためには、少なくともこの型の部分特殊化を提供しておく必要があります。定義すべきは2つの関数だけで、どちらも`zoned_time`のコンストラクタで使用されます。
+
+実は`zoned_time`には全部で16個のコンストラクタがあります。基本的に渡すものはタイムゾーン情報（タイムゾーン名の文字列か、タイムゾーンポインタ）と`time_point`値（`sys_time`あるいは`local_time`）の2つの両方あるいはどちらかなのですが、その受け取り方の組み合わせでたくさんのコンストラクタが用意されています。
+
+```cpp
+// ミリ秒単位のzoned_time
+using zoned_ms = zoned_time<milliseconds>;
+
+int main() {
+  auto now = floor<milliseconds>(system_clock::now());
+
+  // デフォルト構築
+  zoned_ms zt1{};
+
+  // システム時刻を渡して構築
+  zoned_ms zt2{now};
+
+  // タイムゾーン名を指定して構築
+  zoned_ms zt3{"Asia/Tokyo"};
+
+  // タイムゾーンポインタを渡して構築
+  zoned_ms zt4{locate_zone("America/New_York")};
+
+  // タイムゾーン名とシステム時刻から構築
+  zoned_ms zt5{"Asia/Tokyo", now};
+}
+```
+
+`zoned_time`が保持するのはタイムゾーンポインタの値（`TimeZonePtr`の値）なので、渡されたタイムゾーン名からそれを取得する部分は`TimeZonePtr`に渡された型毎にカスタマイズできる必要があり、`zoned_traits`の2つの関数はそのためのものです。
+
+`zoned_traits::default_zone()`は`zoned_time`のデフォルトコンストラクタやタイムゾーン名を受け取らないコンストラクタで使用され、`zoned_traits::locate_zone(name)`はタイムゾーン名を受け取るコンストラクタで使用されます。なお、タイムゾーンポインタを直接渡せるコンストラクタではテンプレートパラメータ`TimeZonePtr`が直接引数型として使用されるため、ここの変換は考慮されていません。
+
+`zoned_traits::default_zone()`のカスタマイズは主に、`zoned_time`のデフォルトのタイムゾーンを変更するために使用できます。`zoned_time`のデフォルトのタイムゾーンは`const time_zone*`の場合はUTCになるので、例えばこれをJSTに変更するカスタマイズが考えられます。
+
+```cpp
+// オリジナルタイムゾーンポインタ型
+struct jst_timezone {
+  const time_zone* ptr;
+};
+
+template<>
+struct std::chrono::zoned_traits<jst_timezone> {
+  static auto default_zone() -> jst_timezone {
+    // デフォルトタイムゾーンを変更
+    return jst_timezone{ .ptr = std::chrono::locate_zone("Asia/Tokyo") };
+  }
+
+  static auto locate_zone(string_view name) -> jst_timezone {
+    return jst_timezone{ .ptr = std::chrono::locate_zone(name) };
+  }
+};
+```
+
+`jst_timezone`がここで作成する独自のタイムゾーンポインタ型です。タイムゾーンの計算周りはここでは`time_zone`型に委譲するようにすることにします。
+
+`zoned_traits<jst_timezone>`の2つのメンバ関数はまず`jst_timezone`の値を返すようにする必要があります。タイムゾーンポインタ型と言ってますが、後述するようにうまく作れば必ずしもポインタ型でなくても大丈夫です。ここではとりあえず`default_zone()`をカスタマイズしてJSTのタイムゾーンを返すようにしておきます。
+
+注意点ですが、`zoned_traits`内部でグローバルの`std::chrono::locate_zone()`を呼びたい場合は、ここでのように`using std::chrono`していても名前空間をすべて指定して呼ぶ必要があります。なぜなら、`locate_zone()`だけだとメンバ関数の方が呼ばれてしまうためです。
+
+この`jst_timezone`を`zoned_time`の2つ目のテンプレートパラメータとして与えてやると、`zoned_time`のカスタマイズができます。
+
+```cpp
+template<typename D>
+using jst_time = zoned_time<D, jst_timezone>;
+
+int main() {
+  auto now = system_clock::now();
+
+  jst_time<system_clock::duration> jt1{}; // ok
+  jst_time jt2{now};  // ok
+}
+```
+
+C++20のエイリアステンプレートからのCTADによって、この`jst_time`のような型エイリアスからでも渡された`sys_time`の値から`duration`型パラメータ`D`を推定できるため、`sys_time`の値を渡す場合はテンプレートパラメータを明示的に指定する必要はありません。
+
+ひとまず構築まではこれだけでできるのですが、出力しようとしたりはできません。`jst_timezone`はまだなんのメンバ関数も提供しておらず、`zoned_traits`がよしなにしてくれるのは構築までです。`zoned_time`のインターフェースを使用する場合は、そこで使用される操作が可能なようにタイムゾーンポインタ型で対応するAPIを備えておく必要があります。
+
+とはいえ、`zoned_time`が保持するタイムゾーンポインタ値を使用するのは2つのメンバ関数だけで、そこで呼ばれる関数は2種類だけです。
+
+- `.get_local_time()`
+    - タイムゾーンポインタ`ptr`とシステム時刻`tp`に対して、`ptr->to_local(tp)`を呼ぶ
+- `.get_info()`
+    - タイムゾーンポインタ`ptr`とシステム時刻`tp`に対して、`ptr->get_info(tp)`を呼ぶ
+
+出力や変換演算子などは`.get_local_time()`を呼びます。そのため、作成するタイムゾーンポインタ型に対して必要になるのは`to_local()`と`get_info()`の2つのメンバ関数だけです。
+
+また同時に問題となるのは、`zoned_time`がタイムゾーンポインタ値をポインタとして扱うことで、アクセスに`->`を使用することです。とはいえこれは、`->`演算子をオーバーロードしておくことで対応できます。
+
+```cpp
+// オリジナルタイムゾーンポインタ型
+struct jst_timezone {
+  const time_zone* ptr;
+
+  auto operator->() const -> const jst_timezone* {
+    return this;
+  }
+
+  // 2つの関数の実装はtime_zoneのものに委譲する
+  auto to_local(auto tp) {
+    return ptr->to_local(tp);
+  }
+
+  auto get_info(auto tp) {
+    return ptr->get_info(tp);
+  }
+};
+```
+
+タイムゾーンポインタ型を作成する場合はおそらくこのような形が基本形になるでしょう。ただし、ここでの例のように`time_zone`に実装を委ねる場合はもっと楽をすることができます。
+
+```cpp
+// オリジナルタイムゾーンポインタ型
+struct jst_timezone {
+  const time_zone* ptr;
+
+  // 保持するptrを直接返す
+  auto operator->() const -> const time_zone* {
+    return ptr;
+  }
+};
+```
+
+この`jst_timezone`を扱う`zoned_time`に対しては、内部で保持してる`const time_zone*`を直接返すように`->`を実装します。これによって、`zoned_time`のインターフェースがすべて有効化されます。
+
+```cpp
+int main() {
+  auto now = system_clock::now();
+
+  jst_time<system_clock::duration> jt1{};
+  jst_time jt2{now};
+
+  std::cout << jt1 << '\n';
+  std::cout << jt2 << '\n';
+}
+```
+```
+1970-01-01 09:00:00.000000000 JST
+2024-07-20 20:48:29.719659195 JST
+```
+
+さて、残った`zoned_traits::locate_zone(name)`は`zoned_time`のコンストラクタに指定したタイムゾーン文字列`name`によって指定されたタイムゾーンについてのタイムゾーンポインタ型を返すものですが、デフォルト同様にグローバルの`locate_zone()`を呼んでおけば十分に思えるため、これはカスタマイズの余地が無い様な気もします。
+
+とはいえ、グローバルの`locate_zone()`も万能ではなく、一部のタイムゾーンの省略名が使用できない場合があります。例えば`"JST"`という文字列からJSTタイムゾーンを取得できません。また、タイムゾーンデータベースに記載がないタイムゾーン名は当然ながら使用できません。そのため、これらのそのままだと使用できないタイムゾーン名に対応させるためにカスタマイズすることができます。
+
+```cpp
+template<>
+struct std::chrono::zoned_traits<jst_timezone> {
+  ...
+
+  static auto locate_zone(string_view name) -> jst_timezone {
+    // 日本標準時に関しての追加対応
+    if (name == "Asia/Tokyo" or
+        name == "JST" or
+        name == "JCST" or
+        name == "日本標準時")
+    {
+      return jst_timezone{ .ptr = std::chrono::locate_zone("Asia/Tokyo") };
+    }
+
+    // それ以外は非対応！
+    throw std::runtime_error{std::format("{:s} is not support!", name)};
+  }
+};
+```
+
+JCSTとは中央標準時の略称で、日本標準時とは異なる原子時計による標準時であり、所管省庁と基準の原子時計が異なる以外は実質的にJSTと同じ標準時です。それに加えて、日本標準時という漢字によっても取得できるようにしています。これによって、これらのタイムゾーン名が`zoned_time`のコンストラクタにおいて使用できるようになります。
+
+```cpp
+int main() {
+  auto now = system_clock::now();
+
+  jst_time jt1{"JST", now};        // ok
+  jst_time jt2{"JCST", now};       // ok
+  jst_time jt3{"日本標準時", now};  // ok
+
+  std::cout << jt1 << '\n';
+  std::cout << jt2 << '\n';
+  std::cout << jt3 << '\n';
+}
+```
+```
+2024-07-20 21:03:36.395762025 JST
+2024-07-20 21:03:36.395762025 JST
+2024-07-20 21:03:36.395762025 JST
+```
+
+また同様の方法によって、タイムゾーンデータベースには存在しないタイムゾーンを使用できるようにすることができます。
+
+```cpp
+template<>
+struct std::chrono::zoned_traits<jst_timezone> {
+  ...
+
+  static auto locate_zone(string_view name) -> jst_timezone {
+    // 日本標準時に関しての追加対応
+    if (name == "Asia/Tokyo" or
+        name == "JST" or
+        name == "JCST" or
+        name == "日本標準時")
+    {
+      return jst_timezone{ .ptr = std::chrono::locate_zone("Asia/Tokyo") };
+    }
+
+    // South Ryukyu Islands/西部標準時(UTC+8)対応
+    if (name == "Asia/Ishigaki") {
+      return jst_timezone{ .ptr = std::chrono::locate_zone("Asia/Shanghai") };
+    }
+
+    // それ以外は非対応！
+    throw std::runtime_error{std::format("{:s} is not support!", name)};
+  }
+};
+```
+
+西部標準時は昭和12年まで存在した東経120度の時刻を使用した2つ目の日本の標準時で、宮古島や植民地時代の台湾などにおいて使用されていたものです。South Ryukyu Islandsとは一部のUNIX系OSで選択可能だった日本の2つ目のタイムゾーンで、これはタイムゾーンデータベースに西部標準時に関する誤った情報が含まれていたことによって出現していた本来存在しないタイムゾーンです。これらはどちらも、JSTに対して1時間遅れのUTC+8です。
+
+これにより、`zoned_time`のコンストラクタにおいてAsia/Ishigakiのタイムゾーン名が使用できるようになります。
+
+```cpp
+int main() {
+  auto now = system_clock::now();
+
+  jst_time jt1{"JST", now};
+  jst_time jt2{"Asia/Ishigaki", now}; // ok
+
+  std::cout << jt1 << '\n';
+  std::cout << jt2 << '\n';
+}
+```
+```
+2024-07-20 21:20:55.851310791 JST
+2024-07-20 20:20:55.851310791 CST
+```
 
 # `consteval`コンストラクタによるコンパイル時検査について
 
