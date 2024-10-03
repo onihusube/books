@@ -187,6 +187,11 @@ https://wg21.link/P1102R2
 
 https://wg21.link/P2173R1
 
+## ラムダ式の後置戻り値型のスコープ変更
+
+https://wg21.link/P2036R3
+https://wg21.link/P2579R0
+
 # プリプロセッサ
 
 ## 文字リテラルエンコーディングを一貫させる
@@ -262,11 +267,6 @@ https://wg21.link/P2186R2
 https://wg21.link/P2314R4
 
 # Defect Report
-
-## ラムダ式の後置戻り値型のスコープ変更
-
-https://wg21.link/P2036R3
-https://wg21.link/P2579R0
 
 ## 無意味なexport宣言を禁止する
 
