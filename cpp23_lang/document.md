@@ -122,7 +122,45 @@ protected:
 
 ## 添字演算子の多次元サポート
 
-https://wg21.link/P2128R6
+- P2128R6 Multidimensional subscript operator(https://wg21.link/P2128R6)
+
+C++20で添字演算子（`[]`）内でのカンマの使用が非推奨化されていましたが、C++23ではこれに続いて添字演算子のオーバーロードを複数の引数を取るように定義できるようになります。
+
+```cpp
+template<class T>
+class my_mdspan {
+
+  // 多引数添字演算子オーバーロード
+  template<class... IndexType>
+  constexpr T& operator[](IndexType...);
+
+  // 関数呼び出し演算子オーバーロード
+  template<class... IndexType>
+  constexpr T& operator()(IndexType...);
+
+  ...
+};
+```
+
+複数の引数を取ることができるようになると共に0個の引数でもオーバーロード可能になったため（すなわち引数の個数に関する制限が完全になくなった）、ユーザー定義添字演算子は関数呼び出し演算子と同じようにオーバーロードすることができ、その違いは見た目（`[]`と`()`）のみになります。
+
+Eigenなどの線形代数ライブラリの多次元行列型では添字演算子が引数1つでしかオーバーロードできなかったことから関数呼び出し演算子を代わりに要素アクセスに使用していたりしていました（もっと変なライブラリでは、カンマ演算子オーバーロードを活用していました）。C++23からは、そのような多次元配列型においても添字演算子を使用できるようになり、C++23の`std::mdspan`で早速活用されています。
+
+```cpp
+#include <mdspan>
+
+template<typename T>
+void print_mat(std::mdspan<T, std::extents<std::size_t, 3, 3>> mat33) {
+  for (int y : std::views::iota(0, 3)) {
+    for (int x : std::views::iota(0, 3)) {
+      // 多次元添字演算子による要素アクセス
+      std::cout << mat33[y, x];
+    }
+  }
+}
+```
+
+と言いますか、この提案のモチベーションの大きな部分は`std::mdspan`でこれを使用できるようにするためでした。
 
 ## static operator()
 
