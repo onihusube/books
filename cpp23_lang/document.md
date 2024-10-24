@@ -160,11 +160,79 @@ void print_mat(std::mdspan<T, std::extents<std::size_t, 3, 3>> mat33) {
 }
 ```
 
-と言いますか、この提案のモチベーションの大きな部分は`std::mdspan`でこれを使用できるようにするためでした。
+実のところ、この提案のモチベーションの大部分は`std::mdspan`でこれを使用できるようにすることにありました。
 
-## static operator()
+## static `operator()`
 
-https://wg21.link/P1169R4
+- P1169R4 static `operator()`(https://wg21.link/P1169R4)
+
+関数呼び出し演算子をオーバーロードする場合はクラスの非静的メンバ関数として定義する必要がありますが、非静的メンバ関数は暗黙に`this`引数を第一引数に取っています。これは、`callable(args...)`のように呼び出し可能オブジェクトに対して関数呼び出しを行う場合にいつも見えない`this`引数が一つ追加で渡されているということです。
+
+通常これは問題にはなりませんが、関数呼び出し演算子を定義するものの`this`に全く依存しない、ステートレスな呼び出し可能型を定義する場合、この暗黙の`this`引数の存在は避け難いオーバーヘッドとなり得ます。多くの場合最適化（インライン展開）によって削除されますが、最適化しきれない場合にはこのオーバーヘッドから逃れることができません。このことはゼロオーバーヘッド原則にも反しています。
+
+特に、C++20`<ranges>`のCPOやRangeアダプタの多くはステートレスな関数オブジェクトであり、その特性上ラッパ層のオーバーヘッドは可能な限り薄くしておく必要があります。
+
+そのため、C++23からは`operator()`のオーバーロードを`static`メンバ関数として定義できるようになります。
+
+```cpp
+template<typename T>
+struct eq_t {
+
+  // static operator()
+  static bool operator()(const T& l, const T& r) {
+    return l == r;
+  }
+};
+
+int main() {
+  eq_t<int> eq{};
+
+  bool b = eq(23, 23); // ok、static operator()が呼ばれる
+}
+```
+
+この`static`な`operator()`は完全に指定された数の引数しか取らず、暗黙の`this`引数はありません。そのため、最適化なしでも追加の引数渡しによるオーバーヘッドは無くなります。ただし当然のことながら、クラスの状態（非静的データメンバ）を読み取ることはできません。
+
+また、同時にラムダ式に対しても`static`指定が可能になり、ラムダ式のクロージャ型で定義される関数呼び出し演算子が`static`で定義されるようになります。
+
+```cpp
+int main() {
+  // ラムダ式の関数呼び出し演算子がstaticになる
+  auto add10 = [](std:integral auto n) static {
+    return n + 10;
+  }:
+
+  int m = add10(13);  // ok
+}
+```
+
+ラムダ式の`static`関数呼び出し演算子はこの`static`指定によって有効になるオプトインなもので、`static`無しのラムダ式はこれまで通り非`static`な関数呼び出し演算子を持ちます。
+
+ただし、この`static`指定を行えるのはキャプチャをしていない（ステートレスな）ラムダ式のみです。
+
+```cpp
+int main() {
+  const int b = 10;
+
+  // キャプチャをしているラムダ式はstatic指定できない
+  auto ng1 = [&](std:integral auto n) static  // ng
+  {
+    return n + b;
+  }:
+
+  // 初期化キャプチャでも不可
+  auto ng2 = [bias=b](std:integral auto n) static // ng
+  {
+    return n + bias;
+  }:
+}
+```
+
+### static `operator[]`
+
+- P2589R0 static `operator[]`(https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2589r0.pdf)
+
+
 
 # 定数式
 
