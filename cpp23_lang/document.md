@@ -228,11 +228,38 @@ int main() {
 }
 ```
 
-### static `operator[]`
+### static `operator[]` 
 
 - P2589R0 static `operator[]`(https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2589r0.pdf)
 
+前述のように、C++23の`operator[]`の`operator()`との違いは演算子の見た目以外にはありません。そのため、`operator()`と同様の理由で`operator[]`も`static`でオーバーロードできるようになります。
 
+```cpp
+template<typename T>
+struct eq_t {
+
+  // static operator()
+  static bool operator()(const T& l, const T& r) {
+    return l == r;
+  }
+
+  // static operator[]
+  static bool operator[](const T& l, const T& r) {
+    return l == r;
+  }
+};
+
+int main() {
+  eq_t<int> eq{};
+
+  bool b1 = eq(23, 23); // ok、static operator()が呼ばれる
+  bool b2 = eq[20, 23]; // ok、static operator[]が呼ばれる
+}
+```
+
+とはいえ`[]`の意味を考えるとあまり使用機会は多くないかもしれません。
+
+なお、提案分かれているのは`operator[]`の複数引数許可と`static operator()`が同時に進行していたためで、`static operator()`が議論されていた段階ではまだ`operatpr[]`はC++20までの仕様のままだったためです。
 
 # 定数式
 
