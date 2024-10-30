@@ -265,7 +265,123 @@ int main() {
 
 ## if consteval
 
-https://wg21.link/P1938R3
+- P1938R3 `if consteval`(https://wg21.link/P1938R3)
+
+C++20では`std::is_constant_evaluated()`によってコンパイル時に実行される文脈と実行時に実行される文脈を区別できるようになりました。しかし、この利用法にはいくつかの問題があります。
+
+まず1つは、`std::is_constant_evaluated()`を`if constexpr`と共に使用してしまう場合の問題です。このような利用法では常に`std::is_constant_evaluated()`は`true`を返すため、意図通りになりません。
+
+```cpp
+#include <type_traits>
+
+constexpr int f() {
+  if constexpr (std::is_constant_evaluated()) {
+    return 20;
+  } else {
+    return 0;
+  }
+}
+
+int main() {
+  // コンパイル時
+  constexpr int n = f();
+  // 実行時
+  int m = f();
+  
+  std::cout << n << '\n' << m << std::endl;
+  // 20
+  // 20
+}
+```
+
+`std::is_constant_evaluated()`はコンパイル時に呼び出されたときに`true`を返し実行時に呼び出されると`false`を返す関数、ではなく、コンパイル時に呼び出されることが確実な特定のコンテキストで呼ばれている場合に`true`を返す関数です（このことは2つ目の問題にも関わってきます）。`if constexpr`の条件式はそのコンテキストに該当するため、ここに書かれていると常に`true`を返します。
+
+これは誤用ですが理由を知らなければ気づき辛く、コンパイラも誤用を検出しづらいという点が問題でした。
+
+2つ目の問題は、`std::is_constant_evaluated()`を用いた分岐内で`consteval`関数を呼び出す場合の問題です。このような呼び出しは常にエラーとなっていました。
+
+```cpp
+consteval int f(int i) { return i; }
+
+constexpr int g(int i) {
+  if (std::is_constant_evaluated()) {
+      return f(i) + 1; // ng
+  } else {
+      return 42;
+  }
+}
+
+consteval int h(int i) {
+  return f(i) + 1;  // ok
+}
+```
+
+`consteval`関数は必ずコンパイル時に呼ばれる関数であり、コンパイル時に呼び出されない呼び出しはエラーとなります。しかし、`g()`は`h()`を実行時でも呼び出せるように変更しただけのもので、`consteval`関数`f()`は変わらずコンパイル時にしか実行されないコンテキストで呼ばれているので一見すると問題ないように見えます。
+
+しかし実際には`g()`内での`f(i)`の呼び出しはどこに書いたとしてもエラーになります。これは、`constexp`関数の引数が定数式として使用できないことによって起こるエラーですが、`consteval`関数の場合はその本体の全体がコンパイル時に呼び出されることが確実なコンテキストであるため、その制約を受けなくなっているためエラーになりません。
+
+`if (std::is_constant_evaluated()) {}`の`true`の分岐はそのようなコンテキストに無く、ライブラリ関数を呼び出している普通の`if`文であるためそのような特別扱いを望むことはできません。とはいえこのことも理由を知らなければなぜエラーになっているのかが分からず、その理由は難解です。
+
+C++23では`if (std::is_constant_evaluated())`のこれらの問題を解決するために、この構文糖衣である新しいタイプの`if`文である`if consteval`が追加されます。
+
+```cpp
+constexpr int f() {
+  if consteval {
+    return 20;  // コンパイル時の処理
+  } else {
+    return 0;   // 実行時の処理
+  }
+}
+```
+
+その効果は`if (std::is_constant_evaluated())`と同様であり、ただ短くなっただけに見えますが次のような違いがあります
+
+- `<type_traits>`のインクルードが必要ない
+- 構文が異なるため、誤用や誤解のしようがない
+    - `if constexpr`で間違って使用は起こり得ない
+    - コンパイル時に評価されているかをチェックする適切な方法についての混乱を完全に解消できる
+- `if consteval`を使用して`consteval`関数を呼び出すことができる
+
+まず1つ目の問題点が解消されていることはすぐに分かります。2つ目の問題点は、`if consteval`の`true`となるブロック（つまりコンパイル時に実行される方の分岐）の内部が必ずコンパイル時に実行されるコンテキストとして扱われることで、その内部で`consteval`関数の呼び出しがほぼ自由に行えるようになり、解消されます。
+
+```cpp
+constexpr int g(int i) {
+  if consteval {
+    // このブロック内は必ずコンパイル時に実行されるコンテキスト
+    return f(i) + 1; // ok
+  } else {
+    return 42;
+  }
+}
+```
+
+つまり、`if consteval`の`true`となるブロックは`consteval`関数本体内と同じ扱いを受けており、これによってこの内部からならば`constexpr`関数の引数も定数式として使用することができ、`consteval`関数がその引数を読み取ることができます。
+
+ちなみに、条件を反転させたい場合は`consteval`の前に`!`を入れます。このとき、代替トークンを使用することもできます。
+
+```cpp
+int f(int n) {
+  if !consteval {
+    // 実行時はこっちにくる
+    return 0;
+  }
+
+  // コンパイル時にこっちにくる
+  // この場合、コンテキストの特別扱いはない
+  ...
+}
+
+int f2(int n) {
+  // こう書いてもok
+  if not consteval {
+    // 実行時
+    return 0;
+  }
+
+  // コンパイル時
+  return 1;
+}
+```
 
 ## 定数式の文脈での bool への縮小変換を許可
 
