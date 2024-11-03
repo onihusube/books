@@ -437,13 +437,84 @@ int f() noexcept(g());  // 定数評価の結果bool値へ変換されるとエ�
 
 このような小さいながらも気づきにくいバグを防ぐために、定数式での文脈的な`bool`変換の際の縮小変換は禁止されました。その仕様変更（C++14～17のタイミング）は本来、`noexcept`式にだけ適用するつもりで`static_assert`でまで禁止するつもりはなかったようですが、その意図に反して両方で縮小変換が禁止されてしまい、その文言を踏襲する形で`constexpr if`でも禁止されてしまっていたようです。
 
+## 静的な診断メッセージの文字エンコーディング
+
+https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2246r1.pdf
+
+
 ## 定数式内での非リテラル変数、静的変数・スレッドローカル変数およびgotoとラベルの存在を許可する
 
 https://wg21.link/P2242R3
 
-## 静的な診断メッセージの文字エンコーディング
+`constexpr`関数内部では通常定数式で実行できなさそうなものは禁止されており、書かれているだけでコンパイルエラーになります。一方で、C++20では`std::is_constant_evaluated()`によってコンパイル時に呼ばれる文脈と実行時に呼ばれる文脈を分けて書くことができるようになり、1つの関数定義でコンパイル時と実行時の処理を一緒に書くことができるようになっています。
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2246r1.pdf
+```cpp
+template<typename T>
+constexpr bool f() {
+  if (std::is_constant_evaluated()) {
+    // .コンパイル時の処理
+    ...
+    return true;
+  } else {
+    T t;  // コンパイル時に評価されない
+    ...
+    return true;
+  }
+}
+
+struct nonliteral { nonliteral(); };
+
+static_assert(f<nonliteral>()); // ng（ただしエラーにしないコンパイラもある
+```
+
+この例では`T`がリテラル型ではない型（定数式で構築できない型）の場合コンパイルエラーを起こす場合があり（コンパイラによって異なる）、規格的にはエラーになるのが正しい動作となります。しかしこの場合、エラーになる文は実行時の文脈に書かれており、コンパイル時に実行されることはありません。
+
+`std::is_constant_evaluated()`を活用することでコンパイル時と実行時で関数の実装をより共有することができ、C++20ではそれを促進するために`constexpr`関数において`throw`式やインラインアセンブリが書かれていてもコンパイル時にそこに到達しなければエラーにしないようになりました。
+
+C++23ではそれがさらに促進され、`constexpr`関数に定数式で構築できない変数の宣言や静的ストレージ期間を持つ変数の宣言、および`goto`文やそのラベルが書かれていてもそこに到達しなければエラーにならなくなりました。
+
+```cpp
+template<typename T>
+constexpr bool f() {
+  if (std::is_constant_evaluated()) {
+    // .コンパイル時の処理
+    ...
+    return true;
+  } else {
+    T t;  // ok、常にエラーにならない
+    ...
+    return true;
+  }
+}
+
+constexpr int example1(int n) {
+  if (23 <= n) {
+    static int v = n;   // ok（コンパイル時に到達しなければ
+    thread_local t = n; // ok（コンパイル時に到達しなければ
+
+    return v + t;
+  }
+
+  return n;
+}
+
+constexpr int example2(int n) {
+  int result = n;
+
+  if (!std::is_constant_evaluated()) {
+    // 実行時の処理
+    ...
+    goto label; // ok
+  }
+
+  // コンパイル時の処理
+  ...
+
+label:  // ok、コンパイル時に通過する場合もエラーにならない
+
+  return result;
+}
+```
 
 ## constexpr 関数が定数実行できない場合でも適格とする
 
