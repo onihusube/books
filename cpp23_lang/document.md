@@ -267,9 +267,9 @@ int main() {
 
 - P1938R3 `if consteval`(https://wg21.link/P1938R3)
 
-C++20では`std::is_constant_evaluated()`によってコンパイル時に実行される文脈と実行時に実行される文脈を区別できるようになりました。しかし、この利用法にはいくつかの問題があります。
+C++20では`std::is_constant_evaluated()`によってコンパイル時に実行される文脈と実行時に実行される文脈を区別できるようになりました。しかし、この関数の利用時にはいくつか注意点があります。
 
-まず1つは、`std::is_constant_evaluated()`を`if constexpr`と共に使用してしまう場合の問題です。このような利用法では常に`std::is_constant_evaluated()`は`true`を返すため、意図通りになりません。
+まず1つは、`std::is_constant_evaluated()`を`constexpr if`と共に使用してしまう場合の注意点です。この場合は常に`std::is_constant_evaluated()`は`true`を返すため、意図通りになりません。
 
 ```cpp
 #include <type_traits>
@@ -294,11 +294,11 @@ int main() {
 }
 ```
 
-`std::is_constant_evaluated()`はコンパイル時に呼び出されたときに`true`を返し実行時に呼び出されると`false`を返す関数、ではなく、コンパイル時に呼び出されることが確実な特定のコンテキストで呼ばれている場合に`true`を返す関数です（このことは2つ目の問題にも関わってきます）。`if constexpr`の条件式はそのコンテキストに該当するため、ここに書かれていると常に`true`を返します。
+`std::is_constant_evaluated()`はコンパイル時に呼び出されたときに`true`を返し実行時に呼び出されると`false`を返す関数、ではなく、コンパイル時に呼び出されることが確実な特定のコンテキストで呼ばれている場合に`true`を返す関数です（このことは2つ目の問題にも関わってきます）。`constexpr if`の条件式はそのコンテキストに該当するため、ここに書かれていると常に`true`を返します。
 
 これは誤用ですが理由を知らなければ気づき辛く、コンパイラも誤用を検出しづらいという点が問題でした。
 
-2つ目の問題は、`std::is_constant_evaluated()`を用いた分岐内で`consteval`関数を呼び出す場合の問題です。このような呼び出しは常にエラーとなっていました。
+2つ目の注意点は、`std::is_constant_evaluated()`を用いた分岐内で`consteval`関数を呼び出す場合の問題です。このような呼び出しは常にエラーとなっていました。
 
 ```cpp
 consteval int f(int i) { return i; }
@@ -338,7 +338,7 @@ constexpr int f() {
 
 - `<type_traits>`のインクルードが必要ない
 - 構文が異なるため、誤用や誤解のしようがない
-    - `if constexpr`で間違って使用は起こり得ない
+    - `constexpr if`で間違って使用は起こり得ない
     - コンパイル時に評価されているかをチェックする適切な方法についての混乱を完全に解消できる
 - `if consteval`を使用して`consteval`関数を呼び出すことができる
 
@@ -383,9 +383,59 @@ int f2(int n) {
 }
 ```
 
-## 定数式の文脈での bool への縮小変換を許可
+## 一部の定数式の文脈での `bool` への縮小変換を許可
 
-https://wg21.link/P1401R5
+- P1401R5 Narrowing contextual conversions to bool(https://wg21.link/P1401R5)
+
+定数式においては整数型から`bool`型への縮小変換は禁止されており、それが行われるとコンパイルエラーになります（ただし、整数値が`0`か`1`の場合は縮小変換にならないためエラーにはなりません）。特に、`static_assert`や`constexpr if`の条件式においてもこれはエラーにされていました
+
+```cpp
+enum Flags { Write = 1, Read = 2, Exec = 4 };
+
+template <Flags flags>
+int f() {
+  if constexpr (flags & Flags::Exec) // 縮小変換が起きるとコンパイルエラー
+  // if constexpr (bool(flags & Flags::Exec)) とするとok
+    return 0;
+  else
+    return 1;
+}
+
+template <std::size_t N>
+class Array {
+  static_assert(N, "no 0-size Arrays"); // 縮小変換が起きるとコンパイルエラー
+  // static_assert(N != 0); とするとok
+
+  // ...
+};
+
+int main() {
+  int n = f<Flags::Exec>();  // ng
+  Array<16> a;  // ng
+}
+```
+
+このような条件式における整数型から`bool`への縮小変換は実行時のアサーションや`if`文では普通に行われており、コンパイルエラーも実行時エラーも起こさずに行うことができます。このことは、実行時とコンパイル時で条件式を記述する際に余分に注意しなければならず、一貫性がありませんでした。
+
+そのため、C++23では`static_assert`や`constexpr if`の条件式に限って整数型から`bool`型への縮小変換が許可されます。これにより先程のサンプルコードは修正なしでコンパイルが通るようになり、なおかつ意図通りに動作します。
+
+ただし、これ以外の文脈（例えば`explicit(expr)`や`noexcept(expr)`など）では引き続き許可されず、`1`か`0`からの変換しか行えません。
+
+余談ですが、そもそも`static_assert`や`constexpr if`の条件式でさえも`bool`への縮小変換が禁止されていたのは、`noexcept`式での縮小変換を禁止した時に巻き込まれてしまったためのようです。
+
+関数`f()`の例外仕様が別の関数`g()`と同じ（あるいはそれに従う）場合、`noexcept`を2つ重ねて書く必要があります。しかし、その場合に書き間違えて関数名だけを書いたり、1つにしてしまって`g()`が`constexpr`関数だったりすると思わぬバグを生みます。
+
+```cpp
+// int型を返す関数がある
+constexpr int g() noexcept(...) { ... }
+
+int f() noexcept(noexcept(g()));  // 書きたいこと、noexcept指定の中にnoexcept式を書く
+
+int f() noexcept(g);    // 関数ポインタからの暗黙変換、エラーにならない
+int f() noexcept(g());  // 定数評価の結果bool値へ変換されるとエラーにならない
+```
+
+このような小さいながらも気づきにくいバグを防ぐために、定数式での文脈的な`bool`変換の際の縮小変換は禁止されました。その仕様変更（C++14～17のタイミング）は本来、`noexcept`式にだけ適用するつもりで`static_assert`でまで禁止するつもりはなかったようですが、その意図に反して両方で縮小変換が禁止されてしまい、その文言を踏襲する形で`constexpr if`でも禁止されてしまっていたようです。
 
 ## 定数式内での非リテラル変数、静的変数・スレッドローカル変数およびgotoとラベルの存在を許可する
 
