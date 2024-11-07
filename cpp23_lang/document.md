@@ -680,7 +680,37 @@ struct S2 {
 
 ## constexpr 関数内での static constexpr 変数を許可
 
-https://wg21.link/P2647R1
+- P2647R1 Permitting `static constexpr` variables in `constexpr` functions(https://wg21.link/P2647R1)
+
+まず、次のような関数を持っているとします。
+
+```cpp
+// 数値を文字に変換する
+char xdigit(int n) {
+  static constexpr char digits[] = "0123456789abcdef";  // ok
+  return digits[n];
+}
+```
+
+この関数は16進数1桁の整数値を対応する英数文字に変換する関数であり、正しく動作します。この関数を定数式でも使用したくなったので、単純に`constexpr`を付加することにしました。
+
+```cpp
+constexpr char xdigit(int n) {
+  // constexpr関数内でstatic変数を宣言できないためエラー
+  static constexpr char digits[] = "0123456789abcdef";  // ng
+  return digits[n];
+}
+```
+
+すると、途端にコンパイルが通らなくなります。
+
+これを正しく回避しようとすると、名前空間（グローバル）スコープに`static constexpr`変数を置いておくか、別の`consteval`関数で定数を返すようにするなどの冗長なワークアラウンドを取らざるを得なくなります。なお、単に`static`を外せばコンパイル時に動作するようにはなりますが、今度は実行時の最適化が困難になる場合があるようで、それを考慮したワークアラウンドはこのような配列をローカルの`constexpr`変数として導入しないようにするものになります。
+
+この制限は`constexpr`関数内で`static`変数の宣言が禁止されていることによってエラーになっています。これは、`static`変数の初期化にまつわる問題（副作用や初期化順序など）を定数式に持ち込まないために禁止されていました。
+
+しかし、`static constexpr`変数の初期化のタイミングは非`constexpr`の静的変数とは異なりコンパイル時に行われるため、`static constexpr`変数には通常の`static`（`thread_local`）変数にあるような初期化の問題は生じません。そのため、C++23ではこの制限が取り払われ、`constexpr`（`consteval`）関数内で`static constexpr`変数が意図通りに使用できるようになります。これにより、上記のコードはそのままコンパイルが通り実行時とコンパイル時の両方で実行できるようになります。
+
+なお、前節の変更によって、非`constexpr`な`static`（`thread_local`）変数も、`constexpr`関数内でコンパイル時にその初期化に到達しない限り宣言しておくことはできます。
 
 ## constexpr 関数内で consteval 関数を呼び出せない問題を軽減
 
