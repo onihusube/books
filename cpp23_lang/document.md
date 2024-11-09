@@ -714,14 +714,30 @@ constexpr char xdigit(int n) {
 
 ## constexpr 関数内で consteval 関数を呼び出せない問題を軽減
 
-https://wg21.link/P2564R0
-
+https://wg21.link/P2564R3
 
 # テンプレート
 
 ## 変数テンプレートの部分特殊化の仕様明確化
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2096r2.html
+- P2096R2 Generalized wording for partial specializations(https://wg21.link/P2096R2)
+
+変数テンプレートはC++14で導入された機能です。その仕様はクラステンプレートの仕様を踏襲する形で規定されていましたが、そのために変数テンプレートの仕様は分かりづらく、特に部分特殊化についてが曖昧でした。
+
+C++23ではこの仕様が改善され、変数テンプレートの仕様が明確化されるとともに、変数テンプレートにおいても部分特殊化が使用可能であることが明確化されました。
+
+```cpp
+// 変数テンプレートによるis_sameメタ関数の実装例
+
+template<typename T, typename U>
+inline constexpr bool is_same_v = false;
+
+// T == Uの時の部分特殊化
+template<typename T>
+inline constexpr bool is_same_v<T, T> = true;
+```
+
+ただし、これによって変数テンプレートでできることが増えたわけではありません。変数テンプレートの部分特殊化はC++14から可能です。
 
 ## 継承コンストラクタからのクラステンプレート引数の推論
 
