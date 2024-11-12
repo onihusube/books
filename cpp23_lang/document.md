@@ -942,7 +942,35 @@ int main() {
 
 ## 文字・文字列リテラル中の数値・ユニバーサルキャラクタのエスケープに関する問題解決
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2029r4.html
+- P2029R4 Proposed resolution for core issues 411, 1656, and 2333; numeric and universal character escapes in character and string literals(https://wg21.link/P2029R4)
+
+この提案は、文字（列）リテラル中での数値エスケープ文字（`'\xc0'`）やユニバーサル文字名（`"\u000A"`）の扱いに関する3つのIssueの解決のためのものです。
+
+
+- [Core Issue 411: Use of universal-character-name in character versus string literals](http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#411)
+    - ユニバーサル文字名の実行時文字集合へのエンコーディングの規定が矛盾している問題
+    - [「文字列リテラル中のユニバーサル文字名は文字リテラルのそれと同じ意味を持つ。文字列リテラルでは、ユニバーサル文字名はマルチバイトエンコーディングのために複数の文字要素に対応することがある」](https://timsong-cpp.github.io/cppwp/n4861/lex.string#13)とある一方で、[「ユニバーサル文字名は単一の`char`にエンコードされ、対応する`char`値がなければ実装定義の値にエンコーディングされる」](https://timsong-cpp.github.io/cppwp/n4861/lex.ccon#8)と規定されており、この2文が矛盾している
+    - 例えば実行時文字集合がUTF-8である時、[`U+0153`](https://www.compart.com/en/unicode/U+0153)は文字リテラルとしてどうエンコードされるのかが曖昧
+- [Core Issue 1656: Encoding of numerically-escaped characters](http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#1656)
+    - 数値エスケープ文字の値を解釈するためのエンコードがソースコードのエンコーディングなのか、実行時エンコーディングなのかが指定されていない問題
+    - ソースエンコーディングがLatin-1である時、`u8"\xff"`は[`U+00FF`](https://www.compart.com/en/unicode/U+00FF)としてエンコードされるのか、単に最初のバイトが`0xff`である2バイト文字にエンコードされるのかが曖昧（いくつかの実装は後者のようにエンコードする）
+- [Core Issue 2333: Escape sequences in UTF-8 character literals](http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#2333)
+    - UTF-8文字（列）リテラル中での数値エスケープ文字の扱いが不明瞭であり、未定義動作に陥っている問題
+    - ただし、主要3実装はUTF-8リテラル中での数値エスケープ文字使用を許可している
+
+それぞれについて次のように振る舞いを明確化しています
+
+- Core Issue 411
+    - 単一の文字として表現できないユニバーサル文字名のエンコーディングは文字リテラルと文字列リテラルで異なる振る舞いをする、と規定する
+    - 例えば実行時文字集合がUTF-8である時、`'\u0153'`は（サポートされる場合）`int`型の実装定義の値を持つが、`"\u0153"`は`\xC5\x93\x00`の長さ3の文字配列となる
+- Core Issue 1656
+    - 数値エスケープ文字のエンコードは実行時文字集合であると明確化する
+    - 結果、数値エスケープ文字の値はソースファイルの文字コードの値として実行時文字集合の値へ変換されることはない（常に実行時文字集合のコードポイントを表す）
+    - `u8"\xff"`は`U+00FF`としてUTF-8エンコードされる
+- Core Issue 2333
+    - UTF-8リテラル中での数値エスケープ文字使用には価値があるので、明確に振る舞いを規定する
+
+なお、これらの修正は既存のコンパイラの振る舞いをベースに行われたため、ほとんどの場合これによって動作が変わることはないはずです（MSVCは一部影響があるとのこと）。
 
 ## 1ワイド文字に収まらないワイド文字リテラルを禁止する
 
