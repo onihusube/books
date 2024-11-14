@@ -1099,8 +1099,8 @@ const char32_t ng3 = U'\N{THINKING  FACE}';
 C++23では、これらのものがある場合でも引数無しラムダ式の`()`を省略できるようになります。これにより、先程のng例は全てそのままエラーにならなくなります。
 
 ```cpp
-// ok（外側で型名Tが利用可能であるとする（呼ぶとUB
-[]<typename U = T> requires std::integral<U> [[noreturn]] static constexpr noexcept -> bool
+// ok（外側で型名Tが利用可能であるとする
+[]<typename U = T> requires std::integral<U> [[nodiscard]] static constexpr noexcept -> bool
 { 
   return true;
 };
