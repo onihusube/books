@@ -1259,9 +1259,35 @@ if ('A' == 0x41){}
 
 このコードは現存するおそらく全てのコンパイラで意図通りに動作していますが、規格的には前述のように保証がありませんでした。C++23からは規定を修正することでこのようなコードが正しく意図通りに動作することを保証します。
 
-## elif / elifdef / elifndef のサポートを追加
+##  `elifdef` / `elifndef`ディレクティブの追加
 
-https://wg21.link/P2334R1
+- P2334R1 Add support for preprocessing directives elifdef and elifndef(https://wg21.link/P2334R1)
+
+`#ifdef/#ifndef`は`#if defined(macro_name)/#if !defined(macro_name)`の糖衣構文として随分前から利用可能ですが、`#elif defined(macro_name)/#elif !defined(macro_name)`に対応する糖衣構文はありません。
+
+これは使用可能なディレクティブが一貫していなかったとして、C++23からは`#elif`にも`#ifdef/#ifndef`に対応した糖衣構文`#elifdef/#elifndef`が追加されます。
+
+```cpp
+#ifdef M1
+...
+#elif defined(M2)
+...
+#elif !defined(M3)
+...
+#endif
+
+// ↑が↓こう書ける
+
+#ifdef M1
+...
+#elifdef(M2)
+...
+#elifndef(M3)
+...
+#endif
+```
+
+これらのプリプロセッシングディレクティブはまた、C23でも利用可能になっています。
 
 ## #warning のサポートを追加	
 
