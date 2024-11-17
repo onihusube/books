@@ -1324,9 +1324,175 @@ C++23からは、規格に適合するコンパイラはソースファイルの
 
 # その他
 
-## decay-copy
+## decay-copyキャスト
 
-https://wg21.link/P0849R8
+- P0849R8 `auto(x)`: decay-copy in the language(https://wg21.link/P0849R8)
+
+ある値を即席でコピーしたい場合はたまにあります。その場合元の型名で新しく変数を宣言してコピーしたい値で初期化するか、あるいは`auto`変数で同様の事をするのが簡単です。
+
+```cpp
+template<typename T>
+void f(T v) {
+  auto copy{v}; // コピーする
+  T copy{v};  // こうでもいい
+}
+```
+
+しかし、コピー後の値をすぐに他の関数に渡したい場合など、コピー用の変数をわざわざ宣言したくはない場合もあります。その場合、型名が分かっていればその型名でキャストすることで即席コピーを式として記述することができます。
+
+```cpp
+void other(auto&&);
+
+template<typename T>
+void f(T v) {
+  other(T{v});  // コピーして渡す
+}
+```
+
+しかし、この場合に型名が分かっていなかったらどうすればいいのでしょう。例えばこの`v`のメンバ関数の返す値をコピーしたい場合や、テンプレートパラメータが`T&&`で宣言されていることで`T`が素の型名を表さない場合などが考えられます。
+
+```cpp
+void other(auto&&);
+
+template<typename T>
+void f(T&& v) {
+  // コピーして渡したい、が・・・
+  other(T{v});      // Tが参照型の場合がある
+  other(v.front()); // front()の戻り値型はTと異なる
+}
+```
+
+このような場合にはコピー対象の値の型を`decltype()`で取得したうえで、それを`decay`（`remove_cvref`）することで素の型を取得するしかありません。
+
+```cpp
+void other(auto&&);
+
+template<typename T>
+void f(T&& v) {
+  using U1 = std::remove_cvref_t<T>;
+  other(U1{v}); // コピーして渡す
+
+  using U2 = std::decay_t<decltype(v.front())>;
+  other(U2{v.front()}); // コピーして渡す
+}
+```
+
+C++23ではこの即席コピーを行う新しい形式のキャスト式として、`auto(x)`の形のキャストが利用できるようになります。
+
+```cpp
+void other(auto&&);
+
+template<typename T>
+void f(T&& v) {
+  // 共に、コピーした結果を渡す
+  other(auot{v});
+  other(auto(v.front()));
+}
+```
+
+この効果は最初の例の`T{v}`の形のキャストと同じです。
+
+`auto(x)`形式のキャストにおいては`auto t(x);`の様に変数を宣言した場合における型`T`が推論され、`auot(x)`の`auto`がその型で置き換えられて`T(x)`のキャストとして実行されています。
+
+この場合の推論で得られるような型（元の型から参照・CV修飾を取り除く+配列型・関数型はポインタ型へ変換）の事をdecayされた型、あるいはこのような型の調整の事をdecayと呼び、先程からやろうとしていた`T(x)`のようなコピーの事をdecay-copyと呼びます。
+
+`auot(x)`のキャスト式はその推論された型`T`に対して`T(x)`と等価であり、これらの式の結果は`T`のprvalueとなります。入力の値`x`が左辺値であればキャスト結果は`x`をコピーしたprvalueとなり、`x`が右辺値の場合はムーブされ、さらに`x`がprvalueならばコピー省略によって`auto`によるキャスト式そのものではコピーもムーブも起こりません。
+
+```cpp
+auto f() -> std::string;
+auto g() -> const std::string&;
+
+int main() {
+  std::vector vec = {1, 2, 3, 4};
+
+  auto v1 = auto(vec);  // ok、コピー
+  auto v2 = auto(std::move(vec)); // ok、ムーブ
+  auto s1 = auto(f());  // ok、コピー省略
+  auto s2 = auto(g());  // ok、コピー
+}
+```
+
+decay-copyというかdecayにおいては、配列型と関数型は対応するポインタ型へ変換されるため、`auto(x)`も`x`がそのどちらかの型の値の場合は単純なコピーにはならないことに注意が必要です。
+
+```cpp
+auto f(int) -> std::size_t;
+
+int main() {
+  int a[5]{};
+
+  // 配列型、関数型の場合は対応するポインタ型のprvalueへキャスト
+  auto* p1 = auto(a);
+  auto* p2 = auto(f);
+}
+```
+
+なお、`auto(x)`と`auto{x}`はどちらも同じ意味になります。
+
+```cpp
+template<typename T>
+void f(T x) {
+  // この4つは同じ意味
+  auto(x);
+  T(x);
+  auto{x};
+  T{x};
+}
+```
+
+この`auto`キャストが有用なのは、先述のようにコピー対象の素の型`T`が素直に得られず一時変数を作りたくない場合においてです。また、コピー対象の型名が長かったりする場合の短縮構文としても有効です。さらには、少し長くなったとしても`T(x)`の形よりも`auto(x)`の方が専用構文として一貫性が高く、decay-copyをするという意図が明確になります。
+
+```cpp
+class very_long_name_my_class {
+  ...
+};
+
+auto f(const auto&) {
+  ...
+}
+
+int main() {
+  very_long_name_my_class v{};
+  int n = 10;
+  long double l = 1.0;
+
+  // vをコピーしてfに渡したい場合
+  f(very_long_name_my_class(v));  // ok
+  f(int(n));          // ok
+  f(long double(l));  // ng
+
+  f(auto(v)); // ok
+  f(auto(n)); // ok
+  f(auto(l)); // ok
+}
+```
+
+### コンセプトにおける利用について
+
+ある型のdecayされた型を取る場合には`decay_t`や`remove_cvref_t`等のメタ関数を使用することになりますが、これは書いてみると結構長く、ただでさえ複雑になりがちなテンプレートのコードの可読性を低下させます。このような場合に`auto`キャストを使用すると`decltype(auto(x))`でそれが取れるので、（短くはなりませんが）少しだけ見やすくなります。
+
+さらには、このことは型が推論されるコンセプトの文脈においてより有用となります。
+
+例えば、ある関数が`bool`型を返すことをチェックしたい場合で、`bool`そのものでなくてもよい（`const bool`や`bool&`でもよい）ものの`bool`に変換可能な型は弾きたい、という場合に`requires`式の戻り値型制約を使用して正しく記述することはできず、`std::same_as<std::remove_cvref_t<std::invoke_result_t<F>>, bool>;`のような制約式を書く必要があります。
+
+この場合に`auto`キャストを用いるとその意図を簡潔に表現できるようになります。
+
+```cpp
+// Fは引数なしで呼び出し可能であり、bool型を返してほしい
+template<typename F>
+concept returning_bool = 
+  std::invocable<F> and
+  requires(F& f) {
+    {f()} -> std::convertible_to<bool>; // bool型を返すという意味になっていない
+    {f()} -> std::same_as<bool>;        // bool&などが弾かれる
+    {auto(f())} -> std::same_as<bool>;  // bool+修飾な型まで受け入れる
+  };
+```
+
+この戻り値型制約（および他のところでコンセプトの第一引数の自動補完が働く場所）においては、コンセプトの第一引数には`decltype((expr))`が充てられます。例えば上記の`requires`内1つ目の制約の場合、`std::convertible_to<decltype((f())), bool>`という制約がチェックされますが、`decltype((expr))`で取得していることによって`expr`の値カテゴリの情報が含まれることになります。
+
+この場合にその修飾情報を無視した素の型をチェックするのは意外に難しく（`decay_t`したり`remove_cvref_t`したりする必要がある）、戻り値型制約の利用は諦めざるを得なくなりますが、`auto(x)`を使用することで型の`decay`（`std::remove_cvref_t`）を式としてスマートに記述することができるようになります。
+
+ただし、`auto(x)`によって戻り値のコピーが入る場合があるので若干制約の意味は異なることになるのでその点に注意が必要ではあります。
 
 ## size_t リテラルのためのサフィックス
 
