@@ -1259,7 +1259,7 @@ if ('A' == 0x41){}
 
 このコードは現存するおそらく全てのコンパイラで意図通りに動作していますが、規格的には前述のように保証がありませんでした。C++23からは規定を修正することでこのようなコードが正しく意図通りに動作することを保証します。
 
-##  `elifdef` / `elifndef`ディレクティブの追加
+## `elifdef` / `elifndef`ディレクティブの追加
 
 - P2334R1 Add support for preprocessing directives elifdef and elifndef(https://wg21.link/P2334R1)
 
@@ -1291,7 +1291,26 @@ if ('A' == 0x41){}
 
 ## #warning のサポートを追加	
 
-https://wg21.link/P2437R1
+- P2437R1 Support for #warning(https://wg21.link/P2437R1)
+
+プリプロセス時に警告を表示させるディレクティブである`#warning`は非標準ながらもほとんど同じセマンティクスの下で主要なコンパイラで実装されていました。C++23ではこれを標準化することで、合法的にポータブルに使用することができます。
+
+```cpp
+// コンセプトの利用可否
+#if __has_include(<concepts>)
+  #include <concpets>
+#else
+  // コンセプトが利用できない場合はSFINAEでエミュレートする
+  #warning Emulate with SFINAE because <concepts> does not exist
+
+  #include <type_traits>
+  ...
+#endif
+```
+
+`#warning`は構文的には`#error`と全く同様に利用できますが、`#warning`は実行されてもコンパイルが停止せず警告が表示されるのみです。
+
+なおこれはC23でも利用可能になっています。
 
 ## 汎用的なソースコードのエンコーディングとしてUTF-8をサポート
 
