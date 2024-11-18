@@ -1494,9 +1494,28 @@ concept returning_bool =
 
 ただし、`auto(x)`によって戻り値のコピーが入る場合があるので若干制約の意味は異なることになるのでその点に注意が必要ではあります。
 
-## size_t リテラルのためのサフィックス
+## P0330R8 Literal Suffix for (signed) size_t(https://wg21.link/P0330R8)
 
-https://wg21.link/P0330R8
+C++17まで、`unsigned long long`等を得るためのリテラルは存在していましたが、`std::size_t`を直接得るものはありませんでした。C++23からは、新しい整数リテラルのサフィックスとして`z`が追加され、`uz`のように指定することで`std::size_t`型の整数リテラルを使用できるようになります。
+
+```cpp
+// size_tが64bit符号なし整数型である場合
+std::signed_itegral auto n1 = 20z;   // ok、int64_t相当の型
+std::signed_itegral auto n2 = 20Z;   // ok、同上
+std::same_as<size_t> auto n3 = 23uz  // ok、size_t
+std::same_as<size_t> auto n4 = 20UZ; // ok、同上
+```
+
+`z, Z`リテラルは整数にのみ使用可能で、単体で指定すると`std::size_t`に対応する符号付整数型の値を返し、`u, U`とともに指定すると`std::size_t`型の値を返します。なお、`u, U`と`z, Z`の組み合わせは自由であり、大文字小文字や順番の制限はありません。
+
+```cpp
+const std::size_t size = ...;
+
+auto clamp1 = std::max(0, std::min(size, 100));     // ng
+auto clamp2 = std::max(0uz, std::min(size, 100uz)); // ok
+```
+
+`std::max/min`は2つの引数が同じ型であることを要求するため`clamp1`はエラーになります（`std::min(size, 100)`は`int`と`std::size_t`を渡している）が、`uz`リテラルを使用することで整数リテラルの型をすべて`std::size_t`で揃えることができるようになります。
 
 ## 暗黙ムーブを簡略化
 
