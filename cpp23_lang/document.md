@@ -1569,11 +1569,25 @@ int divide_by_32(int x) {
 
 ## 初期化文での型の別名宣言を許可
 
-https://wg21.link/P2360R0
+- P2360R0: Extend init-statement to allow alias-declaration(https://wg21.link/P2360R0)
+
+C++17で`if switch`、C++20で範囲`for`の構文が拡張され、それぞれの内部に初期化文（*init-statement*）を書けるようになりました。しかし、そこには通常の変数の初期化宣言の他に`typedef`宣言も書くことができますが、なぜか`using`は書けません。
+
+C++23では、`using/typedef`の一貫性を向上させるために、それらの初期化文内で`using`によるエイリアス宣言を書けるようにする提案です。
+
+```cpp
+// C++20からok
+for (typedef int T; T e : v) { ... }
+
+// C++23からok
+for (using T = int; T e : v) { ... }
+```
+
+これができなかったのは単に文法の指定漏れだったようで、これはそれを修正するものです。おそらくこう書きたいという事はあまりないでしょう…。
 
 ## 範囲for文が範囲初期化子内で生じた一時オブジェクトを延命することを規定
 
-https://wg21.link/P2718R0
+- https://wg21.link/P2718R0
 
 ## 拡張不動小数点型のサポート
 
