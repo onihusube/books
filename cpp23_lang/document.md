@@ -1587,7 +1587,116 @@ for (using T = int; T e : v) { ... }
 
 ## 範囲for文が範囲初期化子内で生じた一時オブジェクトを延命することを規定
 
-- https://wg21.link/P2718R0
+- P2718R0 Wording for P2644R1 Fix for Range-based for Loop(https://wg21.link/P2718R0)
+- P2644R0 Final Fix of Broken Range‐based for Loop,Rev 0(https://wg21.link/P2644R0)
+- 
+
+範囲`for`には長らく、オブジェクト生存期間にまつわる気づきにくいバグが存在していることが知られていました。
+
+```cpp
+// どこかで定義されているとして
+auto f() -> std::vector<std::string>;
+
+int main() {
+  // ok
+  for (auto&& str : f()) {
+    std::cout << str << '\n';
+  }
+
+  // UB 💀
+  for (auto&& c : f().at(0)) {
+    std::cout << c << ' ';
+  }
+}
+```
+
+`f()`は`std::string`を要素に持つ`std::vector`の値（右辺値）を返す関数です。その戻り値は一時オブジェクトであるので、値として受けるか`auto&&`で受けるなどして寿命を延長する必要があります。範囲`for`文でもそれは行われるので、最初の`for`文は問題ありません。
+
+ところが、2つ目の`for`文は`f()`の戻り値からその要素を引き出しています。ここで問題なのは要素数が不明なことではなく、`f().at()`の戻り値は*lvalue*（`std::string&`）であり、範囲`for`はこの結果のオブジェクトだけを保存してループを廻してくれます。その結果、`f()`の直接の戻り値は`f().at(0)`の後で捨てられ、当然ここから取得した`std::string&`の参照はダングリング参照となります。そして、ダングリング参照のあらゆる利用は未定義動作です。
+
+これを回避するためには、このような関数の直接の戻り値を初期化宣言で受けていくなどしなければなりません。
+
+```cpp
+int main() {
+  // ok
+  for (auto tmp = f(); auto&& c : tmp.at(0)) {
+    std::cout << c << ' ';
+  }
+}
+```
+
+この問題は範囲`for`という簡易な構文に覆い隠されていることによってその問題の深刻さをいや増しています。範囲`for`の仕様をよく知らない場合はこの問題に気付くことはできないでしょうし、この問題を知っていても問題の起こる場所が範囲`for`に隠されていることによって気づき辛くなります。
+
+C++23ではこの問題が解決され、範囲`for`のイテレート対象の初期化の式内で作成されたすべての一時オブジェクトの寿命は範囲`for`文の完了（ループ終了）まで延長されるようになります。これにより、以前にUBだったコードはそのままコンパイラの言語バージョンを上げるだけであんぜんになります。
+
+```cpp
+// どこかで定義されているとして
+auto f() -> std::vector<std::string>;
+
+int main() {
+  // ok
+  for (auto&& str : f()) {
+    std::cout << str << '\n';
+  }
+
+  // ok、C++23から
+  for (auto&& c : f().at(0)) {
+    std::cout << c << ' ';
+  }
+}
+```
+
+### UBが起きていた理由
+
+範囲`for`文はシンタックスシュガーであり、その実態は通常の`for`文によるコードへ展開される形で実行されます。
+
+例えば、規格においては範囲`for`の構文は次のように規定されています
+
+```
+for ( init-statement(opt) for-range-declaration : for-range-initializer ) statement
+```
+
+`init-statement`は`for`の初期化宣言で`(opt)`は省略可能であることを表します。
+
+`for-range-declaration`は`for(auto&& v : r)`の`auto&& v`の部分で、`for-range-initializer`は`r`の部分です。残った`statement`は`for`文の本体です。
+
+そして、これは次のように展開されて実行されます
+
+```
+{
+	init-statement(opt)
+
+	auto &&range = for-range-initializer ;  // イテレート対象オブジェクトの保持
+	auto begin = begin-expr ; // std::begin(range)相当
+	auto end = end-expr ;     // std::end(range)相当
+	for ( ; begin != end; ++begin ) {
+		for-range-declaration = * begin ;
+		statement
+	}
+}
+```
+
+つまり、イテレータを使った通常の`for`ループに書き換えているわけです。そして、問題は展開後ブロック内の3行目にあります。
+
+```cpp
+auto &&range = for-range-initializer ;
+```
+
+この式では、`auto&&`で範囲`for`のイテレート対象オブジェクトを受けており、これによって左辺値も右辺値も同じ構文で受けられ、なおかつ右辺値に対しては寿命延長がなされます。ここに先程の`for`文から実際の式をあてはめてみてみましょう。
+
+```cpp
+// 1つ目のforから
+auto &&range = f() ;  // ok
+
+// 2つ目のforから
+auto &&range = f().at(0) ;  // UB💀
+```
+
+2つ目の初期化式の何が問題なのかというと、変数`range`に受けられているのは`f().at(0)`の戻り値（`std::string&`）であって、`f()`の直接の戻り値であり`.at(0)`で取り出した`std::string`の本体を所有するオブジェクト（`std::vector<std::string>`）はどこにも受けられていないからです。
+
+このような一時オブジェクトの寿命はこの初期化文の終わりの`;`で終了し、破棄されます。すなわち、この2つ目の初期化式では`f()`の戻り値の寿命はこの行で尽き、そこから取り出されたすべての参照はダングリング参照となります。
+
+C++23からは、ちょうどここの`for-range-initializer`で生じた一時オブジェクトの寿命が、このような展開後の一番外側のブロックの終了まで延長されることでループの間安全に利用することができるようになっています。
 
 ## 拡張不動小数点型のサポート
 
