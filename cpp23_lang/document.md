@@ -1716,7 +1716,24 @@ P1787R6: Declarations and where to find them(https://wg21.link/P1787R6)
 
 ## 複合文の末尾へのラベルを許可
 
-https://wg21.link/P2324R2
+- P2324R2 Labels at the end of compound statements (C compatibility)(https://wg21.link/P2324R2)
+
+複合分（*compound statement*）と呼ばれる構文要素（おおよそブロックのこと）の内部にはラベルを置くことができますが、実はブロックの終端には置くことができませんでした。Cでもこれは同様だったようですがC23で修正されたことで可能になっており、C/C++の互換性向上のためにC++23でも同様に許可することになりました。
+
+```cpp
+void foo(void)
+{
+first:  // C/C++共にok
+  int x;
+
+second: // C/C++共にok
+  x = 1;
+
+last:   // Cはok、C++はng、C++23でok
+}
+```
+
+この修正はこの例の`last`のようなラベルを置くことができるようにするものです。これによって、ブロック内部ではラベルの位置に関する制限はなくなります。
 
 ## 参照するPOSIX規格を更新
 
