@@ -1737,7 +1737,23 @@ last:   // Cはok、C++はng、C++23でok
 
 ## 参照するPOSIX規格を更新
 
-http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2227r0.html
+- P2227R0 Update normative reference to POSIX(https://wg21.link/P2227R0)
+
+C++は標準ライブラリ機能の定義の中で現れるPOSIX機能のために、POSIX規格を参照しています。これまでは「ISO/IEC 9945:2003 (POSIX.1-2001 または、The Single UNIX Specification, version 3)」とよばれる2003年頃に策定されたものを参照していました。しかしこの規格は古いもので新しめの標準ライブラリ機能の中にはそこにはないPOSIX機能を参照するものがあったため、C++23では参照を更新し「ISO/IEC/IEEE 9945:2009 (POSIX.1-2008 aka SUSv4)」というより新しい規格を参照するようになります。
+
+ユーザーサイドでは何の影響もない変更ですが、規格的に影響があるのは`errno`周りと`<filesystem>`の2つです。
+
+### `errno`関連
+
+C++11では`errno`に関して「`<cerrno>`の内容はPOSIXの`errno.h`と同じだが各エラー値はマクロとして定義しなければならない」の様に参照され、さらにエラー値のマクロがリストアップされていました。しかし、そのリストにはPOSIX.1-2008と呼ばれるより新しい規格で追加されたもの（`ENOTSUP`、`EOPNOTSUPP`、`ENOTRECOVERABLE`、`EOWNERDEAD`）を含んでいました。
+
+### `<filesystem>`
+
+`<filesystem>`の機能の多くの部分はPOSIXのファイルシステムAPIを使用して定義されています。そしてまず、`filesystem::path`クラスの規定から参照されているPOSIX規格の段落番号が異なっています。
+
+参照されている関数のほとんどはPOSIX.1-2001にも存在するのですが、やはりこちらでも一部の関数（`futimens()`、`fchmodat()`）が存在していません。これによって、これを使用している`filesystem::last_write_time(), filesystem::permissions()`のセマンティクスは未定義になってしまっています。
+
+POSIX規格への参照が更新されることによって、これらの機能が規格的にきちんと定義されることになります。
 
 ## 行末スペースを無視するよう規定
 
