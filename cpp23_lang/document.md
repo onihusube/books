@@ -1936,9 +1936,18 @@ void f();
 
 これはC++11への欠陥報告です。
 
-## P2943R0
+## C++20 機能テストマクロの更新
 
-https://wg21.link/P2493R0
+- P2493R0 Missing feature test macros for C++20 core papers(https://wg21.link/P2493R0)
+
+この提案は、C++20で追加されたコア言語機能についての機能テストマクロの更新を行うものです。更新されるのは次の2つで
+
+- `__cpp_concepts`: `201907L` -> `202002L`
+    - コンセプト、Conditionally Trivial Special Member Functions（P0848R3）
+- `__cpp_constexpr`: `201907L` -> `202002L`
+    - 定数式における共用体アクティブメンバの切り替えの許可（P1330R0）
+
+どうやらC++20で更新を忘れていたもののようです。従って、これはC++20への欠陥報告です。
 
 ## ==演算子の導出の調整
 
