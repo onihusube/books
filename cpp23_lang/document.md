@@ -2045,7 +2045,7 @@ C++23では、「生成された候補について、その生成元が`operator
 
 ただし、この修正の後でも壊れるコードは存在しており、提案文書では簡単な例が紹介されています。
 
-## `char8_t`互換性の修正
+## `u8`文字列リテラルの破壊的変更の緩和
 
 - P2513R4 `char8_t` Compatibility and Portability Fix(https://wg21.link/P2513R4)
 
