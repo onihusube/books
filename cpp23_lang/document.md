@@ -1744,20 +1744,20 @@ namespace std {
 #include <stdfloat>
 
 int main() {
-  std::float16_t fp0 = 1.0;    // ng
-  std::float16_t fp1 = 1.0f16; // ok
+  std::float16_t fv0 = 1.0;    // ng
+  std::float16_t fv1 = 1.0f16; // ok
 
-  std::bfloat16_t fp2 = 2.0;      // ng
-  std::bfloat16_t fp3 = 2.0bf16;  // ok
+  std::bfloat16_t fv2 = 2.0;      // ng
+  std::bfloat16_t fv3 = 2.0bf16;  // ok
   
-  std::float32_t fp4 = 3.0;     // ng
-  std::float32_t fp5 = 3.0f32;  // ok
+  std::float32_t fv4 = 3.0;     // ng
+  std::float32_t fv5 = 3.0f32;  // ok
   
-  std::float64_t fp6 = 4.0;     // ok
-  std::float64_t fp7 = 4.0f64;  // ok
+  std::float64_t fv6 = 4.0;     // ok
+  std::float64_t fv7 = 4.0f64;  // ok
   
-  std::float128_t fp8 = 5.0;     // ok
-  std::float128_t fp9 = 5.0f64;  // ok
+  std::float128_t fv8 = 5.0;     // ok
+  std::float128_t fv9 = 5.0f128;  // ok
 }
 ```
 
@@ -1803,7 +1803,178 @@ int main() {
 }
 ```
 
-### コア言語仕様
+### 変換ランク
+
+拡張浮動小数点数型を含む浮動小数点数型の間には変換ランクというものが定義され、このランクを用いて変換可能性などが定義されます。
+
+変換ランクは浮動小数点数型に対応する浮動小数点数表現が表現可能な値の集合の包含関係によって定義されるものの、標準の浮動小数点数型の表現が規定されていないことなどから非常に抽象的に規定されています。
+
+`double, float`がIEEE754の倍精度と単精度の表現になると仮定し、`long double`の表現を知られている実装で区別しそれ以外を考慮しないとすると、次のような順位になります
+
+| 変換ランク | サブランク | 型 |
+|:-:|:-:|---|
+|1|1|`std::float128_t`|
+|1|2|`long double` (四倍精度)|
+|2|-|`long double` (double-double)|
+|2|-|`long double` (x87)|
+|3|-|`long double`（倍精度）|
+|4|1|`std::float64_t`|
+|4|2|`double`|
+|5|1|`std::float32_t`|
+|5|2|`float`|
+|6|-|`std::float16_t`|
+|6|-|`std::bfloat16_t`|
+
+変換ランクが同じ値でサブランクの指定が無く行が分かれている型は、それらの型で表現可能な値の集合の間で包含関係が成立しないことを表しており、これらの型の間では変換ランクによる順序が付きません。
+
+同じ表に同居しているものの、同じ環境で`long double`が異なる表現を持つ状況はあり得ないため、表内での`long double`同士の順序付けには意味がありません。
+
+同じ表現をもつ場合は、拡張浮動小数点数型の方が標準の浮動小数点数型よりも変換サブランクが高くなります。
+
+### 暗黙変換
+
+一方の型が拡張浮動小数点数型である場合の2つの型の間の暗黙変換は、変換先の型の変換ランクが変換元の型の変換ランクと同じかより大きい場合に行われます（ここではサブランクは考慮しません）。これにより、暗黙変換はすべてロスレスであり値が失われることはありません。
+
+値が失われる変換、すなわち縮小変換は一方の型が拡張浮動小数点数型である場合は常に許可されません。拡張浮動小数点数型への/からの縮小変換は明示的な変換が必要です。拡張浮動小数点数型が関与する場合、なお、定数式においても暗黙変換は一律に禁止されます。
+
+```cpp
+// 小数リテラルからの変換はfloat64以上のみ可能
+std::float128_t fv128 = 1.0; // ok
+std::float64_t fv64 = 1.0;   // ok
+std::float32_t fv32 = 1.0;   // ng
+std::float16_t fv16 = 1.0;   // ng
+std::bfloat16_t fvb16 = 1.0; // ng
+
+// 拡張浮動小数点数リテラルからの初期化も同様
+double d = 1.0f128; // ng
+float f = 1.0f64;   // ng
+```
+```cpp
+// float128_tの値は自身以外に対して縮小変換になる
+const std::float128_t fv128 = 1.0f128;
+
+// 全てng
+std::float64_t fv64 = fv128;
+std::float32_t fv32 = fv128;
+std::float16_t fv16 = fv128;
+std::bfloat16_t fvb16 = fv128;
+double d = fv128;
+float f = fv128;
+
+// long doubleの表現がIEEE754四倍精度の場合のみok
+long double ld = fv128;
+```
+```cpp
+const std::float64_t fv64 = 1.0f64;
+
+// 共にok
+std::float128_t fv128 = fv64;
+double d = fv64;
+
+// 全てng
+std::float32_t fv32 = fv64;
+std::float16_t fv16 = fv64;
+std::bfloat16_t fvb16 = fv64;
+float f = fv64;
+```
+```cpp
+// float16_tとbfloat_16_tは他の幅の型に暗黙変換可能
+const std::float16_t fv16 = 1.0f16;
+
+// 全てok（bfloat16の場合も同様
+const std::float128_t fv128 = fv16;
+std::float64_t fv64 = fv16;
+std::float32_t fv32 = fv16;
+double d = fv16;
+float f = fv16;
+```
+```cpp
+// bfloat16とfloat16は相互に暗黙変換不可能
+std::bfloat16_t fvb16 = 1.0f16; // ng
+std::float16_t fv16 = 1.0bf16;  // ng
+```
+
+コーナーケースとして、ロスレス変換であって明示的な変換が必要となる場合があります。これは、2つの標準浮動小数点数型が同じ表現を持っている場合に、同じ表現をもつ拡張浮動小数点数型が存在する場合の変換が該当します。
+
+具体的かつ出会いそうな例は、`double`と`long double`がどちらもIEEE754の倍精度の表現を持っている場合の`std::float64_t`との間の変換です。先程の変換ランクの表にあるように、`double`と`std::float64_t`は同ランクなのでその値は相互に暗黙変換可能ですが、`long double`は1つランクが高いので`std::float64_t`への変換はロスレスであるにも関わらず明示的変換を必要とします。
+
+```cpp
+// long doubleがdoubleと同表現の場合
+
+const double d = 1.0;
+const std::float64_t f = 2.0;
+const long double ld = 3.0;
+
+// doubleとfloat64_tは相互暗黙変換可能
+double v1 = f;          // ok
+std::float64_t v2 = d;  // ok
+
+// float64_tからlong doubleは暗黙変換可能
+long double v3 = f;     // ok
+
+// long doubleからfloat64_tは暗黙変換不可
+std::float64_t v4 = ld; // ng
+
+// 標準浮動小数点数型へは暗黙変換可能
+double v5 = ld; // ok
+```
+
+他にも、`double`がIEE754単精度で定義されている環境における`double/float`と`std::float32_t`の間で起こり得ます。
+
+なお、標準の浮動小数点数型は縮小変換が起こる場合でも暗黙変換可能ですが、この動作は修正されません。暗黙変換が制限されるのは、あくまで拡張浮動小数点数型が変換に絡む場合のみです。
+
+### 通常の算術変換
+
+通常の算術変換（Usual arithmetic conversions）とは、異なる算術型同士の組み込みの二項演算において結果の型を決定するために行われる変換であり、2つのオペランドのうちの片方はこの結果を受けて（暗黙的に）変換されます。
+
+```cpp
+float f = 1.0f;
+double d = 1.0;
+
+// 結果の型はdouble
+// fはdoubleに変換される
+std::same_as<double> auto r = d + f;
+```
+
+算術型の値同士の二項演算（`a @ b`）において、少なくとも片方のオペランド（実引数、ここでは`a, b`のどちらか）の型が浮動小数点数型（拡張浮動小数点数型を含む）の場合、次のような手順で変換が行われます
+
+- `a, b`が同じ型であれば変換は行われない
+- そうではない場合で、もう片方のオペランドの型が浮動小数点数型ではない場合
+    - そのオペランドはもう片方と同じ浮動小数点数型に変換される
+- そうではない場合（両方とも浮動小数点数型）で
+    - 両方のオペランドの型の変換ランクが異なる場合
+        - 変換ランクが低い方の型のオペランドが高い方の型に変換される
+    - 両方のオペランドの型の変換ランクが等しい場合
+        - サブランクが低い方の型のオペランドが高い方の型に変換される
+- これら以外の場合はコンパイルエラー
+
+```cpp
+// 変換ランクによる決定
+const float f = 1.0f;
+const std::float16_t fv16 = 2.0f16;
+const std::bfloat16_t fvb16 = 3.0bf16;
+
+f + fv16;  // ok、fv16はfloatに変換される
+f + fvb16; // ok、fvb16はfloatに変換される
+fv16 + fvb16; // ng、相互に変換できない
+
+
+// サブランクによる決定
+const double d = 1.0;
+const std::float64_t fv64 = 1.0f64;
+const std::float32_t fv32 = 1.0f32;
+
+d + fv64; // ok、dはfloat64_tに変換される
+f + fv32: // ok、fはfloat32_tに変換される
+```
+
+### 浮動小数点数型の昇格
+
+可変長引数の関数呼び出しと`float`と`double`の混ざった四則演算等の極めて限定的な状況において、`float`->`double`へ型が暗黙的に昇格されます。これは厳密には変換とは異なる扱いとなっています。
+
+これはCのK&Rからの名残であり便利な挙動とはみなされていなかったため、拡張浮動小数点数型には適用されません。拡張浮動小数点数型においては型が変わる場合は、全て何かしらの変換が行われ、必要となります。
+
+### オーバーロード順位
 
 ### C23拡張浮動小数点数型
 
