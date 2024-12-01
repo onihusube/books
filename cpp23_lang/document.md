@@ -93,7 +93,755 @@ namespace std {
 
 ## Deducing this
 
-https://wg21.link/P0847R7
+- P0847R7 Deducing this(https://wg21.link/P0847R7)
+
+`std::optional`の`value()`関数のように、`this`の状態（`const`/参照修飾）によって適切にメンバ変数を転送する必要がある関数においては、`const`有無と参照修飾で4つのオーバーロードを提供しなければなりません。例えば次のようになり、基本的に楽をする良い方法がありません。
+
+```cpp
+template <typename T>
+class optional {
+  ...
+  
+  constexpr T& value() & {
+    if (has_value()) {
+      return this->m_value;
+    }
+    throw bad_optional_access();
+  }
+
+  constexpr T const& value() const& {
+    if (has_value()) {
+      return this->m_value;
+    }
+    throw bad_optional_access();
+  }
+
+  constexpr T&& value() && {
+    if (has_value()) {
+      return move(this->m_value);
+    }
+    throw bad_optional_access();
+  }
+
+  constexpr T const&& value() const&& {
+    if (has_value()) {
+      return move(this->m_value);
+    }
+    throw bad_optional_access();
+  }
+  
+  ...
+};
+```
+
+このようなボイラープレートコードは些細なバグを誘発しやすく、コードの保守性も低下します。一方、これがもしメンバ関数ではなかったとしたら、次のように簡潔な実装を選択できます
+
+```cpp
+template <typename T>
+class optional {
+  ...
+  
+  template <typename Opt>
+  friend decltype(auto) value(Opt&& o) {
+      if (o.has_value()) {
+          return forward<Opt>(o).m_value;
+      }
+      throw bad_optional_access();
+  }
+  
+  ...
+};
+```
+
+この1つの関数テンプレートでさきほどの4つのメンバ関数と全く同じ動作をさせることができます。ただ、これはメンバ関数ではないので`opt.value()`のように呼び出すことは出来ず、ADLを通して`value(opt)`のように呼ばなければなりません。
+
+C++23ではこのような問題を解決するために、メンバ関数において暗黙の`this`パラメータを明示的に受け取ることのできる構文が導入されます。構文は、非静的メンバ関数の第一引数に`this`による注釈を行うことで`this`パラメータを明示的に取るようにします。
+
+```cpp
+struct X {
+  // void foo(int i) const & 相当の宣言
+  void foo(this const X& self, int i);
+};
+```
+
+このような関数宣言の事を明示的オブジェクト引数宣言（*explicit object parameter declaration*）と呼び、明示的に取られている`this`引数の事を明示的オブジェクト引数（*explicit object parameter*）と呼びます。
+
+明示的オブジェクト引数宣言によって宣言された関数は通常のメンバ関数と同じように呼び出すことができます。
+
+```cpp
+struct D : X { };
+
+void ex(X& x, const　D& d) {
+  x.foo(42);  // selfにはxがconst X&で渡される
+
+  // アクセスできれば派生クラスからも呼び出し可能
+  d.foo(17);  // selfにはdがconst X&で渡される（基底クラスへの変換が行われる）
+}
+```
+
+明示的オブジェクト引数はテンプレートパラメータとして受け取るようにすることもできます。この場合、呼び出し時に呼び出しに使用したオブジェクトからその型が直接的に推論されます。
+
+```cpp
+struct X {
+  // thisをテンプレートで受け取る
+  template <typename Self>
+  void bar(this Self&& self);
+};
+
+struct D : X { };
+
+void ex(X& x, const D& d) {
+  x.bar();        // SelfはX&に推論され、X::bar<X&>が呼ばれる
+  move(x).bar();  // SelfはXに推論され、X::bar<X>が呼ばれる
+
+  d.bar();        // Selfはconst D&に推論され、X::bar<const D&>が呼ばれる
+
+  X& br = d;
+  X* bp = &d;
+  br.bar();       // SelfはX&に推論され、X::bar<X&>が呼ばれる
+  bp->bar();      // SelfはX&に推論され、X::bar<X&>が呼ばれる
+}
+```
+
+明示的オブジェクト引数がテンプレートパラメータで指定されている場合の呼び出しにおいては、呼び出しに使用したオブジェクトの型（と値カテゴリ）が通常の関数テンプレートと同様に推論されます。これにより、派生クラスから基底クラスの明示的オブジェクト引数を取る関数を呼んだ際は基底クラスへの変換が行われず派生クラス型が直接推論され、逆に派生クラスを基底クラスのポインタ（参照）に入れた状態で呼び出すと派生クラスではなく基底クラス型が推論されます。
+
+これらにより、C++23では最初に例に挙げた`std::optional<T>::value()`の実装は次のように改善されます
+
+```cpp
+template <typename T>
+class optional {
+  ...
+  
+  template <typename Self>
+  constexpr auto&& value(this Self&& self) {
+    if (!self.has_value()) {
+      throw bad_optional_access();
+    }
+
+    return forward<Self>(self).m_value;
+  }
+  
+  ...
+};
+```
+
+このように、`this`を明示的かつテンプレートで受け取ることで`this`オブジェクトのCVと値カテゴリに応じてメンバを転送するようなコードをかなりと簡潔にかくことができるようになります。しかし、この機能はこれだけで終わるものではなく更なる応用が可能です。
+
+### 値での受け取り
+
+明示的オブジェクト引数は値（参照修飾なし）で受け取ることもできます
+
+```cpp
+struct less_than {
+  template <typename T, typename U>
+  bool operator()(this less_than, T const& lhs, U const& rhs) {
+    return lhs < rhs;
+  }
+};
+
+less_than{}(4, 5);  // ok
+```
+
+この場合、`less_than`のオブジェクト（prvalue）はコピー省略によって呼び出し演算子の引数で直接構築されます。`less_than`型の左辺値から呼び出す場合は、`this`引数がコピーされて渡されます。これは状態を持たない関数オブジェクトの暗黙`this`引数の不要なコピーを回避するのに使用できます。
+
+オブジェクトサイズが小さく参照渡しよりも値渡しの方がコストが低いようなクラス型においても同様に、`this`を値で受け取るようにすることでメンバ関数呼び出しのコストを削減することができます。
+
+```cpp
+// string_viewのようなクラス型
+template <class charT, class traits = char_traits<charT>>
+class basic_string_view {
+private:
+  // オブジェクトサイズは通常8byte
+  const_pointer data_;
+  size_type size_;
+public:
+  constexpr const_iterator begin(this basic_string_view self) {
+    return self.data_;
+  }
+
+  constexpr const_iterator end(this basic_string_view self) {
+    return self.data_ + self.size_;
+  }
+
+  constexpr size_t size(this basic_string_view self) {
+    return self.size_;
+  }
+
+  constexpr const_reference operator[](this basic_string_view self, size_type pos) {
+    return self.data_[pos];
+  }
+};
+```
+
+ただし、状態を持つクラス型で値で受け取るとそのメンバ関数内で`this`を変更してもメンバ関数終了後に変更は消えてしまうので注意しましょう。
+
+この動作はまた、メンバ関数を呼び出すとその時点の`this`のコピーを返すような操作に対しても有効です。例えば、コンテナに`.sorted()`メンバ関数（ソート済みのコンテナを返す）を実装する場合などです。
+
+```cpp
+struct my_vector : std::vector<int> {
+  // thisをコピーしてからソートして返す
+  auto sorted(this my_vector self) -> my_vector {
+    sort(self.begin(), self.end());
+    return self;
+  }
+};
+```
+
+呼び出すオブジェクトが左辺値だと（暗黙に）コピーされますが、右辺値の場合は自動でムーブされて渡されます。
+
+### 明示的オブジェクト引数の変換
+
+明示的オブジェクト引数は`this`引数を明示的に取るものなので、その受ける型名は常識的にはそのクラス型となります。実際そこに渡されるのは呼び出しに使用したオブジェクトそのものではあるのですが、オーバーロード解決においてそこから引数型への変換が考慮されるため、実は自身のクラス型以外の型で受けることができます。
+
+```cpp
+struct S {
+  int i = 0;
+
+  operator int() const {
+    return i;
+  }
+
+  int f(this int n) {
+    return n;
+  }
+};
+
+int main() {
+  S s{20};
+  int n = s.f();  // ok、20
+}
+```
+
+明示的オブジェクト引数の変換においては暗黙変換が行われるため、このように変換して呼び出しさえできれば明示的オブジェクト引数を所属するクラス型と異なる型にすることができます。
+
+```cpp
+struct C {
+  int n = -10;
+
+  // 万能変換コンストラクタ
+  template <typename T>
+  C(T) {};
+};
+
+struct B {
+  int n = 10;
+
+  // 派生クラスから呼ばれても基底クラスとして受ける
+  int f(this const B& self) {
+    return self.n;
+  }
+
+  // 常にCに変換して受ける
+  int g(this C c) {
+    return c.n;
+  }
+};
+
+struct D : B {
+  int n = 20;
+};
+
+int main() {
+  D d{};
+
+  // 派生クラスから基底クラスへの変換が行われる
+  int n = d.f(); // ok、10
+
+  // Cの変換コンストラクタによって変換される
+  int m = d.g();  // ok、-10
+}
+```
+
+### 細かい仕様の話
+
+明示的オブジェクト引数（宣言）に対して従来の`this`引数を明示しない関数宣言及び`this`引数の事を暗黙的オブジェクト引数（implicit object parameter）（宣言）と呼びます。
+
+同じ関数名に対して明示的オブジェクト引数宣言と暗黙的オブジェクト引数宣言は混在させることができますが、オーバーロードとして成立している必要があります（同じ意味の宣言がそれぞれの形で宣言されてはならない）。
+
+```cpp
+struct X {
+  // ng、暗黙的オブジェクト引数宣言と衝突している
+  void bar() &&;
+  void bar(this X&&);
+};
+
+struct Y {
+  // ok、bar()のオーバーロードは衝突していない
+  void bar() &;
+  void bar() const&;
+  void bar(this Y&&);
+};
+```
+
+また、`obj.f()`のように呼び出した際に明示的オブジェクト引数宣言と静的メンバ関数宣言が衝突するような宣言（明示的オブジェクト引数のみを取るメンバ関数と引数無しの静的メンバ関数の宣言）も行うことができません。
+
+```cpp
+struct X {
+  // ng、x.f()の呼び出しが衝突する
+  static void f();
+  void f(this X const&);
+
+  // ok、呼び出しが衝突しない
+  static void g();
+  void g(this X const&, int);
+};
+```
+
+明示的オブジェクト引数宣言の関数は、`static, virtual`で宣言できず、メンバ関数のCV/参照修飾も行えません。
+
+```cpp
+struct X {
+  // 全てngな宣言例
+
+  static void f1(this X&);
+
+  virtual void f2(this X&);
+  
+  void f3(this X&) const &;
+
+  void f4(this X&) volatile;
+};
+```
+
+そして、明示的オブジェクト引数宣言の関数内では`this`を使用できません。メンバアクセスは常に明示的オブジェクト引数を介して行う必要があります。
+
+```cpp
+struct X {
+  int i = 0;
+
+  void mem_f();
+
+  void f(this X& self) {
+    // メンバiを参照したい
+    i;        // ng、非静的メンバiを直接参照できない
+    this->i;  // ng、ここではthisを使用できない
+    self.i;   // ok、非静的メンバ変数iにアクセス
+
+    // メンバ関数mem_f()を呼び出したい
+    mem_f();        // ng
+    this->mem_f();  // ng
+    self.mem_f();   // ok
+  }
+};
+```
+
+これによって、テンプレートパラメータで明示的オブジェクト引数を受けている時にそのメンバ関数を派生クラスからの呼び出した場合、その関数内からどの名前が参照されるかが明確になります。すなわち、渡されたオブジェクトの型でアクセス可能なものにアクセスします。
+
+```cpp
+struct X {
+  int i = 1;
+
+  template<typename Self>
+  int f(this Self& self) {
+    return self.i;  // Self::iが参照される
+  }
+};
+
+struct D : X {
+  int i = 10;
+};
+
+int main() {
+  D d{};
+  X& x = d;
+
+  int n1 = d.f(); // 10（D::i
+  int n2 = x.f(); // 1 （X::i
+}
+```
+
+このように、明示的オブジェクト引数宣言の関数はほとんど静的メンバ関数のように動作し、その動作は静的メンバ関数として捉えることができます。とはいえ規格的な扱いとしてはまだ非静的メンバ関数です。
+
+例えば、関数ポインタを取った時の動作も非静的メンバ関数とは異なります。次のようなクラスとメンバ変数があるとき
+
+```cpp
+struct Y {
+  int f(int, int) const&;
+  int g(this Y const&, int, int);
+};
+```
+
+`Y::f`の（メンバ）関数ポインタ`&Y::f`の型は`int(Y::*)(int, int) const&`となりますが、`Y::g`の関数ポインタ`&Y::g`は`int(*)(Y const&, int, int)`になり、単なる関数ポインタになります。そのため、関数ポインタから使用する時に少し使用法が異なります。
+
+```cpp
+int main() {
+  Y y;
+  y.f(1, 2); // ok
+  y.g(3, 4); // ok
+
+  auto pf = &Y::f;
+  pf(y, 1, 2);              // ng、メンバポインタはこの記法で呼び出せない
+  (y.*pf)(1, 2);            // ok、メンバ関数ポインタ呼び出し
+  std::invoke(pf, y, 1, 2); // ok
+
+  auto pg = &Y::g;
+  pg(y, 3, 4);              // ok、関数ポインタ呼び出し
+  (y.*pg)(3, 4);            // ng、pgはメンバ関数ポインタではない
+  std::invoke(pg, y, 3, 4); // ok
+}
+```
+
+とはいえ一方で、静的メンバ関数とも異なる部分があります。
+
+```cpp
+struct C {
+  void nonstatic_fun();
+  
+  void explicit_fun(this C c) {
+    static_fun(C{});    // ok
+    (+static_fun)(C{}); // ok
+  }
+  
+  static void static_fun(C) {
+    // 関数の名前の使用方法に関して
+
+    explicit_fun();        // ng、オブジェクト引数が必要
+    explicit_fun(C{});     // ng、この形式で呼び出せない
+
+    auto f = explicit_fun; // ng、名前はポインタに変換できない
+    (+explicit_fun)(C{});  // ng、同上
+    
+    C{}.explicit_fun();        // ok
+    auto p = explicit_fun;     // ng、名前はポインタに変換できない
+    auto q = &explicit_fun;    // ng、クラス名が必要
+    auto r = &C::explicit_fun; // ok
+    r(C{});                    // ok
+  }
+  
+  // 演算子オーバーロードの可否
+  static C operator~();  // ng
+  C operator~(this C);   // ok
+};
+
+// 関数ポインタの取り方
+C c;
+int (*a)(C) = &C::explicit_fun; // ok
+int (*b)(C) = C::explicit_fun;  // ng、名前はポインタに変換できない
+
+auto x = c.static_fun;     // ok
+auto y = c.explicit_fun;   // ng、名前はポインタに変換できない
+auto z = c.explicit_fun(); // ok、関数呼び出し
+```
+
+通常の非静的メンバ関数（メンバ関数）と明示的オブジェクト引数宣言の関数（明示的`this`）と静的メンバ関数の異なる部分をまとめたのが次の表です
+
+|特性|メンバ関数|明示的`this`|静的メンバ関数|
+|---|---|---|---|
+|オブジェクト引数が必要/使用可能|Yes|Yes|No|
+|暗黙の`this`引数|あり|なし|なし|
+|演算子の宣言|可能|可能|一部可能|
+|`&C::f`の型|メンバポインタ|関数ポインタ|関数ポインタ|
+|`auto f = x.f;`|エラー|エラー|関数ポインタ取得|
+|名前を関数ポインタに減衰|不可|不可|可能|
+|仮想関数の宣言|可能|不可|不可|
+
+このように、明示的オブジェクト引数宣言の関数は、従来の非静的メンバ関数とも静的メンバ関数とも異なる部分があり、どちらかというと半静的メンバ関数といった趣です。それでもなお一応の扱いは非静的メンバ関数です。
+
+### 名前探索とオーバーロード解決
+
+名前探索に関して、C++17までは`obj.foo()`のように関数呼び出しをした際に探索される候補は、`obj`のクラス型のスコープで宣言された非静的メンバ関数と静的メンバ関数で`foo`という名前を持つ関数です。そして、非静的メンバ関数の場合は第一引数に暗黙のオブジェクト引数があるかのように扱われ、そのCV/参照修飾は関数の修飾によって決定されます。
+
+C++23でもこの探索の基本は変わらず、`foo`という名前の非静的メンバ関数として明示的オブジェクト引数宣言の関数も候補に上がるようになります。
+
+ただし、追加の引数がある場合は明示的オブジェクト引数宣言の関数のオーバーロード解決において引数リストが右にシフトされ、最初の引数に`this`オブジェクトがあてがわれてオーバーロード解決が行われます。また、第一引数の`this`オブジェクト引数のCV/参照修飾はメンバ関数の修飾から決まるのではなく、宣言されたCV/参照修飾によって決定されます。
+
+オーバーロード解決のフェーズもほとんど変更されていませんが、唯一`this`オブジェクトに相当する引数をテンプレートで取ることができるようにされています。
+
+したがって、名前探索とオーバーロード解決に関しては従来のメンバ関数呼び出しと同様に考えることができ、テンプレートの場合も一般の関数テンプレートと同じ推論によって型が決まります。
+
+### ラムダ式
+
+明示的オブジェクト引数はラムダ式においても利用することができ、自身のクロージャ型オブジェクト（ラムダ式自体の`this`）を明示的に取ることができます。
+
+```cpp
+// 再帰ラムダの定義
+auto fact = [](this auto self, int n) -> int {
+  return (n <= 1) ? 1 : n * self(n-1);
+};
+
+int n = fact(5);  // ok、120
+```
+
+このように、再帰ラムダの定義が非常に簡潔になります。
+
+ラムダ式内部ではキャプチャを参照するのに`this`を使用しないこともあり、明示的オブジェクト引数を取っている場合でもキャプチャを参照するために明示的オブジェクト引数を介する必要はなく、これまでどおりキャプチャ名のみで参照可能です。逆に、明示的オブジェクト引数を介してキャプチャにアクセスすることはできません。
+
+```cpp
+int main() {
+  int i = 0;
+
+  [=](this auto&& self) {
+    ++i;         // ok、キャプチャをインクリメント
+    self.i += 1; // ng、キャプチャ名は未規定
+  };
+}
+```
+
+つまり、オブジェクトメンバアクセスに関しては、一般のクラス型における明示的オブジェクト引数宣言の関数と逆になります。
+
+クラス型の明示的オブジェクトパラメータの型は変換を受けることによって比較的自由に記述できましたが、キャプチャを行うラムダ式の場合は自身のクロージャ型、もしくはクロージャ型から派生したクラス型、あるいはそれらの型の参照型でなければなりません。
+
+```cpp
+struct C {
+  // 万能変換コンストラクタ
+  template <typename T>
+  C(T);
+};
+
+void func(int i) {
+  // ok、呼び出し時に自身のクロージャ型に推論される
+  int x = [=](this auto&&) { return i; }();
+  
+  // ng、自身のクロージャ型と関係ない型
+  int y = [=](this C) { return i; }();
+
+  // ok、キャプチャしてないので変換できればok
+  int z = [](this C) { return 42; }();
+}
+```
+
+また、明示的オブジェクト引数を使用する場合、そのラムダ式がキャプチャを行っていると`mutable`指定を行えず、ラムダ式の関数呼び出し演算子は`const`修飾されません。
+
+```cpp
+int main() {
+  int i;
+
+  // ng、明示的オブジェクト引数とmutableは併用できない
+  [=](this const auto&) mutable { return ++i; };
+
+  // ok、明示的オブジェクト引数を非constにすれば同等
+  auto lm1 = [=](this auto&&) { return ++i; };
+  int n = lm1(); // ok、1
+
+  // 関数呼び出しをconstにしたければ
+  // 明示的オブジェクト引数をconstにする
+  auto lm2 = [=](this const auto&) { return ++i; };
+  lm2(); // ng。iを変更できない
+
+  // あるいは、ラムダ式をconstで受ける
+  const auto lm3 = [=](this auto&&) { return ++i; };
+  lm3(); // ng。iを変更できない
+}
+```
+
+このサンプルを見ると何となく察せられますが、明示的オブジェクト引数を取る場合のラムダ式本体からのキャプチャの参照も暗黙的ながら明示的オブジェクト引数を介して行われており、なおかつキャプチャ名と実際のクロージャ型のメンバ名が自動で読み替えられてアクセスされています。
+
+### `forward_like`
+
+明示的オブジェクト引数を使用して、そのモチベーション通りに`this`の状態に応じた完全転送を行おうとすると、例えば次のようなコードを書くことになります。
+
+```cpp
+template<typename T>
+struct wrap {
+  T v;
+
+  template<typename Self>
+  auto value(this Self&& self) -> decltype(auto) {
+    return std::forward<Self>(self).v; // あってる？
+  }
+};
+```
+
+これは`this`の状態（CV修飾および値カテゴリ）に応じてラップしているメンバ変数を完全転送するコードですが、実はこれは全ての場合に正しく動作しません。
+
+詳細は後日発売（予定）の「C++23 ライブラリ機能」に譲りますが、`T`が参照型である場合にCV修飾と値カテゴリを正しく伝播できません。
+
+つまりはここでの`std::forward`は完全なソリューションではなく別の転送関数が必要になります。C++23ではこれを`std::forward_like`というライブラリ機能として利用可能です。
+
+```cpp
+template<typename T>
+struct wrap {
+  T v;
+
+  template<typename Self>
+  auto value(this Self&& self) -> decltype(auto) {
+    return std::forward_like<Self>(self.v); // 💯
+  }
+};
+```
+
+これにより、明示的オブジェクト引数を利用した場合の真の完全転送が実現できます。
+
+### 応用例
+
+最後に、この明示的オブジェクト引数という機能が新しいC++プログラミングパラダイムを開くものになるかもしれない例をいくつか見てみます。
+
+まず最初はCRT抜きのCRTPです。
+
+CRTPの応用例の一つとして、基底クラスで導出可能な演算子のボイラープレートを定義しておいて、それを継承した派生クラスで必須演算子だけ定義しておくと演算子を自動実装できるユーティリティが知られています。
+
+```cpp
+// 後置++を自動実装するCRTP基底クラス
+template <typename Derived>
+struct add_postfix_increment {
+  Derived operator++(int) {
+    auto& self = static_cast<Derived&>(*this);
+
+    Derived tmp(self);
+    ++self;
+    return tmp;
+  }
+};
+
+struct some_type : add_postfix_increment<some_type> {
+  // 前置++だけを定義
+  some_type& operator++() { ... }
+};
+```
+
+このパターンは明示的オブジェクト引数を使うとCRT無しで書くことができるようになります。
+
+```cpp
+// 後置++を自動実装する基底クラス
+struct add_postfix_increment {
+  template <typename Self>
+  auto operator++(this Self&& self, int) {
+    // 派生クラスから呼ばれると、Selfで派生クラス型を取れる
+    auto tmp = self;
+    ++self;
+    return tmp;
+  }
+};
+
+struct some_type : add_postfix_increment {
+  some_type& operator++() { ... }
+};
+```
+
+次は再帰ラムダです。階乗を求める例は既に見ていますが、別の例として木構造をトラバースして葉の数をカウントする例を見てみます。
+
+```cpp
+struct Leaf { };
+struct Node;
+
+using Tree = variant<Leaf, Node*>;
+
+struct Node {
+  Tree left;
+  Tree right;
+};
+
+int num_leaves(Tree const& tree) {
+  return visit(overload(
+    // Leafに行きつくとこっちが呼ばれる
+    [](Leaf const&) { return 1; },
+    // Nodeの間はこっちが呼ばれる
+    [](this auto const& self, Node* n) -> int {
+      // 深さ優先探索を行う
+      return visit(self, n->left)
+           + visit(self, n->right);
+    }
+  ), tree);
+}
+```
+
+`overload`は複数のラムダ式をひとまとめにした呼び出し可能オブジェクトを返すイディオムを実装したものです（`overloaded`とも呼ばれています）。
+
+最後は、SFINAE-friendly callablesを定義する例です。
+
+関数ラッパのオーバーロードを定義する場合、例えば`std::not_fn`（渡された述語関数オブジェクトの結果を反転する関数オブジェクトを返す）を定義しようとすると、典型的には次のような呼び出し可能ラッパを介することになります。
+
+```cpp
+template <typename F>
+class call_wrapper {
+  F f;
+public:
+  ...
+  
+  // 実装は省略
+  template <typename... Args>
+  auto operator()(Args&&... ) &
+      -> decltype(!declval<std::invoke_result_t<F&, Args...>>());
+
+  template <typename... Args>
+  auto operator()(Args&&... ) const&
+      -> decltype(!declval<std::invoke_result_t<F const&, Args...>>());
+
+  // ... same for && and const && ...
+};
+
+template <typename F>
+auto not_fn(F&& f) {
+  return call_wrapper<std::decay_t<F>>{std::forward<F>(f)};
+}
+```
+
+とてもボイラープレートなのが分かると思います。正確性を増すためには`noexcept`等の考慮も必要です。しかし、それらとは関係ない問題として、このような実装は2つのコーナーケースに対して動作しない事が知られています。
+
+1つは、ラップ対象の`operator()`がSFINAE-friendlyではないため日本来機能するはずの呼び出しがエラーになる場合です。
+
+```cpp
+struct unfriendly {
+  template <typename T>
+  auto operator()(T v) {
+    static_assert(std::is_same_v<T, int>);
+    return v;
+  }
+
+  template <typename T>
+  auto operator()(T v) const {
+    static_assert(std::is_same_v<T, double>);
+    return v;
+  }
+};
+
+unfriendly{}(1);  // ok
+not_fn(unfriendly{})(1); // ng
+```
+
+非`const`オーバーロードが有効かつ最適な候補ですが、オーバーロード解決の仮定で両方のオーバーロードがインスタンス化されることで2つ目のオーバーロードの`static_assert`が起動します。
+
+もう一つは、関数呼び出し演算子が`delete`されていることで本来失敗してほしい呼び出しが別の関数呼び出し演算子にフォールバックしてしまう問題です。
+
+```cpp
+struct fun {
+  template <typename... Args>
+  void operator()(Args&&...) = delete;
+
+  template <typename... Args>
+  bool operator()(Args&&...) const { return true; }
+};
+
+fun{}();  // ng、delete演算子を呼ぼうとする
+not_fn(fun{})(); // ok、falseを返す
+```
+
+この例では、`not_fn(fun{})`の戻り値を直接呼び出していますがそれは`const`ではないため、`fun`で定義されているのに従って非`const`な呼び出しはできないようにしたいのですが、`call_wrapper`内の`const`オーバーロードが最終的に有効な候補として残ってしまうことで`fun`の`const`オーバーロードにフォールバックしてしまいます。
+
+1つ目の問題はC++20までで解決できないことが分かっており、2つ目の問題は`call_wrapper`にさらに4つの関数呼び出し演算子オーバーロードを追加して、あるCV/参照修飾の候補について削除されたバージョンを追加することで解決できます。
+
+しかし、明示的オブジェクト引数を用いると両方の問題を解決し、なおかつボイラープレートも削減できます。
+
+```cpp
+template <typename F>
+struct call_wrapper {
+  F f;
+
+  template <typename Self, typename... Args>
+  auto operator()(this Self&& self, Args&&... args)
+    BOOST_HOF_RETURNS(
+      !std::invoke(
+        std::forward<Self>(self).f,
+        std::forward<Args>(args)...))
+};
+
+template <typename F>
+auto not_fn(F&& f) {
+  return call_wrapper<std::decay_t<F>>{std::forward<F>(f)};
+}
+```
+
+`BOOST_HOF_RETURNS(expr)`は定義を簡略化するためのものでその名の通りBoost.HOFというライブラリで用意されているマクロです。やっていることは、`expr`をコピペして`noexcept`と定義を実装したうえで、`decltype(auto)`戻り値で関数定義を完成させることです。
+
+呼び出しラッパの関数呼び出し演算子オーバーロード層が実質的になくなっていることで、ラップ元のコンテキストで関数呼び出しを解決することができ、それによってラップしたことで起きていた問題が起こらなくなります。
+
+これによって、先程の2つの問題の例はラッパを介さない場合の結果を再現できるようになります。
+
+```cpp
+// 正しい動作を得られる
+not_fn(unfriendly{})(1); // ok
+not_fn(fun{})();         // ng、delete演算子を呼ぼうとする
+```
 
 ## アクセス制御の異なるメンバ変数のレイアウトを宣言順に規定
 
@@ -2512,10 +3260,6 @@ constexpr const char* resource_id () {
 
 この修正はC++20への欠陥報告です。
 
-## CWG2518
-
-https://cplusplus.github.io/CWG/issues/2518.html
-
 \clearpage
 
 # 謝辞
@@ -2527,4 +3271,4 @@ https://cplusplus.github.io/CWG/issues/2518.html
 - Compiler Explorer(https://godbolt.org/)
 - 見た目で区別できない変数 | ++C++; // 未確認飛行 C ブログ (https://ufcpp.net/blog/2020/5/variationselectoridentifier/)
 - UAX31: Unicode Identifier の話 | ++C++; // 未確認飛行 C ブログ (https://ufcpp.net/blog/2021/2/uax31/)
-- その透明な文字に混じらず、見つけ出すんだ。 - Qiita (https://qiita.com/kitsuyui/items/12db383f5e5971f32b08)
+- メンバ関数の新しい書き方、あるいは Deducing this -Zenn (https://zenn.dev/acd1034/articles/221117-deducing-this)
