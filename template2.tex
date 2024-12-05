@@ -307,6 +307,20 @@ $if(graphics)$
 %%\usepackage{graphicx}
 \usepackage[dvipdfmx,hiresbb]{graphicx}
 \makeatletter
+
+% 画像のリサイズ対応
+% https://github.com/Wandmalfarbe/pandoc-latex-template/issues/391
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+
 \def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
 \def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
 \makeatother
@@ -563,11 +577,12 @@ $else$
 %\definecolor{listing-comment}{HTML}{D8F255}
 
 $if(color_cmyk)$
-%\definecolor{listing-keyword}{cmyk}{100.0, 45.0, 0.0, 0.0}   % キーワードの色、識別子と同じ
-%\definecolor{listing-identifier}{cmyk}{100.0, 45.0, 0.0, 0.0}
-\definecolor{listing-keyword}{cmyk}{1.0, 0.45, 0.0, 0.0}   % キーワードの色、識別子と同じ
-\definecolor{listing-identifier}{cmyk}{1.0, 0.45, 0.0, 0.0}
-\definecolor{listing-plane-color}{cmyk}{0.0, 0.0, 0.0, 1.0}
+\definecolor{listing-background}{cmyk}{0.036, 0.033, 0.0, 0.0}
+\definecolor{listing-keyword}{cmyk}{0.5, 0.5, 0.5, 1.0}   % キーワードの色、識別子と同じ
+\definecolor{listing-identifier}{cmyk}{0.5, 0.5, 0.5, 1.0}
+\definecolor{listing-plane-color}{cmyk}{0.5, 0.5, 0.5, 1.0}
+\definecolor{listing-comment}{cmyk}{0.531, 0.442, 0.4, 0.0}
+\definecolor{listing-string}{cmyk}{0.5, 0.5, 0.5, 1.0}
 $else$
 %\definecolor{listing-keyword}{HTML}{9A0079}   % キーワードの色、識別子と同じ
 \definecolor{listing-keyword}{HTML}{FF8082}   % キーワードの色、識別子と同じ
@@ -696,6 +711,10 @@ $endif$
   breaklines       = true,   % はみ出したときに自動改行するかどうか
   frame            = single,  % 枠線の種類
   framesep         = 0.19em,  % 枠線太さ
+  % コードブロックの文字間隔
+  % https://qiita.com/s417-lama/items/565167b40c28099abb04
+  columns          = fixed,
+  basewidth        = 0.5em,
   rulecolor        = \color{listing-rule},
   frameround       = ffff,
   tabsize          = 4,
