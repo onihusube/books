@@ -7,7 +7,8 @@ ifeq ($(OS),Windows_NT)
 endif
 
 COMMON_OPTION = --toc --toc-depth 4 -N -V titlepage=true -V documentclass=bxjsarticle --file-scope --listings -V listings-disable-line-numbers -V indent=true --template ../template2.tex document.md
-FONT_OPTION = -V mainfont:"NotoSerifJP-Regular.otf" -V CJKmainfont:"NotoSerifJP-Regular.otf" -V sansfont:"NotoSansJP-Regular.otf" -V CJKsansfont:"NotoSansJP-Regular.otf" -V monofont:"NotoMono-Regular.ttf" -V CJKmonofont:"NotoSansJP-Regular.otf"
+#FONT_OPTION = -V mainfont:"NotoSerifJP-Regular.otf" -V CJKmainfont:"NotoSerifJP-Regular.otf" -V sansfont:"NotoSansJP-Regular.otf" -V CJKsansfont:"NotoSansJP-Regular.otf" -V monofont:"NotoMono-Regular.ttf" -V CJKmonofont:"NotoSansJP-Regular.otf"
+FONT_OPTION = -V mainfont:"NotoSerifJP-Regular.otf" -V CJKmainfont:"NotoSerifJP-Regular.otf" -V sansfont:"NotoSansJP-Regular.otf" -V CJKsansfont:"NotoSansJP-Regular.otf" -V monofont:"Cica-Regular.ttf" -V CJKmonofont:"Cica-Regular.ttf"
 
 #PC表示用PDF生成
 pdf : document.md
