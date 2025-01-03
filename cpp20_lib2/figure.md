@@ -22,7 +22,7 @@ graph TD
     id5("--i/i--") --> bidirectional_iterator
     bidirectional_iterator --> random_access_iterator
     sized_sentinel_for --> random_access_iterator
-    id6(totally_orderd) --> random_access_iterator
+    id6(totally_ordered) --> random_access_iterator
     id7("+ - += -=") --> random_access_iterator
     id8("[]") --> random_access_iterator
     random_access_iterator --> contiguous_iterator
