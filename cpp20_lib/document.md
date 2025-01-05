@@ -7454,7 +7454,7 @@ int main() {
   std::cout << std::boolalpha;
 
   // +/-0.0の順序付け
-  double z1 = +0.0, z2 = -0.0;
+  double z1 = -0.0, z2 = +0.0;
 
   auto c1 = std::strong_order(z1, z2);   // strong_ordering::less
   auto c2 = std::weak_order(z1, z2);     // weak_ordering::equivalent
