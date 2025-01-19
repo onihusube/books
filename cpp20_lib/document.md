@@ -148,7 +148,7 @@ struct D3 : protected B {};
 struct D4 : B, D1 {};
 
 
-template<std::derived_from<B>, T>
+template<std::derived_from<B> T>
 void f();
 
 f<D1>();  // ok
