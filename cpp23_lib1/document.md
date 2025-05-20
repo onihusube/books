@@ -1,0 +1,137 @@
+---
+title: C++23 ライブラリ機能1
+author: onihusube
+date: 2025/08/17
+geometry:
+  width: 188mm
+  height: 263mm
+#coverimage: cover.jpg
+#backcoverimage: backcover.jpg
+titlecolor:
+  color1:
+    r: 0.7882
+    g: 0.6745
+    b: 0.9092
+    c: 0.25
+    m: 0.3
+    y: 0.0
+    k: 0.0
+  color2:
+    r: 0.6
+    g: 0.0
+    b: 0.6
+    c: 0.3
+    m: 0.95
+    y: 0.0
+    k: 0.0
+okuduke:
+  revision: 初版
+  printing: ねこのしっぽ
+---
+\clearpage
+
+# はじめに
+
+## 注意など
+
+`<stdfloat>`
+`<generator>`
+
+
+本書はC++23をベースとして記述されています。そのため、C++20までに導入されている機能については特に導入バージョンについて触れず、知っているものとして詳しい解説なども行いません。
+
+文中では、基本的には`std::`を省略していませんが、文脈上明らかな場合に一部で`std::`を省略することがあります。また、通常の関数の表記（`func()`）に対してメンバ関数の表記（`.member_func()`）は先頭に`.`を付加して区別します。
+
+## サンプルコードのお約束
+
+- ヘッダのインクルード/インポートは全て省略し、サンプルコードの最初で`import std;`しているものとします。
+- 主題と関係ないところを`...`で省略していることがあります。
+- 行の末尾コメントで`ok/ng`と表示することで、それがコンパイル可能かどうかを示しています。`// ok`はコンパイルが通り未定義動作がないこと、`// ng`はコンパイルエラーとなる事をそれぞれ表しています。
+
+コードブロック中で標準出力をしている時、直後のブロックでその出力例を示していることがあります。例えば次のようになっています
+
+```cpp
+int main() {
+  std::cout << "hello world!";
+}
+```
+```{style=planetext}
+hello world!
+```
+
+　
+
+標準ライブラリ中での宣言を例示する際、コードブロックの見た目を分けて表示しています（上と左の線が二重線 + 角丸）。例えば次のようになっています
+
+```{style=cppstddecl}
+// std::vectorの宣言例
+namespace std {
+  template<class T, class Allocator = allocator<T>>
+  class vector;
+}
+```
+
+\clearpage
+
+# stdモジュール
+
+C++20でモジュールが導入されたのに引き続いて、C++23では標準ライブラリをモジュールとして利用することができます。ここでいうモジュールというのはヘッダユニットの事ではなく、名前付きモジュールとして標準ライブラリを利用できるということです。
+
+```cpp
+import std;
+
+int main() {
+  std::cout << std::format("Hello {}", "world!");
+}
+```
+
+標準ライブラリモジュールの名前は`std`という名前で、この例のように`import std;`とすることでインポートできます。`std`モジュールからは全ての`std`名前空間以下の標準ライブラリ機能がエクスポートされており、この一文で全てのC++標準ライブラリ機能にアクセスすることができます。
+
+ただし、Cライブラリのものは`std`モジュールからはエクスポートされていません。
+
+```cpp
+import std;
+
+int main() {
+  printf("Hello world");  // ng、宣言が見えない
+}
+```
+
+Cライブラリ由来の機能（`<c~>`なヘッダにあるものや`std`名前空間外のグローバル名前空間で定義されているもの）に関しては、`std.compat`モジュールをインポートすることでアクセスできるようになります。
+
+```cpp
+import std.compat;
+
+int main() {
+  std::cout << std::format("Hello {}", "world!"); //ok
+  printf("Hello world");  // ok
+}
+```
+
+`std.compat`モジュールからはCのライブラリ機能（C++標準で提供されているサブセット）に加えてC++の標準ライブラリ機能もすべてエクスポートされています。そのため、その名前の構造から受けるイメージに反して、`std`モジュールよりも`std.compat`モジュールの方がより大きなモジュールになっています。このような構造になっているのはC++標準ライブラリの構造由来の特殊なものなので、独自のモジュールライブラリ作成時にこのような名前構造の慣習に必ずしも従わなくても良いかもしれません。
+
+## 標準ライブラリモジュールの特殊な保証
+
+# `<print>`
+
+# `<expected>`
+
+# `<flat_map>`/`<flat_set>`
+
+# `<mdspan>`
+
+# `<spanstream>`
+
+# `<stacktrace>`
+
+# `<stdatomic.h>`
+
+\clearpage
+
+# 謝辞
+
+本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者・執筆者の方々に厚く御礼申し上げます。
+
+- cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
+- cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
+- Compiler Explorer(https://godbolt.org/)
