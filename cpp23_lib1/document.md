@@ -381,6 +381,848 @@ second
 
 # `<expected>`
 
+`<expected>`ヘッダでは、エラーハンドリングのためのライブラリ型である`std::expected`が提供されます。
+
+`std::expected`はクラステンプレートであり`std::expected<T, E>`のように使用して、`T`に正常値の型を、`E`にエラー値の型を指定します。`std::expected<T, E>`のオブジェクトは、その状態に応じて`T`か`E`のどちらか片方の値をだけを保持しており、どちらを保持しているかによってエラー状態かどうかの分岐を行うことができます。
+
+```cpp
+// エラーコード列挙型
+enum class myerrc {
+  ...
+};
+
+// エラーが起こるかもしれない処理
+auto maybe_error() -> std::expected<double, myerrc>;
+
+int main() {
+  // 処理を実行
+  auto res = maybe_error();
+
+  // エラーチェック
+  if (res) {
+    // ✔ 正常時のパス
+    ...
+  } else {
+    // ❌ エラー時のパス
+    ...
+  }
+}
+```
+
+エラーハンドリングメカニズムに求められる特性を次のように定義すると
+
+- 可視性
+    - コードレビューの全体を通してエラーケースが表示されていること
+    - エラーが隠されているとデバッグが困難になる
+- 情報
+    - エラーの詳細（発生個所・原因・解決方法等の情報）を含むことができる
+- クリーンコード
+    - エラーの処理は、コードの別のレイヤでできるだけ目立たないように行われる
+    - コードを読むだけで、例外的な状態が存在することに気付ける
+- 非侵入的
+    - エラーの伝達チャネルが、正常な結果のための伝達チャネルを占有しない
+    - エラーは可能な限り分離されているのが望ましい
+      - 例: 関数戻り値チャネルはエラー専用であってはならない
+
+`std::expected`と既存のメカニズム（例外・エラーコード戻り値）と比較は次のようになります
+
+|特性＼方法|`std::expected`|例外|エラーコード|
+|---|---|---|---|
+|可視性|`⭕`|`❌`|`⭕`|
+|情報|`⭕`|`⭕`|`❌`|
+|クリーンコード|`⭕`|`🔺`|`⭕`|
+|非侵入的|`⭕`|`⭕`|`❌`|
+
+`std::expected`はそれぞれ次のように優れています
+
+- 可視性
+    - 戻り値型が`std::expected<T, E>`であるため、ユーザーはエラーケースを無視できない
+- 情報
+    - エラー値として任意の情報を載せられる
+- クリーンコード
+    - モナドインターフェースによって、エラー処理を別のコードレイヤに委譲できる
+- 非侵入的
+    - 関数戻り値チャネルを正常値とエラー値で共有する
+
+`std::optional`もこれに近い特性を備えていますが、`std::expected`と異なるところはエラーの場合の値を何も載せられない点です。`std::optional<T>`は実質`std::expected<T, std::nullopt_t>`であり、エラーが起きたことのみしか通知することができません。上記の特性では「情報」のところが`❌`になります。
+
+`std::expected`は`std::optional`の設計を参考にしているため多くの部分が似通っています。例えば、正常値/エラー値は内部に保持する（動的メモリ確保しない）、正常値/エラー値は領域を共有する（共用体を使用して実装）、要素型のトリビアル性の可能な限りの保持、インターフェース、などがあります。
+
+また、`std::expected`はRustでエラーハンドリングのデファクトのメカニズムとなっている`result`型と意味的に同じ型です。そちらと近い形でエラーハンドリングを書けるようになります（ただし、Rustの`?`演算子に対応するものはまだ用意されていません）。
+
+## 使用可能な型の制限
+
+`std::expected<T, E>`の`T`と`E`にはどんな型でも使用可能であるわけではなく制限があり、なおかつ`T`と`E`で少し異なっています。
+
+|型＼パラメータ|`T`|`E`|
+|---|---|---|
+|オブジェクト型（配列型を除く）|`⭕`|`⭕`|
+|配列型|`❌`|`❌`|
+|参照型|`❌`|`❌`|
+|関数型|`❌`|`❌`|
+|`void`|`⭕`|`❌`|
+|`in_place_t`/`unexpect_t`|`❌`|`⭕`|
+|`unexpected`特殊化|`❌`|`❌`|
+|CV修飾|`⭕`|`❌`|
+
+ここでのオブジェクト型は次のいずれかに該当する型です
+
+- 算術型
+    - 整数型と浮動小数点数型及び列挙型
+- ポインタ型
+    - メンバポインタ及び`std::nullptr`を含む
+- クラス型
+- 共用体型
+
+`T`の方は`void`を使用することができるほか、`const`/`volatile`修飾されている型を使用することができます。`E`の方は`in_place_t`/`unexpect_t`が使用できる点が`T`より寛容な部分ですが、これらはどちらもコンストラクタを呼び分けるためのタグ型でしかないためあまり役には立たなさそうです。
+
+そして、どちらの場合も参照型を使用することはできません。
+
+## 値へのアクセス
+
+`std::expected`を受け取った側ではまず、その状態確認のために`bool`変換演算子あるいは`.has_value()`メンバ関数を使用できます。どちらも、`true`を返す場合は正常であり、`false`を返す場合はエラー状態です。
+
+```cpp
+// エラーコード列挙型
+enum class myerrc {
+  ...
+};
+
+// エラーが起こるかもしれない処理
+auto maybe_error() -> std::expected<double, myerrc>;
+
+int main() {
+  // 処理を実行
+  auto res = maybe_error();
+
+  // エラーチェック（has_value()も使用可能
+  if (res.has_value()) {
+    // ✔ 正常時のパス
+    ...
+  } else {
+    // ❌ エラー時のパス
+    ...
+  }
+}
+```
+
+このエラーチェックの後、それぞれのパスで値にアクセスするには専用の関数を使用します。
+
+まず正常値にアクセスするには`std::optional`と同じインターフェース、すなわち`operator*`もしくは`.value()`を使用します。
+
+```cpp
+if (res.has_value()) {
+  // ✔ 正常時のパス
+
+  // 正常値へのアクセス
+  auto& value1 = *res;
+  auto& value2 = res.value();
+
+  ...
+} else {
+  // ❌ エラー時のパス
+  ...
+}
+```
+
+この2つの関数の違いも`std::optional`と同様で、`operator*`は内部で正常値へのアクセスが安全か（エラー状態ではないか）をチェックせずにアクセスを行い、`.value()`は内部でアクセスが安全かチェックを行ったうえで安全ではない場合（`.has_value() == false`）は例外を投げます。
+
+```cpp
+if (res.has_value() == false) {
+  // 正常値へのアクセス（エラー状態なので正しくない
+  auto& value1 = *res;        // 💀 UB
+  auto& value2 = res.value(); // ok、例外が送出される
+}
+```
+
+次に、エラー値にアクセスするためには`.error()`を使用します。
+
+```cpp
+if (res.has_value()) {
+  // ✔ 正常時のパス
+  ...
+} else {
+  // ❌ エラー時のパス
+  
+  // エラー値へのアクセス
+  auto& err = res.error();
+}
+```
+
+`.error()`関数は内部でエラー状態かのチェックを行わずにエラー値にアクセスします。従って、エラー状態ではない（`.has_value() == true`）場合は未定義動作になります。なお、エラー値の取得のための`operator*`に相当する物はありません。
+
+```cpp
+if (res.has_value() == true) {
+  // エラー値へのアクセス（エラー状態ではないので正しくない
+  auto& err = res.error();  // 💀 UB
+}
+```
+
+これは、`std::expected`の性質上エラー値に明示的にアクセスするのはエラーチェックを行っている場合であることがほぼ仮定できるためだと思われます（エラーチェックを行わずに正常値アクセスをすることはあっても、エラーチェックを行わずにエラー値アクセスするケースは稀なはず）。いずれにせよ、`std::expected`が得られている場合は必ずエラーチェックは行いましょう（そうしないと意味がないです）。
+
+### `.value_or()`/`.error_or()`
+
+`std::optional`には`.value_or()`というアクセス関数も用意されており、これはエラー状態を特定の正常値に変換したうえで正常値として値を取得する関数です。
+
+`std::expected`にも同様の`.value_or()`は用意されており、さらにエラー値を主体とするバージョンの`.error_or()`も用意されています。
+
+```cpp
+// 処理結果を表すexpectedを取得
+std::expected<double, myerrc> res = maybe_error();
+
+// 正常値はそのまま、エラー値はNaNとして取得
+double valid_res = res.value_or(std::numeric_limits<double>::quiet_NaN());
+
+// エラー値はそのまま、正常値は特定の列挙値として取得
+myerrc error_res = res.error_or(myerrc::done);
+```
+
+どちらの関数でも渡された引数は完全転送されて`T`/`E`のコンストラクタで変換されて返されます。ただし、その際の変換は暗黙変換のみが考慮されます。また、`.value_or()`における正常値と`.error_or()`におけるエラー値は基本的にコピーされて返されます。
+
+これらの関数の実装は単純に条件演算子を使用したものと同等であり、手書きしても一行で済みます
+
+```cpp
+template<typename T, typename E>
+class expected {
+  ...
+
+  // value_or()実装例
+  template<class U = remove_cv_t<T>>
+  constexpr T value_or(U&& v) const & {
+    return has_value() ? **this : static_cast<T>(std::forward<U>(v));
+  }
+  
+  // error_or()実装例
+  template<class G = E>
+  constexpr E error_or(G&& e) const & {
+    return has_value() ? std::forward<G>(e) : error();
+  }
+};
+```
+
+それでもなおこの関数を使用する利点は、条件の記述を回避できることと関数名による意図の明確化、そして条件演算子を隠蔽することによる可読性の向上などがあります。
+
+## 状態の指定
+
+ここでの状態とは、`std::expected<T, E>`の正常orエラー状態の事です。`std::expected`はそのオブジェクトの生存期間のある時点で正常状態かエラー状態のどちらかを取り、どちらでもない状態や両方の状態にはなりません。そして、正常状態の場合は`T`のオブジェクトを保持しており、エラー状態の場合は`E`のオブジェクトを保持しています。
+
+### 構築
+
+`std::expected<T, E>`が正常とエラーのどちらの状態を取るかは基本的に構築時に決定されます。すなわち、`std::expected`のコンストラクタの呼び方によって状態が決定されます。
+
+まず、`std::expected`をデフォルト構築すると正常状態となり`T`の値をデフォルト構築して保持します。
+
+```cpp
+std::expected<T, E> e{}; // Tをデフォルト構築して保持
+
+assert(e.has_value());  // ✔
+```
+
+このため、`T`がデフォルト構築可能ではない場合はデフォルトコンストラクタは利用できません。
+
+明示的に`T`の値を渡すと、それを完全転送して`T`の値を構築して保持し正常状態となります。
+
+```cpp
+T t{...};
+std::expected<T, E> e{t}; // tをコピーして保持
+
+assert(e.has_value());  // ✔
+```
+
+エラー状態で構築するためには`std::unexpect`タグを使用します。
+
+```cpp
+std::expected<T, E> e1{std::unexpect};  // Eをデフォルト構築して保持
+
+E e{...};
+std::expected<T, E> e2{std::unexpect, e}; // eをコピーして保持
+
+assert(e1.has_value() == false);  // ✔
+assert(e2.has_value() == false);  // ✔
+```
+
+正常状態で構築する場合は、`std::in_place`を使用することもできます。
+
+```cpp
+std::expected<T, E> e{std::in_place, args...}; // argsからTをin_place構築して保持
+
+assert(e.has_value());  // ✔
+```
+
+`std::expected<T, E>`はコピーコンストラクタとムーブコンストラクタを持ちますが、いずれも`T`と`E`の両方がコピー構築/ムーブ構築可能でないと利用できません。
+
+```cpp
+using non_copy_expected = std::expected<std::unique_ptr<int>, int>;
+non_copy_expected src{};
+
+non_copy_expected e1{src};             // ng、Tがコピー不可
+non_copy_expected e2{std::move(src)};  // ok
+```
+
+`std::expected<U, G>` -> `std::expected<T, E>`の変換コンストラクタも提供されています。このコンストラクタも、`U -> T`と`G -> E`の変換が両方とも有効でないと利用できません。
+
+```cpp
+struct no_convert{};
+
+void example(std::expected<float, int> src) {
+  std::expected<double, int> e1{src};         // ok
+  std::expected<float, std::int64_t> e2{src}; // ok
+
+  std::expected<no_convert, int> e3{src};    // ng
+  std::expected<float, no_convert> e3{src};  // ng
+}
+```
+
+### `std::unexpected`
+
+`std::expected`をエラー状態で構築するためのもう一つの方法として、`std::unexpected`というラッパクラス型が用意されています。エラー値をこの値で包んで`std::expected`のコンストラクタに渡すことでそのエラー値を保持した`expected`オブジェクトが得られます。
+
+```cpp
+std::expected<T, E> e1{std::unexpected{}};  // Eをデフォルト構築して保持
+
+E e{...};
+std::expected<T, E> e2{std::unexpected{e}}; // eをコピーして保持
+
+assert(e1.has_value() == false);  // ✔
+assert(e2.has_value() == false);  // ✔
+```
+
+これだと`std::unexpect`タグを使用する場合とほぼ変わりませんが、`std::unexpected`は`expected`を返す関数の`return`文で使用する際に便利です。例えば次のような場合
+
+```cpp
+auto f() -> std::expected<T, E> {
+  // 何らかの状態に応じてエラーを返す
+  if (condition()) {
+    return T{...};  // ok
+  } else {
+    return E{...};  // ng
+    return std::expected<T, E>{ std::unexpect, E{...}};  // ok
+  }
+}
+```
+
+正常値である`T`の値は素直にそのまま`return`に渡すことができるのに、エラー値である`E`の値はできません。先ほど見たように`std::unexpect`タグと明示的なコンストラクタ呼び出しが必要になります。これだとエラー値の構築がかなり冗長かつ構文的に重くなり、`std::expected<T, E>`を使用すればするほどこの典型的なコードは散見されるようになります。
+
+そこで`std::unexpected`を使用することでかなりすっきりと書くことができるようになります。
+
+```cpp
+auto f() -> std::expected<T, E> {
+  // 何らかの状態に応じてエラーを返す
+  if (condition()) {
+    return T{...};  // ok
+  } else {
+    return std::unexpected{E{...}};  // ok
+  }
+}
+```
+
+構文的な冗長さが削減されるとともに、`unexpected`という目立つ型名によってエラーケースの`return`文であることが視覚的に分かりやすくなります。
+
+`std::unexpected`を使用する場合、エラー値の構築のために`std::in_place`を使用することができます
+
+```cpp
+auto f() -> std::expected<T, E> {
+  ...
+
+  return std::unexpected{std::in_place, args...}; // argsからEをin_place構築して保持
+}
+```
+
+### 代入
+
+構築された後の`expected`オブジェクトの正常/エラー状態を変更するには、代入を使用します。正常値もしくは`std::unexpect`を代入することで、`expected`オブジェクトの状態を正常/エラー状態にして、代入したものを保持させることができます。
+
+```cpp
+auto f() -> std::expected<T, E>;
+
+int main() {
+  auto result = f();
+
+  // エラー状態として
+  assert(result.has_value() == false);
+
+  result = T{...};  // 正常値を代入して正常状態にする
+
+  assert(result.has_value()); // ✔
+
+  result = std::enexpect(E{...}); // エラー値を代入してエラー状態にする
+
+  assert(result.has_value() == false); // ✔
+}
+```
+
+正常値はそのまま代入できますが、エラー値を代入するには`std::enexpect`でラップしなければなりません。
+
+`expected`オブジェクトに正常値を保持させるもう一つの方法として、`.emplace()`が利用できます。
+
+```cpp
+auto f() -> std::expected<T, E>;
+
+int main() {
+  auto result = f();
+
+  // エラー状態として
+  assert(result.has_value() == false);
+
+  result.emplace(args...);  // argsからTを内部で構築して保持、正常状態となる
+}
+```
+
+`.emplace()`はエラー値構築のためには利用できません。
+
+代入/`.emplace()`による構築後の状態変更操作は、必ずしも状態変更を伴わなくても利用することができます。すなわち、正常値を保持した状態で別の正常値を代入（`.emplace()`）することができ、エラー値を保持した状態で別のエラー値を代入することができます。
+
+いずれのケースにおいても代入/`.emplace()`の操作においてはまず、現在保持している値（正常値/エラー値）を破棄してから、値の代入/構築を行います。
+
+なお、`std::expected`は空の状態を取らない（常に必ず正常/エラーのどちらかの状態にある）ため、この代入/`.emplace()`操作は`T, E`のコピー/ムーブコンストラクタが`noexcept`ではない場合に利用できないようにされています。特に、`.emplace()`は無条件で`noexcept`指定されています。
+
+## モナドインターフェース
+
+`if`による分岐は人間のミスが入りやすいため、書かなくて済むなら書かないに越したことはありません。条件演算子はその可読性の低さによって殊更にバグを導入しやすい場所となります。`std::expected`のエラー判定のようなかなり固定的なパターンの条件分岐は手書きするのではなく、どこか一箇所に（テストと共に）書いておいてそれを使いまわすことで条件記述ミスのリスクを減らすことができます。
+
+`std::expected`にはその状態に応じて特定の処理を実行させるためのある種のVisitorインターフェースが用意されており、これらのものはモナドインターフェースと呼ばれます。モナドインターフェースを使用すると、コードの表面上から分岐を隠蔽しよりクリーンかつ高機能なエラーハンドリングを記述することができます。
+
+モナドインターフェースはいずれも、`expected`のどちらかの状態の場合に実行したい処理をCallbleの形で受け取り、`expected`がその状態にあれば渡された関数を実行してその戻り値を返します。そして、モナドインターフェースの戻り値型はまた`expected`であることによってそのように渡した処理そのもののエラーもハンドリングすることができるとともに、得られた`expected`オブジェクトに対する継続処理をメソッドチェーンの形で記述していくことができます。
+
+### `.and_then()`
+
+`.and_then()`は、`expected`が正常値を持っている場合に渡された処理を実行し、そうでないなら何もせずにエラー状態をそのまま伝播させるものです。
+
+これは、渡す関数の戻り値型の`std::expected<U, E>`によって`std::expected<T, E> -> std::expected<U, E>`のような変換を行います。この時、`U`は`T`と異なっていても構いません。
+
+```cpp
+// ファイルを開く
+auto try_open_file(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルの内容を読み込む
+auto read_file_content(std::ifstream ifs) -> std::expected<std::string, myerrc>;
+
+void example() {
+  // ファイルを開いて内容を出力してから返す
+  auto res = try_open_file("file.txt")
+                .and_then(read_file_content)
+                .and_then([](auto file_str) {
+                  std::println("file content: {:s}", file_str);
+                  return std::expected<std::string, myerrc>{std::move(file_str)};
+                 });
+
+  ...
+}
+```
+
+`.and_then()`ではこのように、`std::expected`が成功状態の場合に実行するべき処理を指定していきます。処理の指定方法は1つ目のように関数ポインタ（参照）を渡したり、2つ目の様にラムダ式で渡すこともできます。内部的には`std::invoke()`を使用して呼び出しを行っているため、ある程度の柔軟性があります。
+
+`.and_then()`に渡す処理は再び`std::expected`を返さなければなりません。その際、正常値の値型（`std::expected<T, E>`の`T`）を変更することはできますがエラー型（`E`）を変更することはできず、エラー値は元の値がそのまま`.and_then()`の戻り値に伝播されます。例えば上の例では最初の`try_open_file()`が返したエラーは`.and_then()`2つのチェーン実行後の戻り値`res`まで保持されています。
+
+### `.or_else()`
+
+`.or_else()`は、`expected`がエラー値を持っている場合に渡された処理を実行し、そうでないなら何もせずに正常状態をそのまま伝播させるものです。
+
+これは、関数の戻り値型`std::expected<T, G>`によって`std::expected<T, E> -> std::expected<T, G>`のような変換を行います。この時、`G`は`E`と異なっていても構いません。
+
+```cpp
+// ファイルを開く
+auto try_open_file(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルオープンエラーをハンドリング、
+auto open_error(myerrc err)
+  -> std::expected<std::ifstream, std::string>;
+
+void example() {
+  // ファイルを開いてエラーを処理する
+  auto res = try_open_file("file.txt")
+                .or_else(open_error)
+                .or_else([](auto error_str) {
+                  std::println("file error: {:s}", error_str);
+                  return std::expected<std::ifstream, std::monostate>{std::unexpect};
+                 });
+
+  ...
+}
+```
+
+この関数も内部的には`std::invoke()`を使用して呼び出しを行っているため、ラムダ式などを渡すことができます。
+
+`.or_else()`に渡す処理も再び`std::expected`を返さなければなりません。その際、エラー型（`E`）を変更することはできますが正常値の値型（`T`）を変更することはできず、正常値は元の値がそのまま`.or_else()`の戻り値に伝播されます。例えば上の例では最初の`try_open_file()`が成功した場合、返された`ifstream`オブジェクトは`.or_else()`2つのチェーン実行後の戻り値`res`まで保持されています。
+
+この例では2つ目の`.or_else()`でエラーハンドリングを完了したとみなして、以降のエラー値がスルー可能であることを表すために`std::monostate`をエラー型として使用しています。`std::monostate`はオブジェクトとして扱える`void`のような型であり、`E`に`void`が使用できず`.or_else()`に渡す関数も`void`を返せないために使用しています。
+
+### `.transform()`
+
+`.transform()`は`expected`が正常値を持っている場合に渡された処理を実行し、そうでないなら何もせずにエラー状態をそのまま伝播させるものです。
+
+これは、渡す関数の戻り値型の`U`によって`std::expected<T, E> -> std::expected<U, E>`のような変換を行います。この時、`U`は`T`と異なっていても構いません。
+
+```cpp
+// ファイルを開く
+auto try_open_file(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルの内容を読み込む
+auto read_file_content(std::ifstream ifs) -> std::string;
+
+void example() {
+  // ファイルを開いて内容を出力してから返す
+  auto res = try_open_file("file.txt")
+                .transform(read_file_content)
+                .transform([](auto file_str) {
+                  std::println("file content: {:s}", file_str);
+                  return file_str;
+                 });
+
+  ...
+}
+```
+
+この関数は`.and_then()`とよく似ており、一見すると違いが分からない所があります。`.and_then()`との違いは渡す処理の戻り値型の制限にあり、`.and_then()`に渡す処理が`expected`を返さないといけないのに対して、`.transform()`に渡すものは任意の型を返すようにすることができます。しかし、`.transform()`事態の戻り値型はまた`expected`になります。
+
+これによって、`.transform()`はその名前の通りに`expected`の正常値型を変換するという動作に特化しています。
+
+なお、`.transform()`に渡す処理は`void`戻り値型にすることもできます。この場合、`.transform()`の戻り値型は`expected<void, E>`になります。
+
+```cpp
+// ファイルを開く
+auto try_open_file(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルの内容を読み込む
+auto read_file_content(std::ifstream ifs) -> std::string;
+
+void example() {
+  // ファイルを開いて内容を出力する
+  try_open_file("file.txt")
+    .transform(read_file_content)
+    .transform([](auto file_str) -> void {
+      std::println("file content: {:s}", file_str);
+    });
+  ...
+}
+```
+
+### `.transform_error()`
+
+`.transform_error()`は`expected`がエラー値を持っている場合に渡された処理を実行し、そうでないなら何もせずに正常状態をそのまま伝播させるものです。
+
+これは、関数の戻り値型`G`によって`std::expected<T, E> -> std::expected<T, G>`のような変換を行います。この時、`G`は`E`と異なっていても構いません。
+
+```cpp
+// ファイルを開く
+auto try_open_file(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルオープンエラーをハンドリング、
+auto open_error(myerrc err)
+  -> std::expected<std::ifstream, std::string>;
+
+void example() {
+  // ファイルを開いてエラーを処理する
+  auto res = try_open_file("file.txt")
+                .transform_error(open_error)
+                .transform_error([](auto error_str) {
+                  std::println("file error: {:s}", error_str);
+                  return error_str;
+                 });
+
+  ...
+}
+```
+
+この関数も`.or_else()`とよく似ており、その違いは`.transform()`の場合と同様に渡す処理の戻り値型として任意の型を返すようにすることができるところにあります。`.or_else()`に渡す処理の戻り値型は`expected`でなければなりませんが、`.transform_error()`に渡すものは任意の型を返すようにすることができます。
+
+`.transform_error()`もまたその名前の通りに`expected`のエラー値型を変換するという動作に特化しています。
+
+`std::expected`はエラー型に`void`を指定できないため、`.transform_error()`に渡す処理は`void`戻り値型にすることができません。これをやりたい場合は、先程同様に`std::monostate`を使用すると良いでしょう。
+
+```cpp
+// ファイルを開く
+auto try_open_file(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルオープンエラーをハンドリング、
+auto open_error(myerrc err) -> std::string;
+
+void example() {
+  // ファイルを開いてエラーを処理する
+  try_open_file("file.txt")
+    .transform_error(open_error)
+    .transform_error([](auto error_str) -> std::monostate {
+      std::println("file error: {:s}", error_str);
+      return {};
+     });
+
+  ...
+}
+```
+
+### 2種類のインターフェースの違い
+
+`expected`のモナドインターフェースは`and_then/or_else`と`transform/transform_error`の2種類に分けることができます。どちらもよく似た使用方法を持ちよく似た動作をしますが、前者は渡す処理が`expected`を返さなければならないのに対して、後者はその制限がありません。従って、通常使用しやすいのは`transform/transform_error`の方でしょう。
+
+`and_then/or_else`の利点は、渡した処理内部のエラーもしくはエラー復帰を`expected`として返すことができるところにあります。
+
+```cpp
+// ファイルを開く
+auto try_open_file(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// エラー文字列変換
+auto to_err_string(myerrc e)
+  -> std::expected<std::ifstream, std::string>
+{
+  if (e == myerrc::special_case) {
+    // 特定のエラーでは、予め用意されたファイルを読んで返す
+    // 以降正常系へ復帰する
+    return std::ifstream{"special_file.txt"};
+  }
+
+  ...
+
+  // エラー値を文字列変換して返す
+  return { std::unexpect, enum_to_str(e) };
+}
+
+// ファイルを読みだす
+auto read_file_content(std::ifstream ifs)
+  -> std::expected<std::string, std::string>
+{
+  std::string line;
+  std::string content;
+
+  // 読み出し内容の確認などでエラーを検知し報告する
+  if (!std::getline(ifs, line)) {
+    return { std::unexpect, "strem read error." };
+  }
+  if (!validation(line)) {
+    return { std::unexpect, "invalid file format." };
+  }
+
+  ...
+
+  // 読み出し内容を返して正常終了
+  return content;
+}
+
+void example() {
+  // ファイルを開いて内容を読み取って返す
+  auto res = try_open_file("file.txt")
+                .or_else(to_err_string)
+                .and_then(read_file_content);
+
+  ...
+}
+```
+
+`transform/transform_error`は正常/エラー状態の型を変更することはできますが、その呼び出し前後で`expected`の正常/エラー状態を変更することはできません。そのため、渡した処理の内部でのエラー/復帰を`expected`として返すことはできません。一方で、`and_then/or_else`は渡す処理が直接`expected`を返すため内部でのエラー/復帰を`expected`として返すことができ、その呼び出し前後で正常/エラー型の変更と同時に`expected`の正常/エラー状態を変更することができます。
+
+### メソッドチェーン
+
+これらの4つのモナドインターフェースはいずれも戻り値が`expected`で返ります。そのため、モナドインターフェースの呼び出しはメソッドチェーンの形で連鎖的に使用することができます。
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルオープンエラーをハンドリング、
+auto attempt_recovery(myerrc err)
+  -> std::expected<std::ifstream, myerrc>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs)
+  -> std::string;
+
+// 読み取った内容を検証
+auto ensure_valid_content(std::string file_data)
+  -> std::expected<std::string, myerrc>;
+
+// 一連のエラーを文字列化
+auto render_error(myerrc err) -> std::string;
+
+
+void example() {
+  // ファイルを開いて内容を読み取って返す
+  auto res = attempt_to_open("file.txt")
+                .or_else(attempt_recovery)
+                .transform(extract_content)
+                .and_then(ensure_valid_content)
+                .transform_error(render_error);
+
+  if (res.has_value() == false) {
+    // エラー報告
+    std::println("file read error: {:s}", res.error());
+    return;
+  }
+
+  ...
+}
+```
+
+モナドインターフェースのメソッドチェーンを使用すると、途中で必要な`if`による`expected`状態チェックとその後の中身の取り出し、処理の結果によって`expected`を再構築して次に渡す、のようなお決まりの処理を省略することができます。さらに、渡す関数名を工夫することによってエラーを起こしうる処理の流れを宣言的に記述することができます。
+
+## `std::expected<void, E>`
+
+`std::expected<T, E>`の`T`は`void`にすることができます（`E`はできません）。これは、`void`戻り値型関数における例外やエラーコード等によるエラー伝達手段からの移行先として利用できます。
+
+```cpp
+// 戻り値なしで例外によってエラー報告する関数
+void f1(int n) {
+  if (n == 0) {
+    throw std::runtime_error{"n must be non zero."};
+  }
+
+  ...
+}
+
+// ↑をexpectedで書き直す
+auto f2(int n) -> std::expected<void, myerrc> {
+  if (n == 0) {
+    return std::unexpect{myerrc::zero_input};
+  }
+
+  ...
+
+  return {};
+}
+```
+
+`std::expected<void, E>`は通常の`std::expected<T, E>`に対して部分特殊化によって定義されており、これによって正常値に関するインターフェースが`void`型に特化したものに置き換えられています。
+
+例えば`operator*`や`.value()`は利用可能なものの戻り値型が`void`になっており、`.emplace()`は引数を取らなくなっています。そして、`.value_or()`や正常値を渡せるコンストラクタ/代入演算子などは利用できません。
+
+モナドインターフェースは4種類全てが利用できますが、正常値の場合の関数（`.and_then()`/`.transform()`）は渡す関数が引数無しである必要があります。
+
+```cpp
+// さっきのf2()
+auto f2(int n) -> std::expected<void, myerrc>;
+
+int main() {
+  auto res = f2(0);
+
+  // 状態判定方法は共通
+  if (res.has_value()) {
+    // 正常値の取得関数は使用可能だが戻り値はない
+    *res;
+    res.value();
+  } else {
+    // エラー値取得は全く同じ
+    auto& err = res.error();
+  }
+
+  // 正常時動作系のモナドインターフェースは引数無し
+  res.and_then([] {
+    ...
+  });
+  res.transform([] {
+    ...
+  });
+
+  // エラー時動作系は通常と同じ
+  res.or_else([](myerrc& e) {
+    ...
+  });
+}
+```
+
+例外送出やエラーコードを返すことによってエラーを報告していた戻り値のない関数をわざわざ`expected<void, E>`で書き換える利点は、モナドインターフェースをはじめとする`expected<void, E>`のエラーハンドリング機能を利用できるようになる点にあります。
+
+## `std::bad_expected_access<E>`
+
+`.value()`によって正常値を取得しようとする場合、`expected`オブジェクトの状態がチェックされエラー状態にあれば例外が送出されます。
+
+```cpp
+auto f() -> std::expected<T, E>;
+
+int main() {
+  auto res = f();
+
+  auto& v = res.value();  // エラー状態の場合例外が投げられる
+}
+```
+
+この場合に送出される例外型は`std::bad_expected_access<E>`という型です。この例外型はクラステンプレートであり、テンプレートパラメータとして例外送出元の`expected<T, E>`の`E`を取ります。`std::bad_expected_access<E>`は`std::exception`の派生型でありその他の例外オブジェクトと同様に扱うことができますが、それに加えて`.error()`によってエラー値を取得することができます。
+
+```cpp
+auto f() -> std::expected<T, E>;
+
+int main() {
+  auto res = f();
+
+  try {
+    auto& v = res.value();  // エラー状態の場合例外が投げられる
+
+    ...
+  } catch (const std::bad_expected_access<E>& ex) {
+    auto& err = ex.error();   // 送出元のexpectedが保持してたエラー値を取得できる
+
+    auto err_str = ex.what(); // std::exceptionのインターフェースも利用可能
+    ...
+  }
+}
+```
+
+`std::bad_expected_access<E>`が保持するエラー値は、それを送出する元になった`expected`オブジェクトがその時点で保持しているエラー値をコピー（右辺値の場合はムーブ）したものです。
+
+```cpp
+enum class myerrc : int {
+  error = -1,
+  success = 0,
+};
+
+auto f() -> std::expected<int, myerrc> {
+  return std::unexpected{myerrc::error};
+}
+
+int main() {
+  try {
+    auto res = f();
+    auto v = res.value(); // 例外
+  } catch(const std::bad_expected_access<myerrc>& ex) {
+    auto e = ex.error();
+
+    assert(e == myerrc::error); // ✔
+  }
+}
+```
+
+`std::bad_expected_access<E>`によって例外を`catch`するためには、送出元の`expected<T, E>`の`E`型を知っている必要があります。`std::expected`を内部的に重層的に扱っている関数の呼び出しだったり、別の翻訳単位にある関数（必ずしもソースコードを見ることができない）などでは、`E`の型を求めるのが簡単ではない場合があります。
+
+その場合に`expected`由来の例外を弁別してキャッチするために`std::bad_expected_access<void>`が利用できます。
+
+```cpp
+auto f() -> std::expected<T, E>;
+
+int main() {
+  try {
+    auto v = f().value();
+  } catch (const std::bad_expected_access<E>& ex) {
+    // エラー型Eのexpected由来の例外をキャッチ
+  } catch (const std::bad_expected_access<void>& ex) {
+    // E以外のエラー型をもつexpected由来の例外をキャッチ
+  } catch (const std::exception& ex) {
+    // expected::value()以外の原因の例外をキャッチ
+  }
+}
+```
+
+`std::bad_expected_access<void>`は`std::bad_expected_access<E>`の基底クラスとなっているため、`std::bad_expected_access<void>`は`E`に関わらず`std::bad_expected_access`全般をキャッチすることができます。
+
+```cpp
+namespace std {
+
+  template<>
+  class bad_expected_access<void> : public exception {
+    ...
+  };
+
+  template<class E>
+  class bad_expected_access : public bad_expected_access<void> {
+    ...
+  };
+}
+```
+
 # `<flat_map>`/`<flat_set>`
 
 # `<mdspan>`
