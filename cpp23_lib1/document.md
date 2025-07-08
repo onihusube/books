@@ -1225,6 +1225,872 @@ namespace std {
 
 # `<flat_map>`/`<flat_set>`
 
+`std::map`や`std::set`などの（順序付き）連想コンテナはノードベースのコンテナであり、各要素はノードという単位でメモリ上に散らばっています。各ノードは`Key`とそれに対応する`Value`に加えて、子のノードへのポインタを2つ保持しています。これらノードを適切な順番でリンクすることで二分探索木（おそらくほとんどの場合赤黒木）を構成しています。
+
+連想コンテナはその特性上`Key`による要素探索によく使用されますが、それぞれの要素（=ノード）がメモリ上に散らばっているためキャッシュ効率が悪く（キャッシュに載りづらい）、検索パフォーマンスが良くないという問題があります。場合によっては、`std::vector`に要素を配置して先頭から線形探索した方が検索が早くなることすらあります。
+
+`std::flat_map`/`std::flat_set`は、このような課題に対応するために新しく追加された連想コンテナです。これらは、`std::vector`のキャッシュ効率の高さと`std::map`の探索の効率性（log計算量）を同時に併せ持っています。
+
+```cpp
+#include <flat_map>
+
+int main() {
+  std::flat_map<int, std::string_view> map = {
+    {1, "one"},
+    {18, "eighteen"},
+    {6, "six"},
+    {3, "three"}
+  };
+
+  std::string_view one = map[0];  // "one"
+
+  bool b = map.contains(5) ;  // false
+}
+```
+
+`std::flat_map`/`std::flat_set`は連想コンテナであり、基本的な使用方法やインターフェースなどは`std::map`/`std::set`に準じています。しかし、内部構造は大きく異なっており、検索の効率性の向上に重点が置かれています。
+
+## 内部構造
+
+`std::flat_map`を代表として、これらの`flat`な連想コンテナの内部構造を見ていきます。
+
+`std::flat_map`をはじめとする`flat`な連想コンテナの基本的な構造は、Key-Valueペアのソート済み配列です。
+
+例えば`{1, "one"}, {3, "three"}, {5, "five"}...`のような要素列（数字をキーとする）がある時、内部のソート済み配列は次のようになります
+
+```
+Key-Value: [{1: "one"}, {3: "three"}, {5: "five"}...]
+```
+
+このようなソート済みの配列に対しては二分探索によって`O(log N)`の計算量で検索を行うことができます。しかもそれぞれの要素はノードによって独立しているのではなく配列要素としてメモリ上で連続しているため、キャッシュ効率を向上させることができ、検索をより高速化できます。
+
+ただし、このためにはソート済みであることを常に維持しなければならず、しかも配列（メモリ上で連続している）であるため、挿入時には挿入位置の引き当てだけではなくそれより後ろの要素をずらす必要があります。さらに、配列サイズが足りなければそのキャパシティを拡大した配列にデータを移さなければなりません。このため、挿入の計算量は`O(N)`になります。
+
+削除の場合は配列の再確保は不要であるものの、要素をずらす必要はあるため、計算量は同様に`O(N)`になります。
+
+`std::map`のようなKey-Valueペアによる連想コンテナの場合、検索はキーに対して行われ、値は見つかったキーに対して引き当てられます。すると、検索時にコンテナ要素のキーとキーの間に値が入っているのはキャッシュ効率の観点からは邪魔です。そこで、キーの配列と値の配列を分けてやることで、検索時のキャッシュ効率を最大化することができます。
+
+先程の例をベースにすると次のような構造になります
+
+``` 
+Key: [1, 3, 5]
+Value: ["one", "three", "five"]
+```
+
+キーと値は配列のインデックスで対応するため、キーを発見したらその値の保存場所はすぐに特定されます。
+
+このキーと値の2つの配列上にソート済み配列を構築して保持するのが、`std::flat_map`の内部構造となります。2つの内部配列は通常`std::vector`によって管理されており、コンストラクタ-挿入-削除を通してその要素数と位置（ソート済み位置）が維持され続けることによって、ソート済み配列による連想コンテナ機能を提供します。
+
+なお、`std::flat_set`は`std::flat_map`に対して`value`の配列を無くしたものです。こちらはよりソート済み配列そのものです。
+
+### `multi`
+
+`std::map`/`std::set`には対応して`std::multimap`/`std::multiset`があります。これらはキーの重複を許す（1つのキーに対して複数の値が対応しても良い）連想コンテナですが、`std::flat_map`/`std::flat_set`にも同様に`std::flat_multimap`/`std::flat_multiset`が用意されています。
+
+`std::flat_multimap`/`std::flat_multiset`の`std::flat_map`/`std::flat_set`に対する内部構造は全く同じで、キーの重複を許すように格納されるのみです。すなわち、同じキーに対する複数の値は異なる要素として連続した領域に格納されています。
+
+```cpp
+#include <flat_map>
+
+int main() {
+  std::flat_multimap<int, std::string_view> map = {
+    {1, "one"},
+    {18, "eighteen"},
+    {6, "six"}
+  };
+  
+  map.insert({1, "1"});
+  map.insert({1, "un"});
+
+  auto len = map.size();  // 5
+}
+```
+
+この例の場合、内部配列は例えば次のようになっています
+
+```
+Key:   [1, 1, 1, 6, 18]
+Value: ["one", "1", "un", "six", "eighteen"]
+```
+
+`std::flat_multiset`はここから`value`の配列を無くしたものになり、重複要素の格納方法は同様になります。
+
+## 特徴
+
+### 不変条件
+
+4種類の`std::flat_xxx`なコンテナはいずれも次のような不変条件を持っています
+
+- キーと値の個数が常に等しい
+    - キー配列と値の配列の要素数は常に等しい
+- キーは比較オブジェクトによって昇順にソートされている
+- 値の配列の先頭からのオフセット`off`の場所にある値は、キー配列において先頭から`off`の場所にあるキーに関連付けられている
+
+これらはクラスの不変条件であり、コンテナに対するあらゆる操作の前後で保たれるものです。この不変条件は強い例外安全性の保証によって例外送出時でも保たれます（このため、例外送出が起きた後でコンテナが空になる場合があります。
+
+### 計算量
+
+`std::map`と比較した`std::flat_map`の計算量は次のようになります
+
+|操作|`flat_map`|`map`|備考|
+|---|---|---|---|
+|構築|O(N log N)|O(N log N)|未ソートの場合、Nは入力要素数|
+|構築|O(N)|O(N)|ソート済みの場合、Nは入力要素数|
+|挿入|O(N)|O(log N)|Nは自身の要素数|
+|削除|O(N)|O(log N)|Nは自身の要素数|
+|探索|O(log N)|O(log N)|Nは自身の要素数|
+
+構築以外は基本的に単一要素に対する操作になります。複数の要素の場合、その要素数に応じた計算量が足される形になります。
+
+この表からも、探索以外の計算量は既存の連想コンテナに劣ることが分かります。これは主に、内部のソート済み配列のソート済み状態を維持する必要性によります。
+
+探索の計算量も`std::map`と同等であるため、計算量の観点からは`std::flat_map`に優位性は何もないわけですが、上述のように現代のプロセッサにおけるキャッシュ周りの事情に最適化されたデータ配置をしていることによって、`std::map`に対して探索時の優位性が生まれています。
+
+なお、`std::flat_set`と`std::set`および`multi`なコンテナの場合の計算量の違いも同様になります。
+
+### 利用シーン
+
+これらのような性質から`flat`なコンテナの最適な利用シーンは、コンテナの更新頻度が低く探索の頻度が高い、場合であり、その差が大きいほどより効果を発揮します。
+
+コンテナの更新（挿入や削除）の操作はコンテナの要素数に対して線形の時間がかかるだけではなく、内部で要素の再配置が発生する（場合によっては追加のメモリ確保も行われる）ため計算量以上に効率が悪く、さらには取得済みの参照（イテレータ）を無効化する危険性があります。
+
+一方で探索はキーの配列を二分探索するだけであり、キーの配列のメモリ局所性が高いことによってキャッシュヒット率が向上し、計算量以上の効率的な探索を行うことができます。
+
+そのため、全ての要素は構築時に決定され構築した後は参照（探索）のみを行う、という使い方が最も効率的であり理想です。
+
+`flat`なコンテナの構築後に要素を追加する必要がある場合でも、要素の追加のステップと参照のステップを分けることができるのであれば、構築は`std::map`で行い、参照は`flat_map`で行うという運用が有効です。
+
+```cpp
+#include <flat_map>
+
+int main() {
+  // 要素の追加フェース
+  std::flat_map<int, std::string_view> build = {
+    {1, "one"},
+    {18, "eighteen"},
+    {6, "six"}
+  };
+  
+  map.insert({2, "two"});
+
+  std::list<std::pair<int, std::string_view>> list{
+    {22, "twenty-two"},
+    {0, "zero"},
+    {7, "seven"}
+  };
+
+  map.insert_range(list);
+
+  // 探索フェーズ
+  const std::flat_map<int, std::string_view> lookup{
+    std::sorted_unique,
+    build.begin(),
+    build.end()
+  };
+
+  auto& elem1 = lookup.at(1);
+  auto it = lookup.find(22);
+  bool b = lookup.contains(100);
+
+  ...
+}
+```
+
+これらの使用可能なインターフェースについての詳細は、次の節で見ていきます。
+
+## インターフェース
+
+`std::flat_xxx`なコンテナは対応する`std::xxx`なコンテナとほぼ同じインターフェースを持っているため、使用感はほぼ同じになるはずです。
+
+### テンプレートパラメータ
+
+`flat_map`/`flat_set`のテンプレートパラメータは次のようになっています
+
+```cpp
+namespace std {
+  template<class Key, class T,
+           class Compare = less<Key>,
+           class KeyContainer = vector<Key>,
+           class MappedContainer = vector<T>>
+  class flat_map {
+    ...
+  };
+
+  template<class Key,
+           class Compare = less<Key>,
+           class KeyContainer = vector<Key>>
+  class flat_set {
+    ...
+  };
+}
+```
+
+`Key, T, Compare`は`std::map`/`std::set`と同じものです、後ろにある`KeyContainer`および`MappedContainer`はそれぞれ`Key`の配列の型と`T`の配列の型を指定します。配列の型はどちらもデフォルトが`std::vector`になっており、多くの場合はここから変更する必要は無いでしょう。
+
+内部コンテナ型は`KeyContainer`/`MappedContainer`を変更することによってカスタマイズすることができ、シーケンスコンテナと呼ばれるタイプのコンテナを使用することができます。`std::vector`の他には例えば`std::dequeue`が使用できます。
+
+`multi`なコンテナは対応する非`multi`なものと同じテンプレートパラメータを持ちます。
+
+### イテレータ
+
+4種類の`std::flat_xxx`なコンテナはいずれもそのイテレータは`random_access_iterator`であり、`range`としては`random_access_range`です。従って、範囲`for`で使用可能であり、`range`アダプタも接続可能です。
+
+また、イテレータに関する性質は次のようになっています
+
+|メンバ型|非`multi`|`multi`|
+|---|---|---|
+|`iterator`|`random_access_iterator`|同|
+|`value_type`|`pair<Key, T>`|`Key`|
+|`reference`|`pair<const Key&, T&>`|`Key&`|
+
+明確な規定はありませんが、`flat_map`/`flat_multimap`の場合はおそらく2つの内部配列を`zip_view`で閉じ合わせたイテレータが使用されると思われます。
+
+4種類の`std::flat_xxx`なコンテナはいずれも内部配列はソート済みであり、イテレータは内部配列の先頭から順番に要素を辿っていくものになります。従って、要素のイテレーション順はソート済みの順番になります。
+
+```cpp
+#include <flat_map>
+
+int main() {
+  std::flat_map<int, std::string_view> map = {
+    {1, "one"},
+    {18, "eighteen"},
+    {6, "six"},
+    {3, "three"}
+  };
+
+  for (const auto& [key, value] : map) {
+    std::println("key: {:<2}, value: {}", key, value);
+  }
+}
+```
+
+この出力は次のようになります
+
+```
+key: 1 , value: one
+key: 3 , value: three
+key: 6 , value: six
+key: 18, value: eighteen
+```
+
+#### イテレータの無効化
+
+`flat`なコンテナはデフォルトでは内部配列に`std::vector`を使用しており、その内部構造から明らかにイテレータが無効化されるタイミングがかなり多いことがうかがえます。これは通常の連想コンテナがイテレータの無効化に関してかなり安定していることとは対照的です。
+
+```cpp
+std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {18, "eighteen"},
+  {6, "six"}
+};
+
+auto it = map.find(1);
+
+map.insert({3, "three"}); // 全てのイテレータと参照を無効化しうる
+
+auto v = *it; // 💀 この時点でイテレータの使用は安全ではない
+```
+
+`flat`なコンテナでは挿入削除いずれの場合も要素の位置が変わりうるため、コンテナに対する変更の後でそれ以前に取得された要素への参照及びイテレータは無効化される可能性があります。
+
+これは`flat`なコンテナの不変条件が原因であるため、通常内部コンテナを変えたとしても変わりません。
+
+### 構築
+
+`std::flat_xxx`なコンテナのコンストラクタは大きく分けると次の5種類が基本となります。
+
+1. デフォルトコンストラクタ
+2. 内部配列を初期化するコンストラクタ
+3. イテレータペアを受け取るコンストラクタ
+4. `range`コンストラクタ
+5. `initializer_list`コンストラクタ
+6. コピー/ムーブコンストラクタ
+
+```cpp
+using flat_map = std::flat_map<int, std::string_view>;
+ 
+// 1. デフォルトコンストラクタ
+flat_map map1{};
+
+std::vector<int> key = {3, 1, 5};
+std::vector<std::string_view> value = {"three", "one", "five"};
+// 2. 内部配列を初期化するコンストラクタ
+flat_map map2{key, value};
+
+std::map<int, std::string_view> container = {
+  {3, "three"},
+  {1, "one"},
+  {5, "five"}
+};
+// 3. イテレータペアを受け取るコンストラクタ
+flat_map map3{container.begin(), container.end()};
+
+// 4. rangeコンストラクタ
+flat_map map4{std::from_range, container};
+
+// 5. initializer_listコンストラクタ
+flat_map map5 = {
+  {3, "three"},
+  {1, "one"},
+  {5, "five"}
+};
+
+// 6. コピー/ムーブコンストラクタ
+flat_map map6{map5};
+flat_map map7{std::move(map5)};
+```
+
+デフォルトコンストラクタとコピー/ムーブコンストラクタ以外のコンストラクタでは、構築時に内部配列はソートされます。さらに、`multi`でないコンテナにおいて、2のコンストラクタでは内部配列をソートした後で連続した重複要素列から最初の要素以外を削除し、それ以外のコンストラクタでは、重複要素は先に現れた要素が後で現れる要素に上書きされる形になります。
+
+これらのコンストラクタはいずれも基本的に、それぞれ引数の最後でオプション引数として比較オブジェクトとアロケータを受け取るオーバーロードが用意されています。
+
+```cpp
+using flat_map = std::flat_map<int, std::string_view, std::ranges::less, std::pmr::vector<int>, std::pmr::vector<std::string_view>>;
+
+std::ranges::less comp;
+std::pmr::polymorphic_allocator<> alloc;
+
+std::pmr::vector<int> key = {3, 1, 5};
+std::pmr::vector<std::string_view> value = {"three", "one", "five"};
+
+// 比較オブジェクトを渡す
+flat_map map1{comp};
+flat_map map2{key, value, comp};
+
+// アロケータを渡す
+flat_map map1{alloc};
+flat_map map2{key, value, alloc};
+
+// 両方渡す
+flat_map map1{comp, alloc};
+flat_map map2{key, value, comp, alloc};
+```
+
+この2つのオプション引数を同時に指定する場合は、比較オブジェクト->アロケータの順番になります。
+
+アロケータを渡す場合、内部配列はどちらもこの渡されたアロケータを使用するように構築されます。これにはUses-allocator constructionが使用されますが、setではない場合は1つのアロケータでKey/Value2つの要素型を持つコンテナを初期化できる必要があります。上記の例では、`pmr::vector<T>`に対して`polymorphic_allocator<>`はそれを満たしており、内部配列はこの渡されたアロケータを使用しています。
+
+なお、コピー/ムーブコンストラクタには比較オブジェクトを受け取るオーバーロードはありません。これはコピー/ムーブ元から取得するものを使用するためです。
+
+```cpp
+using flat_map = std::flat_map<int, std::string_view, std::ranges::less>;
+
+std::ranges::less comp;
+flat_map src{...};
+
+// いずれもng
+flat_map map1{src, comp};
+flat_map map2{std::move(src), comp};
+```
+
+さらに、2・3・5のコンストラクタには入力要素列が既にソート済みであることを伝達することのできるコンストラクタが用意されています。これを利用するためには、非`multi`なコンテナの場合は`std::sorted_unique`、`multi`なコンテナの場合は`std::sorted_equivalent`を先頭で渡します。
+
+```cpp
+using flat_map = std::flat_map<int, std::string_view>;
+using flat_multimap = std::flat_multimap<int, std::string_view>;
+
+std::vector<int> key = {1, 3, 5};
+std::vector<std::string_view> value = {"one", "three", "five"};
+// 2. 内部配列を初期化するコンストラクタ
+flat_map map2{std::sorted_unique, key, value};
+
+// 5. initializer_listコンストラクタ
+flat_map map5 = {
+  std::sorted_unique, 
+  {
+    {1, "one"},
+    {3, "three"},
+    {5, "five"}
+  }
+};
+
+// multiの場合
+flat_multimap mmap2{std::sorted_equivalent, key, value};
+flat_multimap mmap5 = {
+  std::sorted_equivalent, 
+  {
+    {1, "one"},
+    {3, "three"},
+    {5, "five"}
+  }
+};
+```
+
+`std::sorted_unique`/`std::sorted_equivalent`ではないコンストラクタは内部配列のソートを伴うため（非`multi`の場合は追加で重複要素の削除も）、入力要素数`N`とすると（ソートされていない場合）`O(N log N)`の計算量となりますが、`std::sorted_unique`を指定すると`O(N)`の計算量で常に抑えることができます。ただしこの場合、入力がソートされていること（と非`multi`の場合は重複要素が無い事）を保証するのはユーザーの責任となり、ソートされていない入力などは未定義動作となります。
+
+ちなみに、イテレータペアを受け取るコンストラクタはこの`std::sorted_unique`/`std::sorted_equivalent`を使用できるのですが、rangeコンストラクタでは使用できないという違いがあります。
+
+```cpp
+using flat_map = std::flat_map<int, std::string_view>;
+
+std::map<int, std::string_view> container = {
+  {1, "one"},
+  {3, "three"},
+  {5, "five"}
+};
+
+// 3. イテレータペアを受け取るコンストラクタ
+flat_map map3{std::sorted_unique, container.begin(), container.end()};  // ok
+
+// 4. rangeコンストラクタ
+flat_map map4{std::sorted_unique, std::from_range, container};  // ng
+```
+
+一応ソート済みの入力に対しての計算量は変わりませんが、`std::sorted_unique`を指定する方はそもそもソートを試みることも（非`multi`なコンテナにおいて）重複要素を削除しようとすることもしないため、少しだけ効率的になる可能性があります。
+
+### 追加・挿入
+
+前述のように、`flat`なコンテナにおける挿入操作の計算量はコンテナサイズ`N`に対して線形（`O(N)`）になるので、この節の関数は特に言及がない限り計算量は`O(N)`です。
+
+挿入操作は大きく`insert`系の関数と`emplace`系の関数とに分かれます。前者はコンテナの要素型のオブジェクトを受けてコンテナに追加する操作で、後者は要素型を構築するための引数（典型的にはキーと値を個別に渡す）を受けて要素をコンテナに追加する関数です。
+
+`.insert()`と`.emplace()`がまず基本形となります。
+
+```cpp
+using namespace std::literals;
+
+std::flat_map<int, std::string_view> map;
+
+auto [pos, success] = map.insert(std::make_pair(1, "one"sv));
+auto [pos, success] = map.emplace(5, "five");
+```
+
+連想コンテナ`C<Key, Value>`の要素型（`value_type`）は`std::pair<Key, Value>`となり、`.insert()`はこの要素型オブジェクト（あるいはそれに変換可能な型のオブジェクト）を受けてそれをコンテナに追加し、`.emplace()`はこの要素型のコンストラクタ引数を受けてそこからコンテナに要素を追加しながら構築します。
+
+どちらの関数でも戻り値は同じ意味を持つイテレータと`bool`値のペアになります。`bool`値は要素の挿入に成功した場合にのみ`true`となる一方、イテレータの方は挿入しようとした要素のキーに対応する要素へのイテレータとなります。
+
+```cpp
+std::flat_map<int, std::string_view> map = {
+  {1, "one"}
+};
+
+auto[it1, success1] = map.emplace(5, "five");
+assert(success1);         // ✔
+assert(it1->first == 5);  // ✔
+
+auto[it2, success2] = map.emplace(1, "one");
+assert(!success2);        // ✔
+assert(it2->first == 1);  // ✔
+```
+
+すなわちイテレータの方は操作の成否に関わらず常に要素を指しています。
+
+これらの挿入操作が失敗する場合というのは非`multi`なコンテナにおいてキーに対応する要素が既に存在している場合です。そのため、`multi`なコンテナにおいてはこれらの関数の戻り値はイテレータのみであり、そのイテレータは新規に挿入された要素へのものになります。
+
+```cpp
+std::flat_multimap<int, std::string_view> map = {
+  {1, "one"}
+};
+
+auto it = map.emplace(1, "1");
+assert(it->first == 1);    // ✔
+assert(it->second == "1"); // ✔
+```
+
+`set`系コンテナの場合`.insert()`の引数はキー型オブジェクトになり、`.emplace()`の引数はキー型コンストラクタ引数となります。
+
+`.emplace()`は上記形式の一種類のみですが、`.insert()`にはいくつかのオーバーロードがあります。
+
+1つは第一引数に挿入位置を取るものですが、この位置のヒントがあっても計算量は変化しないので、通常の`map`等に比べるとこのオーバーロードの恩恵は小さくなります。これはインターフェースの一貫性のために提供されている側面が大きいです。
+
+次は、イテレータ範囲を取るものと初期化子リストを取るものです。
+
+```cpp
+std::vector<std::pair<int, std::string_view>> input = {
+  {1, "one"},
+  {5, "five"},
+  {3, "three"}
+};
+
+std::flat_map<int, std::string_view> map = {
+  {1, "one"}
+};
+
+map.insert(input.begin(), input.end());
+map.insert({
+  {7, "seven"},
+  {9, "nine"}
+});
+
+std::println("{}", map);
+```
+```
+{1: "one", 3: "three", 5: "five", 7: "seven", 9: "nine"}
+```
+
+これらの関数の計算量は、挿入前コンテナサイズを`N`、挿入しようとする要素数を`M`とすると、`O(N + M log M)`となります。
+
+この2種類のオーバーロードにはさらに`sorted_unique`（`sorted_equivalent`）を取るものがあります。こちらの場合、入力要素列が予めソートされている（非`multi`の場合は重複要素がない）ことを仮定することで効率的となり、計算量は`O(N + M)`となります。
+
+```cpp
+std::map<int, std::string_view> input = {
+  {1, "one"},
+  {3, "three"},
+  {5, "five"}
+};
+
+std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {5, "5"}
+};
+std::flat_multimap<int, std::string_view> mmap = {
+  {1, "one"},
+  {5, "5"}
+};
+
+map.insert(std::sorted_unique, input.begin(), input.end());
+mmap.insert(std::sorted_equivalent, input.begin(), input.end());
+
+std::println("{}", map);
+std::println("{}", mmap);
+```
+```
+{1: "one", 3: "three", 5: "5"}
+{1: "one", 1: "one", 3: "three", 5: "5", 5: "five"}
+```
+
+ただし、コンストラクタ同様に入力要素列の仮定を満たすのは利用者の責任となります。
+
+これら4種類の複数要素を挿入しうる操作は、インプレイスマージを行うために（仮に結果的に挿入する要素が0でも）追加のメモリを確保する可能性があります。すなわち、最初に内部配列を`N+M`長に拡大してそこに入力要素列をコピーしてからソートとマージを行います。
+
+この`.insert()`/`.emplace()`にはいくつかの派生操作があります。
+
+|操作|動作|戻り値|`multi`の場合|
+|---|---|---|---|
+|`insert_or_assign`|対応するキーの要素があれば上書き|`emplace`/`emplace_hint`と同じ|なし|
+|`insert_range`|範囲を挿入する|なし|あり|
+|`emplace_hint`|`emplace`と同じ|対応するキーの要素へのイテレータ|あり|
+|`try_emplace`|引数への副作用が無い`emplace`|`emplace`/`emplace_hint`と同じ|なし|
+
+この表で戻り値の列が「`emplace`/`emplace_hint`と同じ」となっているのは、位置のヒントを受け取るオーバーロードがあり、そちらの場合の戻り値は`.emplace_hint()`と同じになる、という意味です。
+
+`.insert_or_assign()`は挿入しようとするキーに対応する要素が存在する場合、値を上書きするものです。戻り値は基本的に`.insert()`と同じですが、`bool`値は代入が発生した場合に`false`となります（新規挿入の場合に`true`となる）。
+
+少し注意点ですが、`.insert_or_assign()`の引数の与え方は`.insert()`とも`.emplace()`とも異なっており、キー型オブジェクトとそれに対応する値（に変換可能な）オブジェクトのちょうど2つを渡します。
+
+```cpp
+std::flat_map<int, std::string_view> map = {
+  {1, "one"}
+};
+
+auto[it, success1] = map.insert_or_assign(1, "1");
+assert(success1 == false);  // ✔
+assert(it->second == "1");  // ✔
+```
+
+`.insert_range()`は`from_range`を取るコンストラクタの`insert`版で、任意の`range`を一括で挿入します。重複する要素があると削除されますが、それが起きたかを知る方法はありません。
+
+`.insert_range()`の計算量は、挿入前のコンテナサイズ`N`と挿入する`range`のサイズ`M`に対して`O(N + M log M)`となります。
+
+`.emplace_hint()`は挿入しようとするキーの挿入位置のヒントを与える`.emplace()`であり、通常の連想コンテナでは挿入時の計算量を抑えるために使用されますが、`flat`なコンテナはいずれも挿入時の計算量が常にコンテナサイズに線形のためその恩恵はあまり大きくありません。インターフェース一貫性のために存在している側面が大きいです。
+
+最後の`.try_emplace()`と`.emplace()`（`.emplace_hint()`）の違いは、引数の渡し方およびムーブして渡している引数に関する保証にあります。`.try_emplace()`の場合は挿入が行われなかった場合にムーブして渡している引数は実際にはムーブされないため呼出し元で継続して安全に使用できますが、`.emplace()`の場合はそのような保証がありません。
+
+```cpp
+std::flat_map<int, std::unique_ptr<int[]>> map{};
+map.emplace(1, std::make_unique<int[]>(1));
+
+auto v1 = std::make_unique<int[]>(1);
+
+auto [it1, success1] = map.emplace(1, std::move(v1));
+assert(success1 == false);  // ✔
+assert(bool(v1));           // ❌ おそらくほぼ常に
+  
+auto v2 = std::make_unique<int[]>(1);
+
+auto [it2, success2] = map.try_emplace(1, std::move(v2));
+assert(success2 == false);  // ✔
+assert(bool(v2));           // ✔ 保証される
+```
+
+重複チェックのためにはキーをまず得る必要がありますが`.emplace()`は要素を直接構築するため、その引数からキーだけを先に得ることができず、先に要素を構築しなければならないため、`.emplace()`にはこのような保証がありません。
+
+そのため、`.try_emplace()`の第一引数はキー型（あるいはそれと比較可能な型）のオブジェクトを渡す必要があります。
+
+これと同様の理由により、`flat_set`には`.try_emplace()`は提供されず、`multi`の場合は重複チェックをする必要が無いため提供されません。そのため、`.try_emplace()`は`flat_map`でのみ利用可能です。
+
+ただし、`flat_set`の場合は`.insert()`のHeterogeneous Overload（キーと比較可能な任意の型を取るもの）に限って`.try_emplace()`と同じ保証があります。ただし、Heterogeneous Overloadを有効化するには少し作業が必要になります（後述）。
+
+### 削除
+
+削除の基本は`.erase()`です。これはキーを指定してそのキーと等しい要素を削除します。
+
+```cpp
+std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {3, "three"},
+  {5, "five"}
+};
+
+map.erase(3);
+
+std::println("{}", map);
+```
+```
+{1: "one", 5: "five"}
+```
+
+前述のとおり、この関数の計算量は`O(N)`です。
+
+条件を満たす要素をすべてコンテナから削除するための操作として、他のコンテナ同様に`std::erase_if()`が利用できます。
+
+```cpp
+std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {3, "three"},
+  {2, "two"},
+  {5, "five"}
+};
+
+auto even = [](auto pair) {
+  return pair.first % 2 == 0;
+};
+
+auto n = std::erase_if(map, even);
+
+std::println("n = {} : {}", n, map);
+```
+```
+n = 1 : {1: "one", 3: "three", 5: "five"}
+```
+
+`std::erase_if()`の第二引数には削除条件を指定する述語オブジェクトを渡し、戻り値からは削除した要素の数が得られます。また、渡す述語にはキーではなくコンテナの要素そのものが渡されるため、非`multi`なコンテナでは`pair<const Key&, const T&>`が渡されます。
+
+`std::erase_if()`の計算量は、要素数`N`に対してちょうど`N`回の述語の適用となります。
+
+### 要素アクセス（検索）
+
+前述のように、`flat`なコンテナにおける検索の計算量はコンテナサイズ`N`に対して`O(log N)`になるので、この節の関数は特に言及がない限り計算量は`O(log N)`になります。。
+
+まず、非`multi`なコンテナ内の特定の要素にアクセスするには`[]`か`.at()`を使用するのが基本です。
+
+```cpp
+std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {3, "three"},
+  {5, "five"}
+};
+
+auto& elem1 = map[1];
+auto& elem2 = map.at(3);
+```
+
+これらの関数の動作は通常の連想コンテナと全く同じであり、`[]`は指定されたキーに対応する要素が存在しない場合に新しい要素を挿入し、`.at()`は指定されたキーに対応する要素が存在しない場合に例外を投げます。
+
+```cpp
+const std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {3, "three"},
+  {5, "five"}
+};
+
+auto& elem1 = map[1];     // ng、constで使用できない
+auto& elem2 = map.at(2);  // 例外を送出する
+```
+
+`[]`と`.at()`のこの違いにより、計算量も微妙に異なります。どちらも検索そのものの計算量は`O(log N)`なのですが、`[]`で要素の追加が発生する場合は追加で`O(N)`の計算量がかかります。
+
+存在しないキーに対して例外を送出せず、自動挿入もしない検索方法としては`.find()`が利用できます。こちらは`multi`なコンテナでも利用可能です。
+
+```cpp
+const std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {3, "three"},
+  {5, "five"}
+};
+
+auto it = map.find(1);  // 見つかると該当要素のイテレータが返る
+
+if (it == map.end()) {
+  // 見つかる場合
+  auto elem = *it;
+  ...
+} else {
+  // 見つからない場合
+  ...
+}
+```
+
+単に要素の存在判定だけを行いたい場合は`.contains()`が利用できます。
+
+```cpp
+const std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {3, "three"},
+  {5, "five"}
+};
+
+bool b1 = map.contains(1);  // true
+bool b2 = map.contains(2);  // false
+```
+
+また、`.count()`を使用すると指定されたキーに対応する要素がいくつかあるかを取得することができます。
+
+```cpp
+const std::flat_map<int, std::string_view> map = {
+  {1, "one"},
+  {1, "one"},
+};
+const std::flat_multimap<int, std::string_view> mmap = {
+  {1, "one"},
+  {1, "one"},
+};
+
+std::size_t count1 =  map.count(1); // 1
+std::size_t count2 = mmap.count(1); // 2
+```
+
+これは`multi`なコンテナの場合のみ2以上になり、非`multi`なコンテナにおいては`.contains()`と同じ意味になります。
+
+最後に、ソート済み範囲に対するアルゴリズムである`.lower_bound()`、`.upper_bound()`および`.equal_range()`をメンバ関数として利用できます。
+
+```cpp
+const std::flat_map<int, std::string_view> map = {
+ {1, "one"},
+ {18, "eighteen"},
+ {6, "six"},
+ {3, "three"}
+};
+
+auto lbit = map.lower_bound(6);
+auto ubit = map.upper_bound(6);
+auto [lbit2, ubit2] = map.equal_range(6);
+
+std::println("lower_bound: {}", *lbit);
+std::println("upper_bound: {}", *ubit);
+std::println("equal_range: [{}, {}]", *lbit2, *ubit2);
+```
+```
+lower_bound: (6, "six")
+upper_bound: (18, "eighteen")
+equal_range: [(6, "six"), (18, "eighteen")]
+```
+
+`.lower_bound()`は指定されたキーの値を超えない最大のキーを持つ要素をルックアップし、`.upper_bound()`は指定されたキーの値を超える最小のキーを持つ要素をルックアップします。そして、`.equal_range()`はその2つの要素を同時にルックアップします。
+
+`.count()`同様に、`.equal_range()`は非`multi`なコンテナでは返されるイテレータ範囲に入る要素は最大で1つですが、`multi`なコンテナでは複数の要素が入り得ます。
+
+```cpp
+const std::flat_multimap<int, std::string_view> map = {
+ {1, "one"},
+ {18, "eighteen"},
+ {6, "six"},
+ {6, "6"},
+ {6, "roku"},
+ {3, "three"}
+};
+
+auto [lbit, ubit] = map.equal_range(6);
+std::println("equal_range: {}", std::ranges::subrange(lbit, ubit));
+```
+```
+equal_range: [(6, "six"), (6, "6"), (6, "roku")]
+```
+
+この3つの検索関数は動作も計算量もフリー関数の同名アルゴリズムと同じですが、キーの指定のみで使用できるので若干簡単に使用できます。
+
+### Heterogeneous Overload
+
+Heterogeneous Overloadとはテンプレートパラメータで指定されたキー型以外の型の値を使用して要素の引き当て（検索・削除）を行うことができる機能です。特に、キー型への暗黙変換を回避してキー型と指定した型の値を直接的に比較するため、より便利かつ効率的になります。
+
+典型的なユースケースとして、`std::string`をキーとするコンテナに対して`std::string_view`や文字列リテラルを使用して値の検索等を行いたい場合があります。
+
+```cpp
+std::flat_map<std::string, int> map = {
+  {"one", 1},
+  {"three", 3},
+  {"five", 5}
+};
+
+std::string_view key = "five";
+
+auto& elem1 = map.at(key);    // ng string_view -> stringへ暗黙変換不可
+auto& elem2 = map.at("one");  // ok、一時オブジェクトが作成される
+```
+
+しかし、他の連想コンテナ同様にこの操作はデフォルトで有効になっていません。連想コンテナにおいてこれを有効化するためには比較関数オブジェクト型`Compare`が入れ子型の`is_transparent`を持つようにする必要があります。
+
+`std::less<T>`はこれを持ちませんが、`std::less<void>`はこれを持っているため、3番目のテンプレートパラメータを`std::less<void>`にするとHeterogeneous Overloadが有効化されます。
+
+```cpp
+std::flat_map<std::string, int, std::less<void>> map = {
+  {"one", 1},
+  {"three", 3},
+  {"five", 5}
+};
+
+std::string_view key = "five";
+
+auto& elem1 = map.at(key);    // ok
+auto& elem2 = map.at("one");  // ok、一時オブジェクトなし
+```
+
+あるいは`std::ranges::less`なども`is_transparent`を持っています。
+
+なお、Heterogeneous Overload自体はここまで紹介してきたほとんどの操作（追加・削除・検索）においてオーバーロードとして用意されているため、比較型を差し替えればすぐに利用可能になります。
+
+### ノードハンドル
+
+`flat`なコンテナはいずれもノードベースコンテナではないため、ノードハンドルに非対応です。これは連想コンテナと明確に異なる点です。
+
+### 内部配列アクセス
+
+他の連想コンテナだとノードハンドル取り出しに使用されている`.extract()`関数は内部配列を取り出すためのもので、ノードハンドルインターフェースではなく、右辺値参照修飾されています。
+
+```cpp
+int main() {
+  std::flat_map<int, std::string_view> map{ ... };
+
+  auto conainers = map.extract(); // ng、左辺値から呼び出せない
+  auto conainers = std::move(map).extract();  // ok
+
+  conainers.keys;   // キーの配列
+  conainers.values; // 値の配列
+}
+```
+
+`.extract()`の戻り値型は2つの配列を保持する集成体型であり、`keys`/`values`という名前で取り出した配列にアクセスすることができます。集成体型であるため、構造化束縛を利用することもできます。
+
+`.extract()`で取り出した内部配列を別の`flat`なコンテナに渡すには、コンストラクタか`.replace()`を使用します。
+
+```cpp
+std::flat_map<int, std::string_view> src{ ... };
+
+auto conainers = std::move(src).extract();
+
+// 内部配列を指定するコンストラクタ
+std::flat_map<int, std::string_view> dst {
+ std::sorted_unique,
+ conainers.keys,
+ conainers.values
+};
+
+dst.clear();
+
+// 内部配列の置き換え
+dst.replace(
+  std::move(conainers.keys),
+  std::move(conainers.values)
+);
+```
+
+コンストラクタ渡しの場合はコピーして渡すことができますが、`.replace()`はムーブのみ（右辺値参照引数のみ）を受け付けます。
+
+`.replace()`の動作はその名の通り、現在の内部配列を渡されたもので置き換えます。このため、内部配列を渡すコンストラクタ同様に両方の配列が同じ長さである必要があり、さらにソート済みである必要もあります（これらは事前条件として指定されます）。
+
+左辺値のコンテナから単に内部配列を参照したい場合は、`.keys()`/`.values()`が利用できます。
+
+```cpp
+std::flat_map<int, std::string_view> src{ ... };
+
+auto& keys = src.keys();
+auto& values = src.values();
+```
+
+これらの配列は`flat`コンテナの不変条件を満たした状態で取得できますが、これらの関数の戻り値は`const`参照であるため、内部配列を外から変更することはできません。また、イテレータと異なりこれらの参照は取得元のコンテナの生存期間内で無効化されることは基本的にはありません。
+
+キーと値どちらかだけをソート済みの状態でイテレーションしたい場合に`map | views::keys`（`elements_view`）などを使用するよりも、直接コンテナをイテレーションした方が少しだけ効率的になるでしょう。また、デフォルトの`flat`なコンテナは`contiguous_range`にはなりませんが、こちらの配列は`std::vector`が使用されている場合は`contiguous_range`であるため、ポインタを使用可能になります。
+
 # `<mdspan>`
 
 # `<spanstream>`
