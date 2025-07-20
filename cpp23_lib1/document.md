@@ -2093,6 +2093,1894 @@ auto& values = src.values();
 
 # `<mdspan>`
 
+C++20で追加された`std::span`は任意の1次元配列のビューとなるもので、多次元配列には対応していませんでした。C++23では多次元配列のためのビューとして`std::mdspan`が追加されます。
+
+基本的な役割は`std::span`と同様なのですが、`std::mdspan`は多次元配列のビューとして`std::span`よりも特化した設計になっています。
+
+## `std::mdspan`
+
+`std::mdspan`はクラステンプレートであり、`std::mdspan<T, E, L, A>`のように4つのテンプレートパラメータを受け取ります。ただし、実際使用する際に指定する必要があるのは前2つのテンプレートパラメータのみで、後2つはデフォルトのものが設定されています。このパラメータはそれぞれ
+
+- `T` : 要素型
+- `E` : エクステント（次元数と次元ごとの要素数）
+- `L` : レイアウトポリシー型
+- `A` : アクセサポリシー型
+
+となっています。
+
+```cpp
+namespace std {
+  template<
+    class T, 
+    class Extents,
+    class LayoutPolicy = layout_right,
+    class AccessorPolicy = default_accessor<T>
+  >
+  class mdspan;
+}
+```
+
+要素型`T`には配列型/抽象クラス型を除く任意の型（完全型）を指定できます。多くの場合は`int`や`double`等の算術型が使用されるでしょうが、`char/bool`や任意のクラス型で使用することもできます。
+
+エクステント型`E`には`std::extents`か`std::dextents`のいずれかの型の特殊化を指定することができます（正確には、`std::dextents`は`std::extents`の特殊化を生成するようなエイリアステンプレートなので、実質的には`std::extents`の特殊化のみが使用可能）。これについては後述します。
+
+デフォルトの`L, A`によるアクセスはC++の配列へのアクセス同様の行優先レイアウトとなります。
+
+例えば次のように使用します
+
+```cpp
+template<typename T>
+using mat33 = std::mdspan<T, std::extents<std::size_t, 3, 3>>;
+
+int main() {
+  int storage[] = {
+    0, 1, 2,
+    3, 4, 5,
+    6, 7, 8
+  };
+
+  // CTADによって要素型を推論
+  mat33 Array{storage};
+
+  for (int y = 0; y < 3; ++y) {
+    for (int x = 0; x < 3; ++x) {
+      std::cout << Array[y, x] << " ";
+    }
+    std::cout << '\n';
+  }
+}
+```
+```
+0 1 2 
+3 4 5 
+6 7 8 
+```
+
+この例で`Array`は`storage`の領域をint型の3x3行列として行優先で参照する2次元配列になっています。
+
+`std::mdspan`はビューであるため、この例の`Array`は`storage`の値をコピーして保持しているのではなく単に参照しています。このため多次元配列を柔軟に構成し軽量に取り扱うことができますが、一方で`std::mdspan`自体は領域の保持機能を持たないため`std::mdspan`で配列を取り扱うにはそのための領域をどこかに用意しておく必要があります。
+
+要素アクセスのためには`[]`（添字演算子）を使用します。C++23から`[]`は可変長引数を取れるようになっているため、多次元インデックスをそのまま指定可能です。また、インデックス配列の`std::span`/`std::array`を指定することもできます。
+
+```cpp
+template<typename T>
+using mat24 = std::mdspan<T, std::extents<std::size_t, 2, 4>>;
+
+int main() {
+  int storage[] = {
+    0, 1, 2, 3, 
+    4, 5, 6, 7,
+    8
+  };
+  mat24 A{storage};
+
+  // インデックス列によってアクセス
+  auto& e1 = A[1, 1];
+
+  // インデックス配列によってアクセス（std::array
+  std::array<std::size_t, 2> idx_arr{0, 1};
+  auto& e2 = A[idx_arr];
+
+  // インデックス配列によってアクセス（std::span
+  std::span<std::size_t, 2> idx_sp{idx_arr};
+  idx_sp[1] = 3;
+  auto& e3 = A[idx_sp];
+
+  std::println("{}, {}, {}", e1, e2, e3);
+}
+```
+```
+5, 1, 3
+```
+
+今度は先程と同じ領域を2x4行列（2行x4列）として参照しています。このように、`std::mdspan`はメモリ領域を柔軟に多次元配列として扱うことができます。
+
+#### クラス構造
+
+`std::mdspan`は参照する領域のポインタと`L, A`（`E`は`L`に保存される）をメンバとして持ち、簡単には次のような動作をしています
+
+```cpp
+namespace std {
+  template<
+    class T, 
+    class Extents,
+    class LayoutPolicy = layout_right,
+    class AccessorPolicy = default_accessor<T>
+  >
+  class mdspan {
+  public:
+    using accessor_type = AccessorPolicy;
+    using mapping_type = 
+      typename LayoutPolicy::template mapping<extents_type>;
+    using data_handle_type = 
+      typename AccessorPolicy::data_handle_type;
+
+    ...
+
+    template<class... IndexType>
+    decltype(auto) operator[](IndexType... indices) const {
+      // 多次元インデックスから1次元のインデックスを求める
+      auto idx = map_(indices...);
+
+      // 要素ポインタとインデックスから要素を引き当て
+      return acc_(ptr_, idx);
+    }
+
+    ...
+
+  private:
+    accessor_type acc_;
+    mapping_type map_;
+    data_handle_type ptr_;
+  };
+}
+```
+
+レイアウトポリシー`LayoutPolicy`は多次元のインデックス列から1次元のインデックス空間への写像で、例えば幅`W`の2次元領域なら、`y, x`の2次元インデックスに対して`y * W + x`を計算するものです。
+
+アクセサポリシー`AccessorPolicy`はインデックス`i`と領域ポインタ`ptr`からどのように要素を取得するかをカスタマイズする型で、基本的には`*(ptr + i)`を返します。
+
+`[idx...]`によるアクセス時には、`acc_.access(ptr_, map_(idx...))`のようにして要素を引き当てており、入力の多次元インデックス`idx...`をレイアウトポリシー`map_`によって単一のメモリ上インデックス値にマッピングし、そのインデックス値とデータハンドル（ほとんどの場合ポインタ）を用いてアクセサポリシー`acc_`によって要素アクセスを行っています。
+
+典型的な行優先レイアウトによる2次元行列アクセス（先程の例の`mat33`など）の場合、列数を`Col`として`mat[r, c]`に対しては`*(ptr_ + (r * Col + c))`のように要素アクセスが行われます。
+
+このように、多次元配列アクセスにおいてやるべきことをレイアウトポリシーとアクセサポリシーで分割してハンドルし、かつそれをテンプレートパラメータで受け取ることによって柔軟にカスタマイズできるようにしています。
+
+### `Extents`
+
+`Extents`（エクステント）とは`mdspan`の2つ目のテンプレートパラメータであり、`mdspan`の配列としての大きさ（次元数と次元ごとの要素数）を指定するものです。ここに指定できるのは、`std::extents`と`std::dextents`の2種類のどちらかになります。
+
+`std::extents<IndexType, Extents...>`は静的なエクステントを指定するもので、`IndexType`にインデックス値の整数型を指定し、`Extents`には各次元の要素数をNTTPで指定します。`sizeof...(Extents)`が`mdspan`の次元数（ランク）となります。
+
+```cpp
+// 1次元 3要素
+std::extents<std::size_t, 3> ext1;
+
+// 2次元、4 x 4要素
+std::extents<std::size_t, 4, 4> ext2;
+
+// 5次元、5 x 10 x 64 x 64 x 3要素
+std::extents<std::size_t, 5, 10, 64, 64, 3> ext5;
+
+// 0次元、1要素
+std::extents<std::size_t> ext0;
+```
+
+`std::extents`の1つ目のテンプレートパラメータ`IndexType`にはインデックス値として使用する整数型を指定できますが、これはGPU（GPUでは64bit整数型が無いか使用が重い）等の特殊な環境でより効率的なインデックス型を使用できるようにするために指定可能になっているものです。そのため、多くの場合は`std::size_t`を使用しておけば良いでしょう。
+
+`std::extents`によって`mdspan`のエクステントを指定すると、そのサイズはコンパイル時に確定し、なおかつサイズ情報保存のための領域の消費が最小になります。
+
+とはいえ、次元数はともかく各次元毎の要素数については必ずしも全てコンパイル時に確定せず、実行時に指定したいことがあるでしょう。その場合、その決まらない次元（実行時に指定したい次元）の要素数の指定を整数値の代わりに`std::dynamic_extent`を指定しておくことで実行時に指定するようにできます。
+
+```cpp
+// 2次元 4 x N要素
+std::extents<std::size_t, 4, std::dynamic_extent>;
+
+// 4次元 N x 10 x M x4要素
+std::extents<std::size_t, 
+  std::dynamic_extent, 
+  10, 
+  std::dynamic_extent, 
+  4
+>;
+```
+
+この場合、実行時の次元数の指定は`mdspan`のコンストラクタで行います。
+
+```cpp
+template<typename T>
+using mat4N = std::mdspan<T, 
+  std::extents<std::size_t, 4, std::dynamic_extent>>;
+
+int storage[] = { ... }; 
+
+// 4 x 4行列
+mat4N<int> ms1{storage, 4};
+
+// 4 x 1行列
+mat4N<int> ms2{storage, 1};
+```
+
+動的なエクステントを含む場合（いずれかの次元の要素数が動的に指定される場合）、`mdspan`構築時のエクステントの指定は`std::dynamic_extent`の部分だけを指定して構築することも、静的に指定済みの部分も含めて全体を指定して構築することもできます。
+
+```cpp
+// 4次元配列
+template<typename T>
+using tensor4d = std::mdspan<T,
+  std::extents<std::size_t, 
+    4, std::dynamic_extent, std::dynamic_extent, 4>>;
+
+int storage[] = { ... }; 
+
+// 4x3x2x4行列、dynamic_extentだけを指定する
+tensor4d<int> ms1{storage, 3, 2};
+
+// 4x4x4x4行列、全部指定する
+tensor4d<int> ms2{storage, 4, 4, 4, 4};
+
+// 4x5x2x4行列、間違った値を指定
+tensor4d<int> ms3{storage, 3, 5, 2, 1};
+```
+
+静的エクステントも含めてすべての次元の要素数を実行時に指定する場合、静的の部分の値にNTTPで指定した値と異なる値を指定しなおすことができますが、この場合にエクステントが実行時に変更されることはなく、その指定は単に無視されます（最後の例）。
+
+そして、全ての次元の要素数が実行時に指定される場合のエクステント指定のために、`std::dextents<IndexType, Rank>`が用意されています。
+
+```cpp
+// 3次元、サイズは動的
+std::dextents<std::size_t, 3> dext;
+
+// 11次元、サイズは動的
+std::dextents<std::size_t, 11> dext;
+```
+
+`dextents`は`IndexType`とコンパイル時に確定している次元数`Rank`の2つだけを指定するエクステントで、各次元の要素数は実行時に`mdspan`のコンストラクタで指定する形になります。
+
+```cpp
+// 2次元行列mdspan
+template<typename T>
+using dmdspan = std::mdspan<T, std::dextents<std::size_t, 2>>;
+
+int data[] = {...};
+
+// 2 x 2行列
+dmdspan<int> ms1{data, 2, 2};
+
+// 6 x 6行列
+dmdspan<int> ms2{data, 6, 6};
+
+// 1 x 3行列（行ベクトル
+dmdspan<int> ms3{data, 1, 3};
+
+// 6 x 1行列（列ベクトル
+dmdspan<int> ms4{data, 6, 1};
+```
+
+`extents`と`dextents`どちらの指定方法にせよ、次元数（ランク）はコンパイル時に確定している必要があります。
+
+#### エクステント関連のインターフェース
+
+エクステントに関する情報を取得するためのAPIとして、次の4つのメンバ関数が用意されています。
+
+- `rank()`: ランク（次元数）を取得する
+- `rank_dynamic()`: 動的になっている次元の数を取得する
+    - エクステントで指定されている`dynamic_extent`の数
+- `static_extent(r)`: `r`次元の静的に指定されているエクステントを取得する
+- `extent(r)`: `r`次元の要素数を取得する
+
+```cpp
+// 表示用関数
+void print_exstent(auto& mdspan) {
+  std::println("[{}, {}]", mdspan.rank(), mdspan.rank_dynamic());
+  
+  for (std::size_t r : std::views::iota(0uz, mdspan.rank())) {
+    std::println("{}, {}", mdspan.static_extent(r), mdspan.extent(r));
+  }
+
+  std::println("");
+}
+
+template<typename T>
+using mat33 = std::mdspan<T, std::extents<std::size_t, 3, 3>>;
+
+template<typename T>
+using tensor4d = std::mdspan<T,
+  std::extents<std::size_t, 
+    4, std::dynamic_extent, std::dynamic_extent, 4>>;
+
+template<typename T>
+using dmdspan = std::mdspan<T, std::dextents<std::size_t, 2>>;
+
+int storage[] = { ... };
+
+mat33<int> ms1{storage};
+print_exstent(ms1);
+
+tensor4d<int> ms2{storage, 4, 5, 2, 4};
+print_exstent(ms2);
+
+dmdspan<int> ms3{data, 6, 6};
+print_exstent(ms3);
+```
+```
+[2, 0]
+0: 3, 3
+1: 3, 3
+
+[4, 2]
+0: 4, 4
+1: 18446744073709551615, 5
+2: 18446744073709551615, 2
+3: 4, 4
+
+[2, 2]
+0: 18446744073709551615, 6
+1: 18446744073709551615, 6
+```
+
+`18446744073709551615`とは`std::dynamic_extent`の実際の値であり、`std::size_t{-1}`です（実装によって値は変わるかもしれません）。
+
+基本的には`.extent()`を使用することで各次元の要素数の値を取得することができ、何次元配列か知りたい場合に`.rank()`を使用できます。残りの関数の用途は少し特殊で、レイアウトのカスタマイズなどをすると使用することもあるかもしれません。
+
+一応ですが、`.extent(r)`に指定する`r`は`std::extents<std::size_t, I0, I1..., Ir>`の左から`r`番目（`Ir`）に対応する次元の要素数を取得し、`r`は0-indexedです
+（`static_extent()`も同様）。
+
+なお、これらの関数は`mdspan`のメンバ関数としてだけでなく、`std::extents`のメンバ関数としても利用可能です。
+
+```cpp
+std::extents<std::size_t, 3, 3> ext{};
+
+auto rank = ext.rank();
+auto drank = ext.rank_dynamic();
+auto n0s = ext.static_extent(0);
+auto n0 = ext.extent(0);
+```
+
+`mdspan`のメンバ関数の実体は保持する`std::extents`のメンバ関数を呼び出しているだけですが、通常は`mdspan`のメンバ関数を利用することになるでしょう。`std::extents`のメンバ関数は、後述のレイアウトポリシー型をカスタマイズする場合に良く利用することになります。
+
+ちなみに、これらの関数はいずれも`constexpr`関数でありコンパイル時に利用できますが、`.extent()`のみが非静的メンバ関数（残りは静的メンバ関数）です。
+
+#### エクステントのサイズ
+
+`std::extents`は静的エクステントの場合各次元の要素数の値は全て型情報に保持されているため、そのオブジェクトのサイズは最小になります（おそらく1）。しかし、`std::dynamic_extent`が指定されている場合はその次元の要素数については実行時にコンストラクタ経由で受け取ることで保持する必要があり、サイズはその分大きくなります。
+
+`std::extents`は`std::array<index_type, rank_dynamic()>`のような配列をメンバとして持ち、ここに`std::dynamic_extent`に対応する実行時の要素数を保存します。この配列は要素数が`rank_dynamic()`となっていることから分かるように、`std::dynamic_extent`で指定されている次元の値しか保存しません。そのため、静的に指定されてる次元についてはサイズの増加はありません。
+
+```cpp
+template<std::size_t... Idx>
+using E = std::extents<std::size_t, Idx...>;
+constexpr auto dyn = std::dynamic_extent;
+
+std::println("size_t: {}", sizeof(std::size_t));
+std::println("{}", sizeof(E<>));
+std::println("{}", sizeof(E<3>));
+std::println("{}", sizeof(E<3, dyn>));
+std::println("{}", sizeof(E<3, dyn, dyn>));
+std::println("{}", sizeof(E<3, dyn, dyn, 1>));
+```
+```
+size_t: 8
+1
+1
+8
+16
+16
+```
+
+#### 添字とエクステント
+
+`std::mdspan`で添字アクセス（`[]`）を行う場合のインデックスの指定順はエクステントの次元順と一致します。指定すべきインデックスの数はエクステントで指定したランクによって決まり、次元ごとの要素数もエクステントで指定された値になります。そして、インデックスの指定は0-indexedです。
+
+例えば、`std::mdspan<T, std::extents<std::size_t, W, Z, Y, X>>`とすると`W x Z x Y x X`の多次元配列を意味しており、そのオブジェクト`ms`に対するインデックスアクセスを各次元に対する位置の指定を対応する小文字の変数で表現すると、`ms[w, z, y, x]`となります。
+
+```cpp
+template<typename T>
+using tensor4d = std::mdspan<T,
+  std::extents<std::size_t, 
+    4, std::dynamic_extent, std::dynamic_extent, 4>>;
+
+int storage[] = { ... };
+
+tensor4d<int> ms{storage, 4, 5, 2, 4};
+
+ms[0, 0, 0, 0]; // ok
+ms[3, 4, 1, 3]; // ok
+
+ms[0];          // ng、足りない
+ms[0, 1, 0];    // ng、足りない
+
+ms[4, 4, 1, 3]; // 範囲外アクセス
+ms[3, 4, 1, 4]; // 範囲外アクセス
+```
+
+なお`mdspan`の範囲外アクセスはチェックされず、`.at()`メンバ関数はC++26からの提供になります。C++23時点では範囲外アクセスを検知する方法がありません（後述のアクセサポリシーのカスタマイズなどで実装すること自体は可能です）。
+
+### コンストラクタと推論補助
+
+`std::mdspan`はテンプレートパラメータが4つもあるうえにそれらのパラメータはそれほど固定ではありません。とくにエクステントは利用シーンによって異なるでしょう。そのため、使用時（オブジェクト構築時）に一々テンプレートパラメータを指定しているとかなり見辛いコードが出来上がります。
+
+ここまでの例でやっているように、予め固定のパラメータを嵌めたエイリアスを使用するのも一つの手ですが、もう一つの方法としてCTAD（テンプレートパラメータの実引数推定）を活用することもできます。`std::mdspan`には豊富な推論補助とコンストラクタが用意されているため、かなり柔軟にCTADを利用できます。
+
+`std::mdspan`構築時の第1引数は基本的に参照する領域のポインタ（`data_handle`と呼ばれるがほぼポインタのこと）を渡します。この時、要素型として配列の要素型が取得され、エクステントは配列の要素数が取得されます。
+
+```cpp
+int storage1[16] = { ... };
+
+std::mdspan ms1{storage1};  // ok、1次元
+// -> mdspan<int, std::extents<std::size_t, 16>>
+
+double storage2[36] = { ... };
+
+std::mdspan ms2{storage2};  // ok、1次元
+// -> mdspan<double, std::extents<std::size_t, 36>>
+
+char storage3 = 'a';
+
+std::mdspan ms3{&storage3};  // ok、0次元
+// -> mdspan<int, std::extents<std::size_t>>
+```
+
+最後の例のように、配列（`T(&)[N]`）ではなくポインタ（`T*`）を渡したときは0次元`mdspan`が推論されます。配列の先頭要素のポインタを渡してしまうと意図しない結果を招く場合があります（上記例で`std::mdspan ms1{&storage1[0]}`としてしまう場合など）。
+
+また2次元以上の配列からの変換は基本的にコンパイルエラーとなります。
+
+```cpp
+int storage[4][4] = { ... };
+
+std::mdspan ms{storage};  // ng 
+```
+
+後述のサイズ指定を行った場合は構築はできてしまうものの、2次元以上の生配列を1次元配列のように扱ってアクセスすることができない（UBとなる）ため、そのように構築された`mdspan`の使用は未定義動作となります（専用のアクセサを使用する場合はこの限りではないですが、そこまでするメリットはおそらくないでしょう）。
+
+`mdspan`を使用する場合、おそらく1次元配列ビューとして推論されてもあまりうれしくないでしょう。第2引数以降に整数値を渡すことで`mdspan`のランク及び各次元の要素数を指定することができます。
+
+```cpp
+int storage[] = { ... };
+
+std::mdspan ms1{storage, 4, 4}; // ok
+// -> mdspan<int, std::dextents<std::size_t, 2>>
+
+std::mdspan ms2{storage, 1, 2, 3, 4, 5};  // ok
+// -> mdspan<int, std::dextents<std::size_t, 5>>
+```
+
+あるいは、インデックス列の代わりに`std::array`/`std::span`によるインデックス配列を渡すこともできます。
+
+```cpp
+int storage[] = { ... };
+
+std::array indices = { 1280, 720, 3 };
+std::span indices_sp{indices};
+
+std::mdspan ms1{storage, indices}; // ok
+// -> mdspan<int, std::dextents<std::size_t, 3>>
+
+std::mdspan ms2{storage, indices_sp};  // ok
+// -> mdspan<int, std::dextents<std::size_t, 3>>
+```
+
+ただし、これらのようにインデックス列を渡す場合は常に動的エクステント（`std::dextents`）として推論されます。
+
+第2引数にはインデックス列を渡す代わりに`std::extents`を渡すこともできます。
+
+```cpp
+int storage[] = { ... };
+
+std::extents<std::size_t, 3, 3> ex1;
+
+std::mdspan ms1{storage, ex1};  // ok
+// -> mdspan<int, std::extents<std::size_t, 3, 3>>
+
+std::extents<std::size_t, 
+  std::dynamic_extent, 
+  10, 
+  std::dynamic_extent, 
+  4
+> ex2{4, 5, 2, 4};
+
+std::mdspan ms2{storage, ex2};  // ok
+// -> mdspan<int,
+//      std::extents<std::size_t, 
+//        std::dynamic_extent, 10, 
+//        std::dynamic_extent, 4>>
+
+std::dextents<std::size_t, 3> ex3{4, 4, 5};
+
+std::mdspan ms3{storage, ex3};  // ok
+// -> mdspan<int, std::dextents<std::size_t, 3>>
+```
+
+この場合、渡すエクステントが静的エクステントであれば`mdspan`のエクステントも静的エクステントとして推論されます。
+
+### レイアウト/アクセサポリシーのコンストラクタ
+
+テンプレートパラメータの後ろ2つ、レイアウト/アクセサポリシーをカスタマイズしたい場合、それらの型のオブジェクトをコンストラクタで引き渡しつつCTADすることができます。
+
+その場合の引数は、第1引数の領域ポインタに続いて、レイアウトマッピングクラスオブジェク、アクセサポリシークラスオブジェクト、の順で渡します。
+
+```cpp
+// L, Aをそれぞれレイアウトポリシー、アクセサポリシー型とすると
+
+L::mapping<std::extents<std::size_t, 3, 3>> layout_map{};
+A<int> accesor{};
+
+int storage[] = {...};
+
+std::mdspan ms1{storage, layout_map};
+// -> std::mdspan<int, std::extents<std::size_t, 3, 3>, L>
+
+std::mdspan ms2{storage, layout_map, accesor};
+// -> std::mdspan<int, std::extents<std::size_t, 3, 3>, L, A>
+```
+
+レイアウト/アクセサポリシー型については後で詳しく見ますが、テンプレートパラメータとして指定することも、CTADで推論することもできます。ただし、CTADの場合アクセサポリシーのみのカスタマイズはできず、アクセサポリシーを渡そうとする場合はレイアウトマッピングも渡さなければなりません。
+
+### 特殊メンバ関数のコンストラクタ
+
+`std::mdspan`のデフォルトコンストラクタは動的エクステントである場合にのみ使用することができます。
+
+```cpp
+using mat33 = std::mdspan<double, 
+  std::extents<std::size_t, 3, 3>>;
+
+mat33 ms1{};  // ng
+
+using mat3N = std::mdspan<double, 
+  std::extents<std::size_t, 3, std::dynamic_extent>>;
+
+mat3N ms2{};  // ok
+// 3x0の2次元配列
+
+using tensor3d = std::mdspan<double, 
+  std::dextents<std::size_t, 3>>;
+
+tensor3d ms2{}; // ok
+// 0x0x0の3次元配列
+```
+
+ただしこのように構築したとしても一切のアクセスはできないため、後から領域とサイズを指定したものを代入する必要があります。クラスメンバとして保持する場合などには活用できるでしょう。
+
+その他コピー/ムーブコンストラクタは`default`宣言されており、コピー/ムーブは自由に行えます（`std::mdspan`の場合配列を所有していないので、通常コピーとムーブでコストは変わらない）。
+
+### 変換コンストラクタ
+
+`std::mdspan<OT, OE, OL, OA>`->`std::mdspan<T, E, L, A>`のような型の異なる変換も一応サポートされています。
+
+大前提としてレイアウトマッピングクラス`OL -> L`とアクセサポリシー`OA -> A`の変換がサポートされている必要があり、そのうえで参照する領域の型（`data_handle_type`）が変換可能かつ`OE -> E`（`std::extents`）が変換可能である必要があります。おそらく要素型の変更はほぼ不可能であり、ほとんどの場合変換可能かどうかはエクステントの互換性によって決定されるでしょう。
+
+型として異なる別の`std::extents`からの変換は
+
+- ランクが一致している
+- 対尾する各次元の要素数それぞれについて、次のいずれかを満たす
+  - 変換元の要素数が`std::dynamic_extent`
+  - 変換先の要素数が`std::dynamic_extent`
+  - 変換元と変換先の要素数が等しい
+
+場合に可能となります。すなわちまず次元が異なる`mdspan`同士は変換できません。そのうえで実質的に有効なのは、変換先/元の次元のいずれかが`std::dynamic_extent`を含む場合です。
+
+```cpp
+using mat33 = std::mdspan<double, std::extents<std::size_t, 3, 3>>;
+using mat3N = std::mdspan<double, std::extents<std::size_t, 3, std::dynamic_extent>>;
+using matN3 = std::mdspan<double, std::extents<std::size_t, std::dynamic_extent, 3>>;
+
+mat33 ms1{...};
+
+mat3N ms2{ms1}; // ok、3x3配列
+matN3 ms3{ms1}; // ok、3x3配列
+mat33 ms4{ms2}; // ok
+
+using mat33f = std::mdspan<float, std::extents<std::size_t, 3, 3>>;
+mat33f ms5{ms1}:  // ng、領域ポインタが変換不可
+
+using mat4N = std::mdspan<double, std::extents<std::size_t, 4, std::dynamic_extent>>;
+
+mat4N ms6{ms1}; // ng、1次元目がマッチしない
+mat4N ms7{ms2}; // ng、1次元目がマッチしない
+mat4N ms8{ms3}; // ok、4x3配列
+
+using tensor2d = std::mdspan<double, std::dextents<std::size_t, 2>>;
+
+tensor2d ms9{ms1};  // ok、3x3配列
+tensor2d ms10{ms2}; // ok、3x3配列
+tensor2d ms11{ms3}; // ok、3x3配列
+tensor2d ms12{ms8}; // ok、4x3配列
+
+using tensor3d = std::mdspan<double, std::dextents<std::size_t, 3>>;
+
+tensor3d ms13{ms1}; // ng、ランクが異なる
+tensor3d ms14{ms2}; // ng、ランクが異なる
+tensor3d ms15{ms3}; // ng、ランクが異なる
+```
+
+ただし、追加で事前条件として次の条件があります（変換元`mdspan`を`src`、変換先`mdspan`を`dst`として）
+
+- `r`次元の`dst.static_extent(r)`が`std::dynamic_extent`ではない場合、`src.extent(r)`は`dst.extent(r)`に等しい
+- `src`の次元が0であるか、`r`次元の`src.extnt(r)`はいずれも`dst`の`index_type`（`std::extents<I, ...>`の`I`）で表現可能
+- 参照する領域は、変換後の`mdspan`の有効なインデックス範囲から全てアクセス可能
+
+これらの条件のいずれかが満たされない場合、変換後の`mdspan`の使用は未定義動作となります。
+
+```cpp
+using tensor2d = std::mdspan<double, std::dextents<std::size_t, 2>>;
+using mat33 = std::mdspan<double, std::extents<std::size_t, 3, 3>>;
+
+double storage[] = { ... };
+
+// 動的エクステント -> 静的エクステントの変換
+tensor2d ms1{storage, 2, 2};
+mat33 ms2{ms1}; // ok、ただしUB
+tensor2d ms3{storage, 4, 4};
+mat33 ms4{ms3}; // ok、ただしUB
+
+// 静的エクステント -> 動的エクステントの変換
+mat33 ms3{storage};
+tensor2d ms4{ms3};  // ok
+```
+
+先程の3つの事前条件のうち後ろの2つに違反するのは難しく、実質的に気にすべきは最初の条件です。この例のように、静的エクステントから動的エクステントへの変換は常に安全ですが、動的エクステントから静的エクステントへの変換は実行時に対応する次元の要素数が一致していないと事前条件違反となります。
+
+この例では全ての次元が動的/静的で統一されているため分かりやすいですが、実際には一部の次元だけが動的エクステントになっている場合が多く、その場合は次元ごとに事前条件を確認する必要があります。
+
+## レイアウトポリシー
+
+レイアウトポリシーは参照領域をどのようなレイアウトの多次元配列として扱うかを指定するためのポリシー型です。典型的なレイアウトには例えば、C/C++配列のレイアウトである行優先レイアウトとFortranの配列レイアウトである列優先レイアウトがあります。
+
+C++23時点では、標準のレイアウトポリシー型として行優先/列優先レイアウトを表現する`std::layout_left`/`std::layout_right`、および任意のストライドによるレイアウトを表現可能な`std::layout_stride`の3種類が用意されています。
+
+```cpp
+// 2次元mdspanを出力する
+void print(const auto mat2d) {
+  for (std::size_t y = 0; y < mat2d.extent(0); ++y) {
+    for (std::size_t x = 0; x < mat2d.extent(1); ++x) {
+      std::print("{} ", mat2d[y, x]);
+    }
+    std::println("");
+  }
+  std::println("");
+}
+
+template<typename Layout>
+using mat33 = std::mdspan<int, std::extents<std::size_t, 3, 3>, Layout>;
+
+int storage[] = {
+  0, 1, 2,
+  3, 4, 5,
+  6, 7, 8
+};
+
+
+mat33<std::layout_right> ms1{storage};
+mat33<std::layout_left>  ms2{storage};
+
+print(ms1);
+print(ms2);
+```
+```
+0 1 2 
+3 4 5 
+6 7 8 
+
+0 3 6 
+1 4 7 
+2 5 8 
+```
+
+ストライドとは多次元配列の各次元毎の幅（あるいはステップ）の事です。次元ごとにその次元の幅（ストライド値）が与えられると、多次元インデックスの対応次元にストライド値を乗じて足し合わせることで1次元インデックスにおける要素位置を計算できます。
+
+例えば上記の行優先/列優先レイアウトの場合、2次元配列で行列の幅を`width`として`mat[y, x]`のように多次元インデックスが与えられた時、行優先の場合のストライドは`width, 1`で1次元インデックスは`width * y + 1 * x`と計算され、列優先の場合のストライドは`1, width`で1次元インデックスは`1 * y + width * x`と計算されます。
+
+行優先/列優先レイアウトはいずれもストライドによって表現可能ではありますが、典型的でありよく使用するため個別のレイアウトポリシーとして用意されています。
+
+行優先/列優先以外のストライド指定を行いたい場合に`std::layout_stride`を使用できます。使用法は少し複雑になりますが、`std::layout_stride::mapping`のコンストラクタに`std::array`に次元ごとのストライドを入れて渡します。
+
+```cpp
+int storage[] = {
+   0,  1,  2,  3, 
+   4,  5,  6,  7,
+   8,  9, 10, 11,
+  12, 13, 14, 15
+};
+
+// 各行4番目の要素をスキップする行優先4x3行列
+std::extents<std::size_t, 4, 3> ext1;
+std::array<std::size_t, 2> stride1{4, 1};
+std::layout_stride::mapping map1{ext1, stride1};
+
+// CTADでT, E, Lを推論する
+std::mdspan ms1{storage, map1};
+
+print(ms1);
+
+// 右下2x3行列を行優先で参照
+std::extents<std::size_t, 2, 3> ext2;
+std::array<std::size_t, 2> stride2{4, 1};
+std::layout_stride::mapping map2{ext2, stride2};
+
+std::mdspan mat44{storage, 4, 4};
+std::mdspan ms2{&mat44[2, 1], map2};
+
+print(ms2);
+```
+```
+ 0  1  2 
+ 4  5  6 
+ 8  9 10 
+12 13 14 
+
+ 9 10 11 
+13 14 15 
+```
+
+この出力では先程の`print()`を引き続き使用していますが、要素を出力する`std::println()`のフォーマット引数を`"{:>2} "`のように指定しています。
+
+ストライドの扱いはかなり難しいですが、`std::layout_stride`を用いると様々なレイアウトを表現することができます。
+
+このアクセサポリシーは標準で用意されているものしか使用できないわけではなく、ユーザーが定義したものを使用して扱うレイアウトをカスタイマイズすることができます。
+
+### カスタマイズの例
+
+ここではカスタマイズの例として、インターリーブされた行列を`std::mdspan`で扱えるようにすることを考えます。
+
+行列（配列）のインターリーブとは、同じサイズの複数の行列を1つの行列に詰め込むようなメモリレイアウトで、その際に同じ添字を持つ要素を連続的に配置するものです。
+
+```cpp
+// この3つの配列を
+int A[] = {
+  100, 101, 102,
+  110, 111, 112,
+  120, 121, 122,
+};
+int B[] = {
+  200, 201, 202,
+  210, 211, 212,
+  220, 221, 222,
+};
+int C[] = {
+  300, 301, 302,
+  310, 311, 312,
+  320, 321, 322,
+};
+
+// このように詰める
+int interleaved[] = {
+  100, 200, 300, 101, 201, 301, 102, 202, 302,
+  110, 210, 310, 111, 211, 311, 112, 212, 312,
+  120, 220, 320, 121, 221, 321, 122, 222, 322,
+};
+```
+
+このようなレイアウトを取ることによる利点は、対応する添字要素をメモリ上で隣接させて配置することで局所性を高めメモリアクセスを効率化できる点です。
+
+例えば、複数の行列を使用するある処理がそれら行列の対応する要素ごとに処理を行なっていくような場合、通常のレイアウトだと複数の行列間で対応する（同じ添字を持つ）要素はメモリ上で少なくとも行列サイズ分離れた位置に配置されています。それを読み込もうとすると異なる位置へのメモリアクセスが何度も発生し、1要素読み込むごとにキャッシュが無効化されるなど非効率となります。インターリーブレイアウトをとることで、1度のメモリアクセスで使いたい要素を一括でロードし、なおかつキャッシュにも乗りやすくなるなど効率化を図れます。
+
+インターリーブレイアウトを用いる場合、行列のメモリ配置が複雑になり1つの行列にアクセスする際に工夫しなければなりませんが、`mdspan`はこのようなレイアウトも扱うことができます。
+
+簡単のために、今回は行優先レイアウトでインターリーブ配列を扱うことにします。
+
+#### レイアウトポリシー型とレイアウトマッピングクラス
+
+レイアウトポリシー型を`L`とすると、レイアウトマッピングクラスと呼ばれる型が`mapping`という名前で`L::mapping`のようにアクセスできる必要があり、唯一のテンプレートパラメータとして`Extents`（`std::mspan<T, E>`の`E`）を受け取ります。
+
+```cpp
+// レイアウトポリシー型
+struct L {
+
+  // レイアウトマッピングクラス
+  template <class Extents>
+  class mapping {
+    ...
+  };
+};
+```
+
+この`Extents`は`std::mdspan`から供給されるもので、レイアウトマッピングクラス内からはこの`Extents`とそのオブジェクトを介して現在の`std::mdspan`のエクステント情報を取得することができます。
+
+レイアウトポリシー型はこのレイアウトマッピングクラスを定義しておくことだけが役割であり、実際のレイアウトカスタマイズはレイアウトマッピングクラス内部で行います。
+
+今回は行優先でインターリーブされたレイアウトをハンドルするので`L`の名前は`layout_right_interleaved`にすることにして、レイアウト計算のために必要となるパラメータとしてインターリーブされている配列数`D`を受け取っておきます。
+
+```cpp
+// レイアウトポリシー型
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+
+  // レイアウトマッピングクラス
+  template <class Extents>
+  class mapping {
+    ...
+  };
+};
+```
+
+レイアウトポリシー型とレイアウトマッピングクラスがこのような構造になっているのは、`mdspan<T, E, L>`のようにテンプレートパラメータで渡した時に、`L`が`L<E>`のように`E`に依存してしまうのを避けるためです。これは記述が冗長となる上にCTADが難しくなります。
+
+#### レイアウトマッピングポリシー要件
+
+レイアウトポリシー型とレイアウトマッピングクラスにはそれぞれ要件があり、レイアウトポリシー型に対するものをレイアウトマッピングポリシー要件、レイアウトマッピングクラスに対するものをレイアウトマッピング要件と言います。
+
+これらの要件に従って実装することで`mdspan`においてのレイアウトカスタマイズとして使用できるわけです。
+
+レイアウトマッピング要件は実装のメインに関わってくるところなので順番に見ていくとして、レイアウトマッピングポリシー要件はレイアウトマッピングポリシー型を`MP`、`std::extents`の特殊化を`E`とすると次のものです
+
+- `MP::mapping<E>`が有効であり、レイアウトマッピング要件を満たす
+- `MP::mapping<E>::layout_type`が有効であり`MP`と同じ型
+- `MP::mapping<E>::extents_type`が有効であり`E`と同じ型
+
+レイアウトマッピングポリシー型はレイアウトマッピングクラスを導出するためのトレイト型であり、`mdspan`で直接保持されないためメンバ関数等含めてその他の要件はありません。
+
+#### 型に対する要件
+
+レイアウトマッピングクラス型に関しては次のことが要求されます。
+
+まず型としての要件については、アクセサポリシー型を`A`とすると次の事を満たす必要があります
+
+- `copyabke`および`equality_comparable`のモデルとなる
+- `is_nothrow_move_constructible_v<A>`が`true`
+- `is_nothrow_move_assignable_v<A>`が`true`
+- `is_nothrow_swappable_v<A>`が`true`
+
+これを満たすためには通常`Extents`以外のメンバ変数を持たずに、コピーコンストラクタとコピー代入演算子、および同値比較演算子を`default`定義しておきます。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+  public:
+  
+    mapping(const mapping &) = default;
+    mapping &operator=(const mapping &) & = default;
+
+    friend bool operator==(mapping, mapping) = default;
+  };
+};
+```
+
+レイアウトマッピングクラス型は通常`Extents`のオブジェクト1つを保持するだけで足りるため、コピーコストが低い型となるためこれで十分です。もし変なレイアウトのハンドル時にムーブが効率的となる場合は、ムーブコンストラクタ/代入演算子を定義したり、`operator==`の引数型を参照にしたりといったことをすればいいでしょう。
+
+ここからは必須の要件ではありませんが、レイアウトマッピングクラスの他のコンストラクタの存在は`std::mdspan`のコンストラクタの利用可能性に影響を与えます。
+
+- デフォルトコンストラクタ
+    - `std::mdspan`のデフォルトコンストラクタを有効にするために必要
+- `Extents`を受け取るコンストラクタ
+    - 動的`Extents`をサポートする場合に必要
+    - デフォルトコンストラクタ以外の、`std::mdspan`のレイアウトマッピングクラスを受け取らないコンストラクタを有効にするために必要
+- 他のレイアウトマッピングクラスからの変換コンストラクタ
+    - `std::mdspan`の変換コンストラクタを有効にするために必要
+
+最後のレイアウトマッピング変換は必ずしもサポートできるとは限らないため任意ですが、残りの2つは可能ならば提供しておきましょう。`std::mdspan`の構築は複雑なので、これらのコンストラクタを欠いているとそのレイアウトマッピングを使用した`std::mdspan`の構築が難しくなる可能性があります。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+    // エクステントを保存しておく（動的エクステントを使用する場合に必要）
+    Extents m_extent;
+  public:
+
+    // デフォルトコンストラクタ
+    mapping() = default;
+
+    // エクステントを受け取るコンストラクタ
+    constexpr mapping(const Extents& ex)
+      : m_extent{ex}
+    {}
+  
+    mapping(const mapping &) = default;
+    mapping &operator=(const mapping &) & = default;
+
+    friend bool operator==(mapping, mapping) = default;
+  };
+};
+```
+
+エクステントを受け取るコンストラクタには`const Extents&`が渡されるので、`const`参照か値で受ける必要があります。
+
+これ以外のコンストラクタは必要なら定義することができ、これらのものと曖昧にならなければそれは自由です。`mdspan`構築時に別に構築して渡さなければならなくなるものの、何かしらの独自の引数を受けるコンストラクタを使用することもできます。
+
+#### メンバ型に対する要件
+
+メンバ型は次の4つが要求されます
+
+- `extents_type` : テンプレートパラメータ`Extents`
+    - `std::extents`の特殊化であること
+- `index_type` : 計算結果のインデックスの型
+    - `extents_type::index_type`
+- `rank_type` : ランク（次元数）の型
+    - `extents_type::rank_type`
+- `layout_type` : レイアウトマッピングクラスを包むレイアウトポリシー型
+    - レイアウトマッピングクラスが`L::mapping`のようになっている時の`L`
+    - `std::mdspan`のレイアウトマッピングクラスを受け取るコンストラクタがレイアウトポリシー型を取得するのに使用される
+
+この4つはおそらくほとんどの場合似たようなコードを書くことになります
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+  public:
+
+    // メンバ型定義
+    using extents_type = Extents;
+    using index_type = typename extents_type::index_type;
+    using rank_type = typename extents_type::rank_type;
+    // 都度変更すべきはおそらくこれだけ
+    using layout_type = layout_right_interleaved<D>;
+  };
+};
+```
+
+#### レイアウトの特性を表す関数についての要件
+
+レイアウトがどういう性質を持つかについてを取得する関数が3種類要求されます。これらはすべて引数を取らず`bool`を返す関数です。
+
+説明のために、レイアウトマッピングクラスのオブジェクトを`m`としておきます
+
+- `is_unique()`
+    - 配列の1つの要素に1組の多次元インデックスだけが対応する場合に`true`
+    - 例えば、対称行列における重複要素を節約するようなレイアウトだと1つの要素に複数のインデックスが対応するため満たさない
+      - 2次元の場合`m(i, j) == m(j, i)`となるためユニークではない
+- `is_exhaustive()`
+    - `[0, m.required_span_size())`の範囲内の全ての`k`に対して、`m(idx...) == k`となる多次元インデックス`idx...`が存在する場合に`true`
+      - 変換後のインデックスによるアクセスはメモリ上の要素全てにアクセスする（パディングがない）
+      - 要素がメモリ上で連続していることとほぼ等しいが、変換後のインデックスが必ずしも連続的ではない場合があり、その場合でも与えられたメモリ範囲の要素全てに対応するインデックスが計算されることを表す
+- `is_strided()`
+    - インデックス計算がストライドによって行われている場合に`true`
+    - 幅`w`高さ任意の2次元行列なら、多次元インデックス`j, i`に対して`m(j, i)`は`w * j + i`を返す。この時、各次元のストライドは`(w, 1)`となる。
+      - これと同等の計算によってインデックス計算が行われている場合に`true`を返す
+- `is_always_unique()` （静的メンバ関数）
+    - `is_unique()`が常に`true`となるなら`true`
+- `is_always_exhaustive()` （静的メンバ関数）
+    - `is_exhaustive()`が常に`true`となるなら`true`
+- `is_always_strided()` （静的メンバ関数）
+    - `is_strided()`が常に`true`となるなら`true`
+
+これらの関数は全てその性質を満たしていれば`true`を返し、そうでなければ`false`を返すようにします。
+
+`is_xxx()`に対する`is_always_xxx()`は`is_xxx()`の性質が個別のオブジェクトによらず常に満たされている場合に`true`を返します。`false`を返す場合は、その性質がオブジェクトごとに（その構築時パラメータによって）満たされないことがありうることを表します。
+
+今回の場合、ある要素は1組のインデックスによってしかアクセスされないため`is_unique()`はつねに`true`であり、考慮する配列数`D`が2以上の場合は参照するメモリ領域の全ての要素にアクセスしないため`is_exhaustive()`は`false`となります。そして、ストライド計算によってインデックスを計算可能なので、`is_strided()`は`true`です（詳しくは後述）。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+  public:
+
+    ...
+
+    static constexpr bool is_unique() noexcept {
+      return true;
+    }
+
+    static constexpr bool is_exhaustive() noexcept {
+      return D == 1;
+    }
+
+    static constexpr bool is_strided() noexcept {
+      return true;
+    }
+
+    static constexpr bool is_always_unique() noexcept { 
+      return true;
+    }
+
+    static constexpr bool is_always_exhaustive() noexcept { 
+      return D == 1;
+    }
+
+    static constexpr bool is_always_strided() noexcept {
+      return true;
+    }
+  };
+};
+```
+
+`static`メンバ関数は非静的メンバ関数と同様に`.`によるメンバアクセスで呼び出すことができるので、返す値がオブジェクトによらず決定するならば`always`ではない関数も静的メンバ関数として定義しておくことができます。
+
+#### 動作に関するメンバ関数についての要件
+
+レイアウトの計算およびそれに関する情報を取得する関数が4つ要求されます。以下、`M`は自身の型（レイアウトマッピングクラス型）とします
+
+- `.extents()`
+    - 戻り値型は`const typename M​::​extents_type&`
+    - 現在のエクステントを返す
+- `.operator(idx...)`
+    - 戻り値型は`typename M​::​index_type`
+    - 戻り値は非負整数値であり、`M​::​index_type`および`std::size_t`の表現可能な最大値未満の値
+    - 多次元インデックスをメモリ上の一点のインデックスに変換する
+- `.required_span_size()`
+    - 戻り値型は`typename M​::​index_type`
+    - 現在のレイアウトがアクセスするメモリ範囲の最大値を返す
+      - `extents()`のサイズが0なら0
+      - それ以外の場合、インデックス計算で計算されうる最大値に+1した値
+- `.stride(r)`
+    - 戻り値型は`const typename M​::​extents_type&`
+    - 次元`r`のストライドを返す
+
+また、`operator()`の要件として次のものがあります
+
+- `m(idx...) == m(static_cast<typename M::index_type>(idx)...)`
+    - この式が常に`true`となる
+    - インデックス計算結果は多次元インデックスを指定する整数値の型によらない
+
+
+`extents()`だけはそのままですが、`operator()`および他のものはレイアウトのインデックス計算の実装と関わってくるためインデックス計算実装時に整えます。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+    Extents m_extent;
+  public:
+
+    ...
+  
+    constexpr auto extents() const noexcept -> const extents_type& {
+      return m_extent;
+    }
+
+    constexpr auto required_span_size() const -> index_type;
+
+    constexpr auto stride(rank_type r) const -> index_type;
+
+    template<typename... Indices>
+      requires (sizeof...(Indices) == extents_type::rank()) &&
+               (std::is_nothrow_convertible_v<Indices, index_type> && ...)
+    constexpr auto operator()(Indices... idx) const -> index_type;
+  };
+};
+```
+
+`operator()`の制約は標準の3つのレイアウトポリシー型におけるものを参考にして追加しています。指定されているインデックスは次元数に一致していることと、インデックス型を`index_type`に例外を投げずに変換可能であることを制約しています。
+
+エクステント型の静的`constexpr`メンバ関数`extents_type::rank()`はそのエクステントのランク（次元数）を取得するもので、これは必ずコンパイル時の定数となります。
+
+レイアウトマッピング要件に関しての話はこれで終わりなので、続いて実装について考えていきます。
+
+#### インターリーブレイアウトにおけるインデックス計算
+
+レイアウトマッピングクラスの役割は、`d`次元の多次元インデックス`i_0, i_1, ..., i_(d-1)`を1次元の空間インデックスに変換することです。結果のインデックスがどのように使われるのかは`mdspan`のアクセサポリシークラスが決めることですが、通常のポインタ演算（計算結果のインデックス`idx`とストレージポインタ`ptr`に対して`*(ptr + idx)`）を仮定して良いでしょう。したがって、レイアウトマッピングクラスでは要素のサイズとかバイト単位のアクセスとかを気にする必要はなく、要素サイズを1単位とした1次元領域上でのインデックス計算のみを考えれば良いわけです。
+
+今実装したい配列（行列）のインターリーブレイアウトとは、複数の配列の対応するインデックスの要素を連続的に配置していくものでした。例えば3つの2次元行列を1つの2次元行列に行優先でインターリーブするとは次のようになります
+
+```cpp
+// この3つの配列を
+int A[] = {
+  100, 101, 102,
+  110, 111, 112,
+  120, 121, 122,
+};
+int B[] = {
+  200, 201, 202,
+  210, 211, 212,
+  220, 221, 222,
+};
+int C[] = {
+  300, 301, 302,
+  310, 311, 312,
+  320, 321, 322,
+};
+
+// このように詰める
+int interleaved[] = {
+  100, 200, 300, 101, 201, 301, 102, 202, 302,
+  110, 210, 310, 111, 211, 311, 112, 212, 312,
+  120, 220, 320, 121, 221, 321, 122, 222, 322,
+};
+```
+
+2次元の場合により一般化して考えてみると
+
+1つのインターリーブ配列の中に含まれる2次元行列の数を`D`、行列の行数を`J`、行列の列数を`I`として、`d = D - 1`、`i = I - 1`、`j = J - 1`とすると
+
+$$
+M_{int} = \begin{pmatrix}
+a_{000} & ... & a_{d00} & a_{001} & ... & a_{d01} & ... & a_{00i} & ... & a_{d0i} \\
+a_{010} & ... & a_{d10} & a_{011} & ... & a_{d11} & ... & a_{01i} & ... & a_{d1i} \\
+\vdots & \vdots & \vdots & \vdots & \vdots & \vdots & \vdots & \vdots & \vdots & \vdots \\
+a_{0j0} & ... & a_{dj0} & a_{0j1} & ... & a_{dj1} & ... & a_{0ji} & ... & a_{dji}
+\end{pmatrix}
+$$
+
+こんな感じになります。
+
+1次元方向（行方向）を見てみると、ある`n`番目の行列の隣り合う要素（例えば$a_{n00}$と$a_{n01}$）の間には含まれる行列分、つまり`D`個の要素があります。そのため、ある1つの行列の行内で`l`番目の要素のインデックスは`l * D`で求められます。
+
+2次元方向（列方向）を見てみると、ある`n`番目の行列の上下で隣り合う要素（例えば$a_{n00}$と$a_{n10}$）の間には、含まれる行列全ての列要素の個数分の要素、つまり`D * I`（行列数 × 列幅）個の要素があります。そのため、ある1つの行列の列間のオフセットは`m * D * I`で求められます。
+
+したがって、ある1つの行列の先頭要素から見た時、その行列の`y`列`x`行の要素へのインデックス`idx`は
+
+$$
+idx = y \times D \times I + x \times D
+$$
+
+で求められます。
+
+#### 多次元行列への一般化
+
+含まれる行列を3次元以上にしたくなる場合があるかもしれません。3次元以上となるとイメージを描くのも難しくなりますが、3次元行列の配置がどうなるのかについては2次元行列の要素を1次元配列と思うことで考えることができます。あるいは、何次元だろうが1次元配列に詰めてしまうことを考えると、3次元配列とは2次元配列の配列であり、N次元配列とはN-1次元配列の配列です。
+
+つまり、普通の3次元行列の3次元軸方向に隣り合う要素（例えば$a_{000}$と$a_{100}$）の間には、その行列の一部である2次元行列1つ分の要素が詰まっています。
+
+その上でインターリーブされている場合のインデックスを考えると、インターリーブされているある3次元行列の3次元軸方向に隣り合う要素（例えば$a_{n000}$と$a_{n100}$）の間には、インターリーブされている行列の個数分の2次元行列が間に挟まっています。
+
+インターリーブされている行列数を`D`、3次元行列の各次元の要素数を`K, J, I`（左側ほど高位次元）とすると、ある1つの行列の先頭要素から見た時、その行列の`(z, y, x)`要素へのインターリーブされた空間上でのインデックス`idx`は
+
+$$
+idx = z \times D \times I \times J + y \times D \times I + x \times D
+$$
+
+で求められます。
+
+同様に一般化すると、インターリーブされている行列数を`D`、N次元行列の各次元のサイズ（要素数）を`In`（`0 <= n < N`）とすると、ある1つの行列の先頭要素から見た時、その行列の`(in, ..., i0)`要素へのインターリーブされた空間上でのインデックス`idx`は、
+
+$$
+idx = D \times (i_n \times (I_{n - 1} \times ... \times I_0) + ... + i_2 \times I_1 \times I_0 + i_1 \times I_0  + i_0) 
+$$
+
+のようになります。
+
+今回は2次元行列のインターリーブだけを確認することにして、高次元はとりあえずこれに則って実装はしますが特にチェックしないことにします。
+
+#### 実装
+
+後は上式をコードに直すだけです。色々な方法が考えられますが、ここでは上式をホーナー法によって変換して、それをそれを実装する事にします。
+
+$$
+idx = D \times (I_0 \times ( I_1 \times ...(I_{n - 2} \times (I_{n - 1} \times i_n + i_{n-1}) + i_{n-2})... + i_1) + i_0)
+$$
+
+ここでのインターリーブされている行列数`D`はレイアウトポリシー型の非型テンプレートパラメータ`D`から、行列の次元数`N`はエクステント型の`extents_type::rank()`から、各次元の要素数`I_i`はエクステントオブジェクトのメンバ関数`m_extent.extent(i)`から、多次元インデックス`i_n`はレイアウトマッピング型の`operator()`の引数から取得できます。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+    Extents m_extent;
+  public:
+
+    ...
+
+    constexpr auto required_span_size() const -> index_type {
+      // 丸投げ
+      return std::layout_stride::mapping<Extents>(m_extent).required_span_size();
+    }
+
+    // 次元rのインデックスにかけられている係数を求める
+    constexpr auto stride(rank_type r) const -> index_type
+      requires (extents_type::rank() != 0)
+    {
+      assert(r < extents_type::rank());
+
+      index_type stride = D;
+
+      for (auto i : std::views::iota(0u, r)) {
+        stride *= m_extent.extent(i);
+      }
+
+      return stride;
+    }
+
+    template<typename... Indices>
+      requires (sizeof...(Indices) == extents_type::rank()) &&
+               (std::is_nothrow_convertible_v<Indices, index_type> && ...)
+    constexpr auto operator()(Indices... indices) const -> index_type {
+      // 行列次元数
+      // extent()が0indexなので最大値は-1する
+      constexpr std::unsigned_integral auto N =
+        extents_type::rank() - 1;
+      static_assert(0u < N);
+
+      // インデックス配列
+      // indicesは先頭が最大次元、末尾が1次元
+      const std::array<index_type, extents_type::rank()> idx_array = {static_cast<index_type>(indices)...};
+
+      index_type idx = idx_array[0];
+
+      for (auto r = N - 1;
+           const auto in : idx_array | std::views::drop(1))
+      {
+        idx *= m_extent.extent(r);
+        idx += in;
+        --r;
+      }
+
+      return D * idx;
+    }
+  }
+};
+```
+
+計算してる部分（`operator()`）では、先ほどのホーナー法による式の内側から計算しています。このレイアウトマッピングクラスの`operator()`の引数の多次元インデックスは、`mdspan`の`operator[]`に渡されるものがそのまま渡され、先頭が最大次元で末尾が1次元のインデックスとなるような順番で渡ってきます。
+
+`std::array`に格納しているのはパラメータパックのままだと取り扱いが面倒だったためで、パック展開を駆使すればもっといい感じにできる可能性があります。
+
+範囲`for`内では、次元`n`のインデックス`in`に`r = n - 1`次元のサイズ`Ir`をかけてから、`n + 1`次元のインデックスを足し合わせ、`r`の次元を1つ落としてループします。この時、`r`が先に-1に到達しモジュロ演算で最大値になってしまうのでその`r`にはアクセスしないようにする必要があり、先頭インデックス（`idx_array[0]`）を先に取ってそれを飛ばした残りの要素でループを回しているのはその対策のためです。
+
+`required_span_size()`の実装を委譲しているのは、多次元インデックス空間が0の時とランクが0の時をハンドルするのとか最大範囲を求めるのが面倒だとかの理由によるものです。`stride(r)`と`required_span_size()`の実装の意味については後述します。
+
+```cpp
+// 3x3行列D個のインターリーブ配列を参照するmdspan
+template <typename T, std::unsigned_integral auto D>
+using interleaved_mat33 = std::mdspan<
+  T,
+  std::extents<std::size_t, 3, 3>,
+  layout_right_interleaved<D>>;
+
+// 3x3行列を3つインターリーブ
+int storage[] = {
+  111, 211, 311, 112, 212, 312, 113, 213, 313,
+  121, 221, 321, 122, 222, 322, 123, 223, 323,
+  131, 231, 331, 132, 232, 332, 133, 233, 333
+};
+
+// それぞれの行列の先頭要素のポインタを渡す
+interleaved_mat33<int, 3u> A{storage};
+interleaved_mat33<int, 3u> B{storage + 1};
+interleaved_mat33<int, 3u> C{storage + 2};
+
+print(A);
+print(B);
+print(C);
+```
+```
+111 112 113 
+121 122 123 
+131 132 133 
+
+211 212 213 
+221 222 223 
+231 232 233 
+
+311 312 313 
+321 322 323 
+331 332 333 
+```
+
+`print()`は`std::layout_left`のところで使っていたものです。
+
+レイアウト計算を考えるのが少し複雑ではありますが、そこを用意できればこのように`mdspan`を様々なレイアウトに対応させることができます。
+
+#### 静的エクステントの場合の最適化
+
+ひとまず完成した`layout_right_interleaved`の実装は、`extents_type`（`std::extents`）の各次元の要素数が動的な場合でも対応可能な実装になっています。動作例がそうであるように、全ての次元の要素数がコンパイル時に既知であれば、計算の一部をコンパイル時に終わらせておくことができます。
+
+エクステントが完全に静的であるか（動的エクステントが含まれていないかどうか）は、`std::extents`の静的メンバ関数である`rank_dynamic()`が`0`を返すかどうかで判定できます。
+
+まず、エクステントが静的である場合に、各次元のストライドをコンパイル時に求めておきます。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+    [[no_unique_address]]
+    Extents m_extent;
+    
+    ...
+  
+  private:
+
+    // コンパイル時のストライド計算
+    static constexpr auto calc_static_stride()
+      -> std::array<index_type, Extents::rank()>
+    {
+      // 動的エクステントの場合は空
+      if constexpr (Extents::rank_dynamic() != 0) {
+        return {};
+      }
+
+      // 全て静的なら、各次元のストライドを求める
+      std::array<index_type, Extents::rank()> stride;
+
+      stride[0] = D;
+
+      for (auto i = 1u; i < Extents::rank(); ++i) {
+        stride[i] = stride[i - 1] * Extents::static_extent(i - 1);
+      }
+
+      return stride;
+    }
+
+    // コンパイル時に求めたストライドを保存しておく
+    static constexpr std::array<index_type, Extents::rank()>
+      static_stride = calc_static_stride();
+
+    ...
+  };
+};
+```
+
+静的メンバ変数として保存しておくことでコンパイル時に使用でき、オブジェクトのサイズを消費しないようにします。
+
+次に、これを用いてインデックス計算周りを書き換えます。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+    ...
+
+    // コンパイル時に求めたストライド
+    static constexpr std::array<index_type, Extents::rank()>
+      static_stride = calc_static_stride();
+  public:
+
+    constexpr auto stride(rank_type r) const -> index_type
+      requires (extents_type::rank() != 0)
+    {
+      assert(r < extents_type::rank());
+
+      if constexpr (Extents::rank_dynamic() != 0) {
+        index_type stride = D;
+
+        for (auto i : std::views::iota(0u, r)) {
+          stride *= m_extent.extent(i);
+        }
+
+        return stride;
+      } else {
+        // 全て静的ならあらかじめ計算したものを返す
+        return static_stride[r];
+      }
+    }
+
+    template<typename... Indices>
+      requires (sizeof...(Indices) == extents_type::rank()) &&
+               (std::is_nothrow_convertible_v<Indices, index_type> && ...)
+    constexpr auto operator()(Indices... indices) const -> index_type {
+      // 行列次元数
+      // extent()が0indexなので最大値は-1
+      constexpr std::unsigned_integral auto N = extents_type::rank() - 1;
+      static_assert(0u < N);
+
+      // インデックス配列
+      // indicesは先頭が最大次元、末尾が1次元
+      const std::array<index_type, extents_type::rank()> idx_array = {static_cast<index_type>(indices)...};
+
+      if constexpr (Extents::rank_dynamic() != 0) {
+        // 動的エクステントを含む場合の計算
+
+        index_type idx = idx_array[0];
+
+        for (auto m = N - 1;
+             const auto in : idx_array | std::views::drop(1))
+        {
+          idx *= m_extent.extent(m);
+          idx += in;
+          --m;
+        }
+
+        return D * idx;
+      } else {
+        // 全て静的エクステントな場合の計算
+
+        index_type idx = 0;
+
+        // 求めたストライドは先頭が1次元になっているので、反転させる
+        for (index_type i = 0;
+             const auto st : static_stride | std::views::reverse)
+        {
+          idx += st * idx_array[i];
+          ++i;
+        }
+
+        return idx;
+      }
+    }
+
+  };
+};
+```
+
+あらかじめストライドが求めてある場合、各次元のインデックスに対応するストライドをかけて足すだけなので処理はだいぶ簡単になります。ここではやっていませんが、それによって畳み込み式で簡単に書けるようになると思われます。ただし、コンパイル時にストライドを求めるようにする場合でも、実行時の処理と掛け算と足し算の回数がほぼ変わらないのであまり効率的にはならないかもしれません。
+
+また、`std::extents`はエクステントが全て静的である場合にサイズが1になるので、これによってエクステントが静的なら`layout_right_interleaved`は空のクラスとなりそのサイズも1になります（EBOが働く場合）。これは`mdspan`をコピーするときのコストを低下させることにつながります。
+
+#### ストライドと`layout_stride`
+
+インターリーブレイアウトのインデックス計算時にその各次元でインデックスに対して固定的に積算されている値、例えば`idx = y * D * I + x * D`の`y`に対する`D * I`と`x`に対する`D`は各次元における要素のずらし幅となっています。例えば、`D = 1`（つまりインターリーブなし）とすると、通常の2次元インデックス計算の式に一致することがわかるでしょう。すなわち、このずらし幅は`std::layout_stride`のところで見たストライドの指定そのものです。
+
+レイアウトマッピングクラス型のメンバ関数として要求されていた`is_strided()`と`is_allways_strided()`が`true`を返すとは、このストライドによってレイアウト計算されていることを表します。そして、レイアウトマッピングクラスに要求される`stride(r)`というのは、`r`次元におけるストライド（`r`次元のインデックスにかけられる係数）を求めるための関数です。インターリーブレイアウトにおいてそれは`m`次元のサイズを`I(m)`と表すと、`n`次元のインデックス`in`に対して`D * I(n-1) * ... * I(0)`のように計算されます。
+
+ストライドによってさまざまなレイアウトの配列を表現できることはよく知られているため`std::layout_stride`が用意されていましたが、インターリーブレイアウトもその例にもれず、実はこんな手間をかけてレイアウトポリシー型を自作しなくてもハンドリングできたわけです。
+
+```cpp
+// 要素型Tの3x3インターリーブ行列
+template <typename T>
+using stride_interleaved_mat33 = std::mdspan<
+  T, 
+  std::extents<std::size_t, 3, 3>,
+  std::layout_stride>;
+
+// 3x3行列を3つインターリーブ
+int storage[] = {
+  111, 211, 311, 112, 212, 312, 113, 213, 313,
+  121, 221, 321, 122, 222, 322, 123, 223, 323,
+  131, 231, 331, 132, 232, 332, 133, 233, 333
+};
+
+// レイアウトマッピング型取り出し
+using mapping = stride_interleaved_mat33<int>::mapping_type;
+
+// この場合の各次元のストライド
+constexpr std::array<std::size_t, 2> stride = {9, 3};
+
+// CTADによりテンプレートパラメータを推論している
+stride_interleaved_mat33<int> A{storage,     mapping{{}, stride}};
+stride_interleaved_mat33<int> B{storage + 1, mapping{{}, stride}};
+stride_interleaved_mat33<int> C{storage + 2, mapping{{}, stride}};
+
+print(A);
+print(B);
+print(C);
+```
+```
+111 112 113 
+121 122 123 
+131 132 133 
+
+211 212 213 
+221 222 223 
+231 232 233 
+
+311 312 313 
+321 322 323 
+331 332 333 
+```
+
+この`layout_stride`に対して、手間をかけて作成した`layout_right_interleaved`のメリットは
+
+- ストライド計算の自動化
+    - ストライドを手動で渡す必要がない
+- ストライドの定数化が可能
+    - エクステントが全て定数なら
+- オブジェクトごとにストライドを保持する必要がない
+    - オブジェクトサイズの削減
+
+などがありはします。
+
+大抵のメモリレイアウトはストライドを工夫することで表現できるので、`mdspan`でカスタムレイアウトを取り扱おうと思い立った時はまず`layout_stride`の利用を検討してみるといいかもしれません。更なる最適化が欲しかったり、ストライドでは表現できない場合にレイアウトポリシー型の自作に進むと良いでしょう。
+
+インターリーブレイアウトは`layout_stride`によって表現可能なので、`layout_right_interleaved`の特性は`layout_stride`のそれと同じになります。そのため、`required_span_size()`のような少し面倒な実装は`layout_stride`の実装を流用することができるため、先程の実装ではそうしていたわけです。
+
+#### コード全体
+
+ここまでの説明では断片的なコードによって説明してきたため、ここで完成した`layout_right_interleaved`クラスの全体を掲載しておきます。
+
+```cpp
+template<std::unsigned_integral auto D>
+struct layout_right_interleaved {
+  template <class Extents>
+  class mapping {
+    [[no_unique_address]]
+    Extents m_extent;
+  public:
+    using extents_type = Extents;
+    using index_type = typename extents_type::index_type;
+    using rank_type = typename extents_type::rank_type;
+    using layout_type = layout_right_interleaved<D>;
+  
+  private:
+
+    static constexpr auto calc_static_stride()
+      -> std::array<index_type, Extents::rank()>
+    {
+      // 動的エクステントの場合は空
+      if constexpr (Extents::rank_dynamic() != 0) {
+        return {};
+      }
+
+      // 全て静的なら、各次元のストライドを求める
+      std::array<index_type, Extents::rank()> stride;
+
+      stride[0] = D;
+
+      for (auto i = 1u; i < Extents::rank(); ++i) {
+        stride[i] = stride[i - 1] * Extents::static_extent(i - 1);
+      }
+
+      return stride;
+    }
+
+    static constexpr std::array<index_type, Extents::rank()>
+      static_stride = calc_static_stride();
+
+  public:
+
+    constexpr mapping(const extents_type& ex)
+      : m_extent{ex}
+    {}
+
+    mapping(const mapping &) = default;
+    mapping &operator=(const mapping &) & = default;
+
+    friend bool operator==(mapping, mapping) = default;
+
+    constexpr auto extents() const noexcept -> const extents_type& {
+      return m_extent;
+    }
+
+    constexpr auto required_span_size() const -> index_type {
+      // 丸投げ
+      return std::layout_stride::mapping<Extents>(m_extent).required_span_size();
+    }
+
+    constexpr auto stride(rank_type r) const -> index_type
+      requires (extents_type::rank() != 0)
+    {
+      assert(r < extents_type::rank());
+
+      if constexpr (Extents::rank_dynamic() != 0) {
+        index_type stride = D;
+
+        for (auto i : std::views::iota(0u, r)) {
+          stride *= m_extent.extent(i);
+        }
+
+        return stride;
+      } else {
+        return static_stride[r];
+      }
+    }
+
+    template<typename... Indices>
+      requires (sizeof...(Indices) == extents_type::rank()) &&
+               (std::is_nothrow_convertible_v<Indices, index_type> && ...)
+    constexpr auto operator()(Indices... indices) const -> index_type {
+      // 行列次元数
+      // extent()が0indexなので最大値は-1
+      constexpr std::unsigned_integral auto N =
+        extents_type::rank() - 1;
+      static_assert(0u < N);
+
+      // インデックス配列
+      // indicesは先頭が最大次元、末尾が1次元
+      const std::array<index_type, extents_type::rank()> idx_array = {static_cast<index_type>(indices)...};
+
+      if constexpr (Extents::rank_dynamic() != 0) {
+        // 動的エクステントを含む場合の計算
+
+        index_type idx = idx_array[0];
+
+        for (auto m = N - 1;
+             const auto in : idx_array | std::views::drop(1))
+        {
+          idx *= m_extent.extent(m);
+          idx += in;
+          --m;
+        }
+
+        return D * idx;
+      } else {
+        // 静的エクステントを含む場合の計算
+
+        index_type idx = 0;
+
+        for (index_type i = 0;
+             const auto st : static_stride | std::views::reverse)
+        {
+          idx += st * idx_array[i];
+          ++i;
+        }
+
+        return idx;
+      }
+    }
+
+    static constexpr bool is_unique() noexcept {
+      return true;
+    }
+
+    static constexpr bool is_exhaustive() noexcept {
+      return D == 1;
+    }
+
+    static constexpr bool is_strided() noexcept {
+      return true;
+    }
+
+    static constexpr bool is_always_unique() noexcept { 
+      return true;
+    }
+
+    static constexpr bool is_always_exhaustive() noexcept { 
+      return D == 1;
+    }
+
+    static constexpr bool is_always_strided() noexcept {
+      return true;
+    }
+  };
+};
+```
+
+## アクセサポリシー
+
+アクセサポリシーは、参照領域へのデータハンドルとレイアウトマッピングによって生成された単一インデックスを用いて、その対象となる単一要素を引き当てその参照を得るための操作をカスタマイズするためのポリシー型です。
+
+C++23の時点では標準では`std::default_accessor`のみが用意されています。これは`std::mdspan`のデフォルトとして使用されているもので、領域ポインタ`ptr`とレイアウトマッピング済みのインデックス`i`によって`*(ptr + i)`のようにして要素アクセスを行うものです。
+
+```cpp
+namespace std {
+  template<class ElementType>
+  struct default_accessor {
+    using offset_policy = default_accessor;
+    using element_type = ElementType;
+    using reference = ElementType&;
+    using data_handle_type = ElementType*;
+
+    constexpr default_accessor() noexcept = default;
+
+    template<class OtherElementType>
+      constexpr default_accessor(default_accessor<OtherElementType>) noexcept;
+    
+    constexpr reference access(data_handle_type p, size_t i) const noexcept;
+    
+    constexpr data_handle_type offset(data_handle_type p, size_t i) const noexcept;
+  };
+}
+```
+
+レイアウトポリシー同様に、規定された要件に従う形でアクセサポリシー型を定義して`std::mdspan`で使用することができます。
+
+### カスタマイズの例
+
+カスタマイズの例としては例えば、C++26では要素アクセス時に`assume_aligned`を介することでアライメント要件の仮定を伝達するようにする`aligned_accessor`が追加されています。また、提案中ですが要素アクセス時に`std::atomic_ref`を用いて要素アクセスがアトミックな多次元配列を実現する`atomic_accessor`が提案されているほか、`restrict`ポインタ（C++では未サポートのため同等のコンパイラ拡張）を用いてアクセスすることでポインタがエイリアスしていないことを伝達する`restrict_accessor`というアイデアもあります。
+
+ここでは簡単な例として、アクセス時に要素のスカラー倍を返すようなアクセサを実装してみます。
+
+#### アクセサポリシー要件
+
+レイアウトポリシー同様に、アクセサポリシーにも満たさなければならない要件がいくつかあります。
+
+まず型としての要件については、アクセサポリシー型を`A`とすると次の事を満たす必要があります
+
+- `copyabke`のモデルとなる
+- `is_nothrow_move_constructible_v<A>`が`true`
+- `is_nothrow_move_assignable_v<A>`が`true`
+- `is_nothrow_swappable_v<A>`が`true`
+
+そして、次の入れ子型を備えている必要があります
+
+- `A::element_type`
+    - 要素型
+    - 完全型であるオブジェクト型であり、抽象クラス型ではない型である必要がある
+    - 通常`mdspan<T, ...>`の`T`と同じ型
+- `A::data_handle_type`
+    - データハンドル型
+    - `A`に求められる型要件を満たす必要がある
+    - 必ずしも`element_type*`である必要は無い
+    - `mdspan`のデータハンドルを受け取るコンストラクタの引数型、および`mdspan`が保持するデータハンドルの型になる
+- `A::reference`
+    - 要素の参照型
+    - `common_reference_with<A::reference&&, A::element_type&>`のモデルとなること
+    - 必ずしも`element_type&`である必要は無い
+- `A::offset_policy`
+    - この型を`OP`とすると次の条件を満たす必要がある
+      - `OP`はアクセサポリシー要件を満たす
+      - `constructible_from<OP, const A&>`のモデルとなる
+      - `is_same_v<typename OP::element_type, typename A::element_type>`が`true`となる
+    - 通常`OP`は何らかのアクセサポリシー型になる
+
+最後に、`A`のオブジェクトを`a`、`A​::​data_handle_type`型の値を`p`、レイアウトポリシーの出力インデックスを`i`として、次のメンバ関数についての要件があります
+
+- `a.access(p, i)`
+    - 戻り値型は`A​::​reference`
+    - この関数は副作用を持たない（等しさを保持（*equality-preserving*）する）
+- `a.offset(p, i)`
+    - 戻り値型は`A​::​offset_policy​::​data_handle_type`
+    - この関数は副作用を持たない（等しさを保持（*equality-preserving*）する）
+    - `b = A​::​offset_policy(a)`、インデックス範囲`[0, n)`が`p, b`の両方でアクセス可能となるような任意の整数`n`について、次の条件を全て満たす値`q`を返す
+        - `[0, n - i)`が`q, b`の両方でアクセス可能
+        - `b.access(q, j)`は`[0, n - i)`の全ての整数インデックス`j`について、`a.access(p, i + j)`と同じ要素へのアクセスを提供する
+
+前述のように、この`a.access(p, i)`によってデータハンドル（ポインタ）とそのインデックスを用いて要素アクセスを行いその結果を返します。`a.offset()`については後述します。
+
+アクセサポリシー型はレイアウトポリシー型と比較すると求められることもやるべきことも少ないため比較的簡単に書くことができます。
+
+#### `scaled_accessor`
+
+前節の要件を踏まえたうえで、要素をスカラー倍するアクセサポリシー実装である`scaled_accessor`型は次のようになります
+
+```cpp
+template<class ElementType>
+struct scaled_accessor {
+  using offset_policy = scaled_accessor;
+  using element_type = ElementType;
+  using reference = ElementType;
+  using data_handle_type = ElementType*;
+
+private:
+  ElementType scale_{};
+
+public:
+
+  constexpr scaled_accessor(ElementType scale) noexcept
+    : scale_{scale}
+  {}
+
+  constexpr reference 
+    access(data_handle_type p, size_t i) const noexcept
+  {
+    return scale_ * p[i];
+  }
+
+  constexpr offset_policy::data_handle_type 
+    offset(data_handle_type p, size_t i) const noexcept
+  {
+    return p + i;
+  }
+};
+```
+
+コンストラクタでスカラー倍係数を受け取って保存しておき、要素アクセス時（`.access()`）にアクセス結果に係数をかけて返すことで、`mdspan`の参照する多次元配列のスカラー倍を表現しています。
+
+要素をスカラー倍して返すことから要素アクセス結果は参照を返すことができないため、`.access()`の戻り値型`reference`はprvalueである`ElementType`そのままになります。
+
+コンストラクタでスカラー倍係数を受け取る都合上`mdspan`のコンストラクタでパラメータ設定済みのアクセサポリシーオブジェクトを渡すようにして使用する必要があります。
+
+```cpp
+template<typename T, typename E>
+using scaled_mdspan = 
+  std::mdspan<T, E, 
+    std::layout_right, 
+    scaled_accessor<T>>;
+
+int storage[] = {
+  0, 1, 2,
+  3, 4, 5,
+  6, 7, 8
+};
+
+// 要素を2倍する
+scaled_accessor<int> acc{2};
+
+scaled_mdspan<int, std::extents<std::size_t, 3, 3>>
+  mat{storage, {}, acc};
+
+print(mat); // layout_strideのところで使用していたもの
+```
+```
+ 0  2  4 
+ 6  8 10 
+12 14 16 
+```
+
+C++26ではこれとかなり近いことをするアクセサポリシー型が線形代数ライブラリ`<linalg>`の一部として標準に導入されています。
+
+### `offset_policy`/`offset()`
+
+アクセサポリシー要件では要求されていて、`scaled_accessor`でも一応書いてあったものの、その動作には全く関与していないように見える謎のポイントが`offset_policy`と`offset()`の2つです。
+
+この2つのAPIは実は、C++23時点ではどこからも使用されていません。にもかかわらず用意されているのは、C++26の`submdspan()`（`mdspan`からスライスを取得する関数）で使用されているためです。タイミングとしてはこの2つの機能は並行的に作業されていましたが、`submdspan()`はC++23には間に合わなかったのでこういうことになっています。
+
+`submdspan()`では`mdspan`からその部分配列をかなりの自由度で取り出すことができますが、その際に`mdspan`の保持する領域をそのまま参照するのではなく、オフセットした領域のデータハンドル（ポインタ）を改めて取得します。その際にアクセサポリシー型の`offset()`を用いてオフセット計算が行われ、適切なアクセサポリシー型を取得するために`offset_policy`型が使用されます。
+
+すなわち、`offset_policy`はその場合にデータハンドル型の変換を行うためのインターフェースです。例えば、アクセサポリシーはデータハンドル型としてファンシーポインタをサポートしており、`std::shared_ptr`を使用することができます。この時、そのような`mdspan`に対して`submdspan()`を適用することで領域ポインタのオフセット計算が発生しますが、`std::shared_ptr`に対してそれを適用することはできず、その所有中のポインタ値にオフセット計算を施した結果を`std::shared_ptr`に入れ直すことはできません。
+
+この場合に一番簡単なのは、所有権を伝播させることをあきらめて通常の`mdspan`として扱うことで、その場合の`offset_policy::​data_handle_type`は`std::shared_ptr<T>`に対して`T*`になりますが、これによってオフセット計算結果は通常のポインタに対する結果を返せば良くなります。
+
+```cpp
+template<class ElementType>
+struct shared_ptr_accessor {
+  // submdspanではdefault_accessorに戻す
+  using offset_policy = std::default_accessor<ElementType>;
+  using element_type = ElementType;
+  using reference = ElementType&;
+  // データハンドルとしてshared_ptrを使用する
+  using data_handle_type = std::shared_ptr<ElementType[]>;
+
+  // データハンドルそのものはmdspanのコンストラクタが受け取り、mdspanがほじするのでここではデフォルト構築でok
+  constexpr shared_ptr_accessor() noexcept = default;
+
+  constexpr reference 
+    access(const data_handle_type& p, size_t i) const noexcept
+  {
+    return p[i];
+  }
+
+  // default_accessor<ElementType>::data_handle_type、すなわちポインタ型をオフセット計算結果とする
+  constexpr offset_policy::data_handle_type 
+    offset(const data_handle_type& p, size_t i) const noexcept
+  {
+    // shared_ptrの保持するポインタ値でオフセット計算を行い返す
+    return p.get() + i;
+  }
+};
+```
+
+これは次のように使用できます
+
+```cpp
+template<typename T, typename E>
+using shared_mdarray = 
+  std::mdspan<T, E, 
+    std::layout_right, 
+    shared_ptr_accessor<T>>;
+
+int main() {
+  const std::size_t N = 3 * 3;
+  auto p = std::make_shared<int[]>(N);
+  std::ranges::iota(p.get(), p.get() + N, 0);
+
+  shared_mdarray<int, std::extents<std::size_t, 3, 3>> mat{p};
+
+  print(mat); // lautou_leftのところで使用していたもの
+}
+```
+```
+0 1 2 
+3 4 5 
+6 7 8 
+```
+
+この`shared_mdarray`から`submdspan`でスライスを取得しようとしたときでも、`shared_ptr_accessor`で適切にオフセットポインタの計算と変換が行われているため、`submdspan`は問題なく動作します。
+
+```cpp
+// C++26のサンプルコード
+
+// 上記例におけるmatに対してサブスライスを取得
+auto sub22 = std::submdspan(mat, std::pair{1, 3}, std::pair{1, 3});
+// -> mdspan<int, std::dextents<std::size_t, 2>, 
+//      std::layout_right, std::default_accessor<int>>>
+
+// sub22はmatの右下2x2範囲の部分行列を参照する
+// 4 5
+// 7 8
+```
+
+### `mdspan`自体の性質
+
+`std::mdspan<T, E, L, A>`は`L::mapping<E>`、`A`、`A::data_handle_type`の3つをメンバとして保持します。
+
+```cpp
+// mdspanクラス構造再掲
+namespace std {
+  template<
+    class T, 
+    class Extents,
+    class LayoutPolicy = layout_right,
+    class AccessorPolicy = default_accessor<T>
+  >
+  class mdspan {
+  public:
+    using accessor_type = AccessorPolicy;
+    using mapping_type = 
+      typename LayoutPolicy::template mapping<extents_type>;
+    using data_handle_type = 
+      typename AccessorPolicy::data_handle_type;
+
+    ...
+
+  private:
+    accessor_type acc_;
+    mapping_type map_;
+    data_handle_type ptr_;
+  };
+}
+```
+
+具体的な`T, E, L, A`が与えられた`mdspan`の特殊化（`MDS`とする）は次の条件を満たす必要があります
+
+- `copyable`のモデルとなる
+- `is_nothrow_move_constructible_v<MDS>`が`true`
+- `is_nothrow_move_assignable_v<MDS>`が`true`
+- `is_nothrow_swappable_v<MDS>`が`true`
+
+これはレイアウトマッピングポリシー要件およびアクセサポリシー要件で求められていたことでもあります。これらの要件を満たしたうえで`data_handle_type`もこれを満たすことで、結果の`MDS`もこれらの条件を満たします。
+
+そのため例えば、`std::shared_ptr`をデータハンドルとして使用できる一方で`std::unique_ptr`は使用できないわけです（`copyable`ではないため）。
+
+そして、`accessor_type`、`mapping_type`、`data_handle_type`（`A`、`L::mapping<E>`、`A::data_handle_type`）のすべてがトリビアルコピー可能であれば、結果の`MDS`もトリビアルコピー可能となります（これは必須要件ではありません）。デフォルトの`mdspan`はこれを満たすため、トリビアルコピー可能です。
+
 # `<spanstream>`
 
 # `<stacktrace>`
@@ -2108,3 +3996,4 @@ auto& values = src.values();
 - cpprefjp(https://cpprefjp.github.io/ : ライセンスはCC-BY 3.0)
 - cppreference(https://ja.cppreference.com/w/cpp : ライセンスはCC-BY-SA 3.0)
 - Compiler Explorer(https://godbolt.org/)
+- yohhoyの日記(https://yohhoy.hatenadiary.jp/)
