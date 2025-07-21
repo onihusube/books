@@ -4249,7 +4249,7 @@ int main() {
   std::spanstream sp{buf};
 
   sp << "input";  // この挿入は成功する
-  assert(sp);
+  assert(sp); // ✔
 
   std::string str;
   int n;
@@ -4319,7 +4319,7 @@ int main() {
   sp >> parse("%Y-%m-%dT%H:%M:%S", st);
 
   // エラーチェック
-  assert(sp);
+  assert(sp); // ✔
   
   std::println("{}", sp);
 }
@@ -4341,6 +4341,384 @@ int main() {
 ```
 
 # `<stacktrace>`
+
+`<stacktrace>`ヘッダでは、ポータブルな方法でスタックトレースを取得し、取り扱うためのライブラリ機能が提供されます。これは、プログラムのデバッグに非常に役立つ機能です。
+
+スタックトレースとは、プログラムのある実行地点におけるコールスタック（スタックフレーム）についての情報を人間が見やすい形で纏めて出力したものです。これはプログラムがエラーを検知した時や例外を送出した時にそれがどこで、どのような経緯で起きたのかを簡単に知ることができるためデバッグやエラー報告に有用な情報となります。
+
+C++20まではスタックトレースを取得するにはプラットフォームに合わせたライブラリを使用する必要がありましたが（この機能の前進となったBoost.Stacktraceのようなライブラリもあった）、C++23では標準ライブラリ機能として統一的に取得できるようになります。
+
+```cpp
+#include <stacktrace>
+#include <print>
+
+void h() {
+  // スタックトレースを取得
+  auto trace = std::stacktrace::current();
+
+  // 出力
+  std::println("{}", trace);
+}
+
+void g() {
+  h();
+}
+
+void f() {
+  g();
+}
+
+int main() {
+  f();
+}
+```
+
+GCC15.1の出力
+
+```
+   0#  h() at /app/example.cpp:9
+   1#  g() at /app/example.cpp:16
+   2#  f() at /app/example.cpp:20
+   3# main at /app/example.cpp:24
+   4#      at :0
+   5# __libc_start_main at :0
+   6# _start at :0
+   7# 
+```
+
+MSVC 19.43の出力
+
+```
+0> output_s+0x102E
+1> output_s+0x1099
+2> output_s+0x10B9
+3> output_s+0x10D9
+4> output_s+0x23F4C
+5> KERNEL32!BaseThreadInitThunk+0x10
+6> ntdll!RtlUserThreadStart+0x2B
+```
+
+出力形式自体は実装定義となりますがスタックトレースの構造はほとんど共通しており、一番上の行がスタックトレースの取得位置のレポートであり、行を下るごとに前の行を呼び出した1つ外側の関数における前の行の関数呼び出し位置のレポートとなります（とはいえMSVCのこの出力はあまり役には立たなそうですが・・・）。
+
+GCCの出力を見ると、各行には呼出し中の関数名やそれが定義されているファイル名と行数等の情報も一緒に出力されています。
+
+このように、スタックトレースを見るとスタックトレースが取得された位置にプログラム実行時にどのように到達しているのかを知ることができます。
+
+本書の執筆時点（2025/07末）ではGCC14以降およびMSVC19.34以降のみが本機能をサポート済みですが、GCCの場合は`-lstdc++exp`オプションを指定する必要があります。
+
+以下では、主にGCCの出力で見ていきます。
+
+## `stacktrace`と`stacktrace_entry`
+
+`std::stacktrace::current()`で取得されたスタックトレースは`std::stacktrace`というクラスによって表現されており、さらに、スタックトレースの一行は`std::stacktrace_entry`というクラスによって表現されます。
+
+`std::stacktrace`は`std::stacktrace_entry`の`std::vector`に非常に近いクラスであり、更新はできないもののかなり近いインターフェースを備えています。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  // スタックトレースを取得
+  auto trace = std::stacktrace::current();
+
+  // サイズについての情報の取得
+  auto size = trace.size();
+  bool b = trace.empty();
+
+  // 特定行のスタックトレース取得
+  const std::stacktrace_entry& e1 = trace[0];
+  const std::stacktrace_entry& e1 = trace.at(0);
+
+  // 行ごとのイテレーション
+  for (const std::stacktrace_entry& entry : trace) {
+    // スタックトレースの一行内の情報の取得
+    std::string desc = entry.description();
+    std::string file = entry.source_file();
+    std::uint32_t line = entry.source_line();
+  }
+}
+
+...
+```
+
+`std::stacktrace_entry`は`std::regular`と`std::three_way_comparable<std::strong_ordering>`のモデルとなるクラス型とされています。とはいえ自分で構築する機会はあまりなく、そのインターフェースで有用なのは上の例で使用している3つのものだけです。
+
+`.description()`はスタックトレースの説明、`.source_file()`はそのエントリーが表現している場所に関してのソースファイル名、`.source_line()`は`.source_file()`内での行番号を返します。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  auto trace = std::stacktrace::current();
+  
+  const std::stacktrace_entry& e1 = trace[0];
+
+  // スタックトレースの一行内の情報の取得
+  std::string desc = entry.description();
+  std::string file = entry.source_file();
+  std::uint32_t line = entry.source_line();
+
+  std::println("{} at {}:{}", desc, file, line);
+}
+
+...
+```
+```
+h() at /app/example.cpp:9
+```
+
+`std::stacktrace_entry`は単にスタックトレースの一行を表現するというだけではなく、基底のプラットフォームの機能を使用して取得されたスタックトレース情報の文字列へのデコードを遅延するという役割を持っています。デコードは上記の3つのメンバ関数が呼ばれたタイミングで行われます。これは、スタックトレースの取得そのものを高速化するためです。
+
+`std::stacktrace`と`std::stacktrace_entry`はどちらもデフォルトコンストラクタやコピー/ムーブコンストラクタを備えているため持ち運んだりすることもできます。
+
+## `std::stacktrace::current()`
+
+スタックトレースの取得は`std::stacktrace::current()`関数（静的メンバ関数）で行えますが、この関数には3種類のオーバーロードがあります。
+
+まず、スタックトレースの先頭からスキップする行数を指定できます。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  // 最初の行をスキップ
+  auto trace = std::stacktrace::current(1);
+
+  // 出力
+  std::println("{}", trace);
+}
+
+...
+```
+```
+   0#  g() at /app/example.cpp:16
+   1#  f() at /app/example.cpp:20
+   2# main at /app/example.cpp:24
+   3#      at :0
+   4# __libc_start_main at :0
+   5# _start at :0
+   6#
+```
+
+スタックトレースの取得時には最初の方の行（すなわち呼出し地点の関数に関する情報）が不要な場合があるため、それをスキップするために使用できます。
+
+次に、取得するスタックトレースの深さ（行数）の最大値を指定できます。これはスキップ指定の次の引数で指定します。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  // 最初の行をスキップ+3行に制限
+  auto trace = std::stacktrace::current(1, 3);
+
+  // 出力
+  std::println("{}", trace);
+}
+
+...
+```
+```
+   0#  g() at /app/example.cpp:16
+   1#  f() at /app/example.cpp:20
+   2# main at /app/example.cpp:24
+```
+
+プログラムによってはスタックトレースは深くなりがちで、なおかつ下の方の行（プログラムのエントリポイントに近い部分）の情報は多くの場合共通なのであまり有用ではないことがあるため、それをカットするために使用できます。
+
+最後に、上2つと引数無しのオーバーロードに対して、使用するアロケータを指定することができます。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  std::pmr::monotonic_buffer_resource mr{};
+
+  // アロケータをカスタマイズ
+  auto trace = std::pmr::stacktrace::current(&mr);  // ok
+
+  // 出力
+  std::println("{}", trace);
+}
+
+...
+```
+
+`pmr::stacktrace`も含めてこれについては後で詳しく見ます。
+
+## 文字列化/出力サポート
+
+ここまで使用しているように、`std::stacktrace`には最初から`std::formatter`の特殊化が用意されているため、`std::print`/`std::format`によって文字列化することができます。
+
+加えて、`<<`によるストリーム出力もサポートしている他、`std::to_string()`のオーバーロードも用意されています。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  auto trace = std::stacktrace::current(1, 3);
+
+  std::cout << trace << '\n'; // ok
+  auto str = std::to_string(trace); // ok
+}
+
+...
+```
+
+なお、`std::stacktrace_entry`にはこのサポートはありません。
+
+## ハッシュサポート
+
+`std::stacktrace`には（なぜか）ハッシュサポート（`std::hash`特殊化）も提供されています。`std::stacktrace`は`==/<=>`を備えているため比較可能ではありますが、これによって非順序連想コンテナのキー型として使用できます。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  std::unordered_set<std::stacktrace> uset{};
+  
+  uset.insert(std::stacktrace::current(1, 3));  // ok
+  uset.insert(std::stacktrace::current());      // ok
+
+  assert(uset.size() == 2); // ✔
+}
+
+...
+```
+
+この等価性は最終的には`std::stacktrace_entry`の等価性によって判定されますが、この等価性は2つの`std::stacktrace_entry`オブジェクトが同じスタックトレースエントリーを最小している場合に同値、と指定されます。
+
+## アロケータサポート
+
+`std::stacktrace`クラスは実は`std::basic_stacktrace`というクラステンプレートのデフォルトアロケータ（`std::allocator`）による特殊化の型エイリアスです。`std::basic_stacktrace`はテンプレートパラメータでアロケータ型を受け取ります。
+
+```cpp
+// basic_stacktrace周りの構造
+namespace std {
+  template<class Allocator>
+  class basic_stacktrace {
+  public:
+    using value_type = stacktrace_entry;
+    using allocator_type = Allocator;
+
+    ...
+
+  private:
+    vector<value_type, allocator_type> frames_; // 説明専用
+  };
+  
+  using stacktrace = basic_stacktrace<allocator<stacktrace_entry>>;
+  
+  namespace pmr {
+    using stacktrace = basic_stacktrace<polymorphic_allocator<stacktrace_entry>>;
+  }
+}
+```
+
+要素型が`std::stacktrace_entry`で固定されているので要素型パラメータが省略されているだけで、ここも`std::vector`と同様になっています。アロケータを供給する方法も共通しており、コンストラクタの引数で行います。
+
+とはいえ`std::stacktrace`クラスを直接構築することはあまりないためコンストラクタからの供給を使用することも稀だと思われます。スタックトレースの取得は`std::stacktrace::current()`で行われるため、ここで返される`std::stacktrace`オブジェクトへのアロケータ供給はここからでも行うことができます。そして専ら、ユーザーが使用する尾はこちらの口でしょう。
+
+```cpp
+#include <stacktrace>
+
+void h() {
+  std::pmr::monotonic_buffer_resource mr{};
+  std::pmr::polymorphic_allocator<std::stacktrace_entry> pmr{&mr};
+
+  // アロケータをカスタマイズ
+  auto trace = std::pmr::stacktrace::current(pmr);  // ok
+
+  // 変換できるのでこれでもok
+  // std::pmr::stacktrace::current(&mr);
+}
+
+...
+```
+
+このようにして`current()`から供給されたアロケータはその内部で構築される`std::basic_stacktrace`オブジェクトのコンストラクタに渡され、`std::basic_stacktrace`内では`frame_`メンバ（`std::vector`などのコンテナ）のコンストラクタに渡されます。
+
+スタックトレースの各行（`std::stacktrace_entry`）は`frame_`メンバに保持されるため、ここでカスタムアロケータが使用されることで`std::basic_stacktrace`クラスにおける動的メモリ確保をカスタマイズすることができます（ただし、`frame_`メンバは説明用のものなので実装は少し異なる可能性があります）。
+
+これにより例えば、ヒープメモリを使用せずにスタック領域や`static`ストレージだけを使用するようにすることができます。
+
+## 例外送出との組み合わせ
+
+できると便利なのですが、例外送出時に例外オブジェクトからスタックトレースを取得する機能は提供されていません。
+
+```cpp
+int main() {
+  try {
+    f();
+    g();
+  } catch (const std::exception& ex) {
+    // どちらもない...
+    auto trace = std::stacktrace::from_current_exception();
+    auto trace = ex.stacktrace();
+  }
+}
+```
+
+これは例外に関するABIを破損せずに導入する方法やそのパフォーマンスへの影響についでの問題から設計が決まっていないためです。
+
+一手間は必要ですが、例外送出時にスタックトレースを例外オブジェクトに入れるようにすることで近いものを作ることはできます。
+
+```cpp
+#include <stacktrace>
+
+struct trace_exception : public std::runtime_error {
+
+  std::stacktrace m_stacktrace;
+
+  trace_exception(const char* what, 
+                  std::stacktrace trace = std::stacktrace::current())
+    : std::runtime_error{what}
+    , m_stacktrace{trace}
+  {}
+
+  auto stacktrace() const -> const std::stacktrace& {
+    return m_stacktrace;
+  }
+};
+```
+
+この例外型は次のように使用できます
+
+```cpp
+void h() {
+  // スタックトレース付き例外を送出
+  throw trace_exception{"rutime error!!!"};
+}
+
+void g() {
+  h();
+}
+
+void f() {
+  g();
+}
+
+int main() {
+  try {
+    f(); 
+  } catch(const trace_exception& ex) {
+    std::println("{}\nBacktrace:\n{}", ex.what(), ex.stacktrace());
+  }
+}
+```
+```
+rutime error!!!
+Backtrace:
+   0#  h() at /app/example.cpp:23
+   1#  g() at /app/example.cpp:27
+   2#  f() at /app/example.cpp:31
+   3# main at /app/example.cpp:36
+   4#      at :0
+   5# __libc_start_main at :0
+   6# _start at :0
+   7# 
+```
+
+例外によるエラー報告が使用されている場合、このようなユーティリティを作成する価値はあるかもしれません。
 
 # `<stdatomic.h>`
 
