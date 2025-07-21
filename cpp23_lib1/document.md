@@ -4722,6 +4722,28 @@ Backtrace:
 
 # `<stdatomic.h>`
 
+`<stdatomic.h>`はC11で追加されたヘッダであり、Cにおけるアトミック関連機能が纏められたヘッダです。グローバルに定義されている型名や関数名などはおそらく意図的にC++のものと共通化されているため、次のようにしてCとC++でアトミック関連コードの共通化を図ることができます。
+
+```cpp
+#ifdef __cplusplus
+  #include <atomic>
+  using std::atomic_int;
+  using std::memory_order;
+  using std::memory_order_acquire;
+  ...
+#else /* not __cplusplus */
+  #include <stdatomic.h>
+#endif /* __cplusplus */
+```
+
+この様なコードはCとC++のアトミックなオブジェクトの表現や保証について互換性があることを前提としていますが、その様な保証はありませんでした。
+
+C++23では、このようなコード共通化を許可するためにC++でも`<stdatomic.h>`を追加し、そこで提供されるものについてCとC++で同じ保証が得られるようにすることを実装への推奨プラクティスとしています。
+
+上記例のようなコードは`#include <stdatomic.h>`と書き直すことができます。
+
+すなわちこのヘッダは、CとC++でアトミック関連のコードを共通化子、どちらの言語からでも利用できるようなコードを記述するの補助する最小限のものです。
+
 \clearpage
 
 # 謝辞
