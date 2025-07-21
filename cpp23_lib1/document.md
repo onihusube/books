@@ -3983,6 +3983,363 @@ namespace std {
 
 # `<spanstream>`
 
+`<spanstream>`では、`std::span`によって内部バッファを指定することのできる文字列ストリームである`std::spanstream`が提供されます。
+
+`std::spanstream`は長い間非推奨のままで放置され代替手段のなかった`std::strstream`の代替機能でもあります。
+
+## `std::strstream`
+
+`std::strstream`は事前に確保された固定長のバッファを受け取りそれを利用したストリームを構築できるものでしたが、同時に可変長の内部バッファを扱う機能も持っていました（コンストラクタでスイッチする）。
+
+このため、`std::strstream`のメンバ関数`.str()`は`char*`を返しますが、こうして返された領域をユーザーが解放すべきなのか気にしなくていいのか、どのように管理すべきかが不透明でした。コンストラクタでの構築時はユーザーがその領域を指定することも`std::strstream`に確保させることもでき、`std::strstream`に確保させた場合はその領域がどのように確保されたのかはどこにも記載がありません。
+
+正しい扱いは、構築時に領域を渡していない場合に`.str()`で文字列を取得した場合はデストラクタ実行までの間に`.freeze(false)`を呼び出すことで`std::strstream`のデストラクタがその領域を解放してくれます。しかし、この挙動は分かりづらく、実際あまり周知されていなかったようで、簡単に間違って使うことができてしまっていました。
+
+```cpp
+#include <strstream>
+
+int main() {
+  {
+    // 動的なバッファを確保してもらう
+    std::strstream s1;
+    s1 << "dynamic buffer";
+    s1 << std::ends;  // 手動null終端
+
+    std::cout << "Contents : " << s1.str() << '\n';
+    
+    s1.freeze(false); // 忘れるとメモリリーク
+  }
+  
+  {
+    // 静的なバッファを渡す
+    char buffer[20];
+    std::strstream s2{buffer, std::size(buffer)};
+    s2 << "static buffer";
+    s2 << std::ends;  // 手動null終端
+
+    std::cout << "Contents : " << s2.str() << '\n';
+    // freeze()はいらない
+  }
+}
+```
+
+他にも、`.str()`のnull終端のためにはユーザーがそれを（`std::ends`を利用するなどして）ストリームに入力しなければならないなど使いづらいところが多々あり、これらの問題からC++98で非推奨とされました。
+
+文字列ベースのストリームという機能は`std::stringstream`が代替として利用できますが、固定長バッファによるストリームを代替する機能を完全に代替するものが無かったことから削除されずに今日まで残っています。
+
+代替としての候補は`std::stringstream`しかないのですが、こちらはこちらで内部文字列をいつもコピーして返すなどの問題があり（C++20で少し改善）、`std::strstream`のようにあらかじめ用意した固定長バッファを渡すことで動的確保を避けたいような用途としては代替機能はありません。
+
+`std::spanstream`は`std::strstream`の機能の一つだった、事前に確保された固定長バッファを用いたストリームを`std::span`を利用して実現するものです。
+
+## ヘッダ内容
+
+ヘッダ`<spanstream>`には次のものが追加されます
+
+- `std::basic_spanbuf`
+    - `std::spanbuf`
+    - `std::wspanbuf`
+- `std::basic_ispanstream`
+    - `std::ispanstream`
+    - `std::wispanstream`
+- `std::basic_ospanstream`
+    - `std::ospanstream`
+    - `std::wospanstream`
+- `std::basic_spanstream`
+    - `std::spanstream`
+    - `std::wspanstream`
+
+他のストリーム機能に倣って、追加されたの内部実装であるストリームバッファ（`std::spanbuf`）と、入力/出力のそれぞれのストリーム（`std::ispanstream`/`std::ospanstream`）、そして入出力両方のストリームである`std::spanstream`があります。
+
+`std::basic_spanbuf`は`spanstream`の実装詳細でありあまり使用機会がないと思われ、入力/出力専用ストリームは`std::spanstream`の入力/出力と共通するので、ここでは`std::spanstream`を見ていきます。
+
+## `std::spanstream`
+
+`std::spanstream`は内部でストリーム動作のための領域を持たないため、コンストラクタから渡す必要があります。その際、その領域は`std::span`を介して渡します。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[50];
+
+  std::spanstream sp{std::span{buf}}; // ok
+}
+```
+
+このコンストラクタは`explicit`であるため、バッファを直接渡すことはできません。`std::span`に包んでから渡す必要があります。使用するバッファについては`std::span`で参照できるものなら何でも渡すことができ、それはメモリ連続な領域である必要があります。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[50];
+  std::vector<char> vec(50);
+  std::string str(50, ' ');
+  auto p = std::make_unique<char[]>(50);
+
+  std::spanstream sp1{buf}; // ok
+  std::spanstream sp2{vec}; // ok
+  std::spanstream sp3{str}; // ok
+  std::spanstream sp4{{p.get(), 50}}; // ok
+
+  std::list<char> list(50);
+  std::spanstream sp4{vec}; // ng
+}
+```
+
+`std::spanstream`はこのようにコンストラクタで渡された領域を使用して、この領域に対して入出力を行います。`std::span`で渡していることから分かるように`std::spanstream`は使用する領域を所有していないため、`std::spanstream`で使用している間バッファが生存し続けることをユーザーが確認しなければなりません。
+
+他のストリームと同様に、追加の引数として`openmode`を渡すこともできます。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[50];
+
+  std::spanstream sp1{buf, sp1.in};
+  std::spanstream sp2{buf, sp2.out | sp2.ate};
+  std::spanstream sp3{buf, sp3.binary};
+}
+```
+
+`std::spanstream`のコンストラクタは他にムーブコンストラクタがあるのみです（コピー不可）。
+
+`std::spanstream`はiostreamなので`std::cout`/`std::cin`などと同じように使用することができます。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[50];
+  std::spanstream sp{buf};
+
+  // ストリームへ入力
+  sp << 10 << " " << 20;
+  sp << " string ";
+  sp << std::setprecision(4) << (1.0 / 3.0);
+  sp << " ";
+  sp << std::boolalpha << true;
+
+  int n, m;
+  std::string str;
+  double d;
+  bool b;
+
+  // ストリームから出力
+  sp >> n >> m;
+  sp >> str;
+  sp >> d;
+  sp >> b;
+
+  std::println("{}", std::tie(n, m, str, d, b));
+}
+```
+```
+(10, 20, "string", 0.3333, true)
+```
+
+`std::setprecision`や`std::boolalpha`などのマニピュレータも使用可能です。
+
+またストリームなので、`std::print`を用いて出力（ストリーム入力）することもできます。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[50];
+  std::spanstream sp{buf};
+
+  std::println(sp,
+    "{} {} {:s} {:.4f} {:s}", 
+    10, 20, "string", (1.0 / 3.0), true);
+}
+```
+
+この後のストリームに`std::boolalpha`を適用して（`bool`文字列の読み取りに必要）から前の例と同様に出力してやると同じ結果が得られます。
+
+ストリーム入出力に成功したかどうかも同様に`bool`変換で調べることができます。
+
+#### バッファの取得/セット
+
+`std::spanstream`に渡したバッファの様子は、`.span()`メンバによって覗き見ることができます。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[50];
+  std::spanstream sp{buf};
+
+  sp << "input";
+  sp << 10;
+
+  std::println("{}", sp.span());
+
+  std::string str;
+  sp >> str;
+
+  std::println("{}", sp.span());
+}
+```
+```
+['i', 'n', 'p', 'u', 't', ' ', '1', '0']
+['i', 'n', 'p', 'u', 't', ' ', '1', '0']
+```
+
+`.span()`メンバから得られる`std::span`オブジェクトはコンストラクタで渡したものとは異なり、現在消費しているバッファについて参照している`std::span`オブジェクトになります。ただ、全く別のバッファを見ているわけではないので、先頭アドレスは一致します。
+
+また、例の出力を見ると分かるように、ストリームから出力した後でも消費済みのバッファを解放（再利用）しないようです。
+
+`.span()`メンバ関数はまた、引数として`std::span`オブジェクトを渡すことでバッファを差し替えることができます。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[50];
+  std::spanstream sp{buf};
+
+  sp << "input";
+  sp << 10;
+
+  std::println("{}", sp.span());
+
+  std::string strbuf(50, '　');
+  sp.span(strbuf);
+
+  sp << 20;
+
+  std::println("{}", sp.span());
+}
+```
+```
+['i', 'n', 'p', 'u', 't', '1', '0']
+['2', '0']
+```
+
+#### バッファサイズオーバーする場合
+
+予め指定された固定サイズのバッファを使用する都合上、景気よくストリームに入力し続けているとバッファを使い切ることがあり得ます。`std::spantream`はこの場合にも未定義動作にはならず、入力に失敗するとともにストリームがエラー状態になります。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[5];
+  std::spanstream sp{buf};
+
+  sp << "overinput";  // バッファ長を超えた入力
+
+  std::println("is valid: {:s}\nbuf: {}", bool(sp), sp.span());
+}
+```
+```
+is valid: false
+buf: ['o', 'v', 'e', 'r', 'i']
+```
+
+これはまた、ストリームからの出力時にバッファの末尾に到達する場合も同様です。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  char buf[5];
+  std::spanstream sp{buf};
+
+  sp << "input";  // この挿入は成功する
+  assert(sp);
+
+  std::string str;
+  int n;
+  sp >> str;  // ここまでは成功し、バッファを消費しきる
+  sp >> n;    // ここで末尾に到達し失敗
+
+  std::println("is valid: {:s}", bool(sp));
+}
+```
+```
+is valid: false
+```
+
+この動作は未定義動作ではなくきちんと規定された動作です。
+
+#### その他の例
+
+ここまでの例では空のバッファで初期化していましたが、予めバッファに何かを書き込んでおくこともできます。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  std::string strbuf{"10 20 string 0.3333 true"};
+  std::spanstream sp{strbuf};
+
+  int n, m;
+  std::string str;
+  double d;
+  bool b;
+
+  // ストリームから出力
+  sp >> n >> m;
+  sp >> str;
+  sp >> d;
+  sp >> std::boolalpha >> b;
+
+  std::println("{}", std::tie(n, m, str, d, b));
+}
+```
+```
+(10, 20, "string", 0.3333, true)
+```
+
+この機能の一つの有用な利用方法として、日付時刻の文字列を`std:chrono`の型にパスする際のストリームとしての利用があります。
+
+C++20で追加された`std::chrono::parse()`は日付時刻の文字列をパースして`std::chrono`の値として得ることができるものですが、これはストリームのマニピュレータであり、入力のストリームに文字列を渡してから使用する必要がありました。
+
+`std::cin`等ではなく、予め日付時刻の文字列が得られている場合に使用できるストリームとしてはほぼ`std::stringstream`しかありませんでした（これはメモリの動的確保を行うなどかなり重めのストリーム）。
+
+このような場合に`std::spanstream`をより軽量な（と言ってもiostreamではあるのですが）代替として使用できます。
+
+```cpp
+#include <spanstream>
+
+using namespace std::chrono;
+
+int main() {
+  // パース対象文字列
+  std::string_view str{"2022-04-01T12:01:45"};
+  std::ispanstream sp{str}
+
+  // 秒単位システム時刻で受け取る
+  sys_seconds st;
+
+  // パース
+  sp >> parse("%Y-%m-%dT%H:%M:%S", st);
+
+  // エラーチェック
+  assert(sp);
+  
+  std::println("{}", sp);
+}
+```
+```
+2022-04-01 12:01:45
+```
+
+ここで`std::ispanstream`を使用しているのは入力にしか使用しないということもありますが、`std::string_view`（あるいは読み取り専用バッファ）からの構築が`std::(o)spanstream`では行えないためです。
+
+```cpp
+#include <spanstream>
+
+int main() {
+  std::ispanstream isp{"const buffer"}; // ok
+  std::ospanstream osp{"const buffer"}; // ng
+  std::spanstream   sp{"const buffer"}; // ng
+}
+```
+
 # `<stacktrace>`
 
 # `<stdatomic.h>`
