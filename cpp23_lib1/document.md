@@ -4389,14 +4389,16 @@ GCC15.1の出力
 MSVC 19.43の出力
 
 ```
-0> output_s+0x102E
-1> output_s+0x1099
-2> output_s+0x10B9
-3> output_s+0x10D9
-4> output_s+0x23F4C
+0> C:\Windows\TEMP\compiler-explorer-compilernKoSwV\example.cpp(9): output_s!h+0x1E
+1> C:\Windows\TEMP\compiler-explorer-compilernKoSwV\example.cpp(16): output_s!g+0x9
+2> C:\Windows\TEMP\compiler-explorer-compilernKoSwV\example.cpp(20): output_s!f+0x9
+3> C:\Windows\TEMP\compiler-explorer-compilernKoSwV\example.cpp(24): output_s!main+0x9
+4> D:\a\_work\1\s\src\vctools\crt\vcstartup\src\startup\exe_common.inl(288): output_s!__scrt_common_main_seh+0x10C
 5> KERNEL32!BaseThreadInitThunk+0x10
 6> ntdll!RtlUserThreadStart+0x2B
 ```
+
+どちらもCompilerExplorerを使用して実行しています。
 
 出力形式自体は実装定義となりますがスタックトレースの構造はほとんど共通しており、一番上の行がスタックトレースの取得位置のレポートであり、行を下るごとに前の行を呼び出した1つ外側の関数における前の行の関数呼び出し位置のレポートとなります（とはいえMSVCのこの出力はあまり役には立たなそうですが・・・）。
 
@@ -4404,7 +4406,7 @@ GCCの出力を見ると、各行には呼出し中の関数名やそれが定�
 
 このように、スタックトレースを見るとスタックトレースが取得された位置にプログラム実行時にどのように到達しているのかを知ることができます。
 
-本書の執筆時点（2025/07末）ではGCC14以降およびMSVC19.34以降のみが本機能をサポート済みですが、GCCの場合は`-lstdc++exp`オプションを指定する必要があります。
+本書の執筆時点（2025/07末）ではGCC14以降およびMSVC19.34以降のみが本機能をサポート済みですが、GCCの場合は`-lstdc++exp`オプションを指定する必要があります。MSVCの場合はオプション無しでも使用できますが、`/Z7`オプションを付加しないとほとんど無意味な出力になります（関数名やファイル名が表示されない）。
 
 以下では、主にGCCの出力で見ていきます。
 
