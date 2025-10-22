@@ -80,8 +80,7 @@ namespace std {
 
 # コンテナ
 
-## `std::stack`/`std::queue`にイテレータペアを取るコンストラクタ
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p1425r4.pdf
+## `std::stack`/`std::queue`にイテレータペアを取るコンストラクタを追加
 
 `std::stack`と`std::queue`はイテレータペアを受け取るコンストラクタがなかったため、他のコンテナのコンストラクタとの一貫性を欠いていました。それによってC++23で追加された`ranges::to`はそのままだとこの2つのコンテナアダプタへの変換ができないという問題がありました。
 
@@ -111,7 +110,147 @@ int main() {
 }
 ```
 
-## アロケータ引数のCTADに関する修正
+## コンテナのCTADにおけるアロケータ引数の推論の改善
+
+C++17でクラステンプレートのテンプレート引数の実引数推定（CTAD）が導入され、同時に`polymorphic_allocator`を使用するコンテナ（`std::pmr::vector`など）も導入されました。しかし、これら2つを組み合わせると思わぬエラーが起こる場合がありました。
+
+```cpp
+namespace pmr = std::pmr;
+pmr::monotonic_buffer_resource mr;
+pmr::polymorphic_allocator<int> a = &mr;
+pmr::vector<int> pv(a);
+
+// CTADを使用しない構築
+auto s1 = std::stack<int, pmr::vector<int>>(pv);       // ok
+auto s2 = std::stack<int, pmr::vector<int>>(pv, a);    // ok
+auto s3 = std::stack<int, pmr::vector<int>>(pv, &mr);  // ok
+
+// CTADを使用する構築
+auto ds1 = std::stack(pv);      // ok 
+auto ds2 = std::stack(pv, a);   // ok
+auto ds3 = std::stack(pv, &mr); // ng
+```
+
+この例の`s1~s3`はCTADを使用していない初期化であり、全て問題の無い例です。しかし、これらの初期化に対応するCTADによる初期化においては`ds3`だけがエラーになります。これは、`&mr`（`monotonic_buffer_resource*`）が`polymorphic_allocator`型ではないことで、CTADでアロケータ型を推論できずエラーになるためです。
+
+`stack`をはじめとするコンテナアダプタのアロケータ引数は推論補助においてCTADに寄与しないようになっています。従って、対応するCTADを使用しない構築の時と同様にコンテナ型からの推論を行うのが望ましいはずです。
+
+```cpp
+namespace std {
+  template<typename Container, typename Allocator>
+  class stack;
+
+  // stackの2引数推論補助
+  template<class Container, class Allocator>
+  stack(Container, Allocator) -> stack<typename Container::value_type, Container>;
+}
+```
+
+しかし、この推論補助には制約が規定されており、ここでの`Allocator`はアロケータとして適格な型が渡される必要があり、そうでない場合この推論補助は使用されません。`ds3`においてここに渡されているのは`monotonic_buffer_resource*`であり、アロケータ型ではないためこの推論補助は使用されず、結果としてCTADでアロケータ型を推論できずエラーになってしまいます。
+
+この問題は、他のすべてのコンテナアダプタ（`queue`や`priority_queue`など）でも同様に発生します。
+
+さらに、CTADの一貫性に関するよく似た問題が`std::vector`そのものにも存在しています。
+
+```cpp
+namespace pmr = std::pmr;
+pmr::monotonic_buffer_resource mr;
+pmr::polymorphic_allocator<int> a = &mr;
+pmr::vector<int> pv(a);
+
+// CTADによらない構築
+auto v1 = std::vector<int, pmr::polymorphic_allocator<int>>(pv);       // ok
+auto v2 = std::vector<int, pmr::polymorphic_allocator<int>>(pv, a);    // ok
+auto v3 = std::vector<int, pmr::polymorphic_allocator<int>>(pv, &mr);  // ok
+
+// CTADを使用する構築
+auto dv1 = std::vector(pv);       // ok
+auto dv2 = std::vector(pv, a);    // ok
+auto dv3 = std::vector(pv, &mr);  // ng
+```
+
+ここで起きていることは先ほどとは少し異なっており、CTADが暗黙に生成される推論補助を利用する経路で問題が起きています。
+
+CTADでは、明示的に定義された推論補助に加えてコンストラクタから生成した推論補助が使用されます。ここではアロケータを受け取るコピーコンストラクタから生成された推論補助が使用されており、
+
+```cpp
+namespace std {
+  template<typename T, typename Allocator>
+  class vector {
+    ...
+
+    // アロケータを受け取るコピーコンストラクタ
+    vector(const vector<T, Allocator>&, const Allocator&);
+
+    ...
+  };
+  
+  // 生成される推論補助
+  template<typename T, typename Allocator>
+  vector(const vector<T, Allocator>&, const Allocator&) -> vector<T, Allocator>;
+}
+```
+
+この推論補助を使用すると、第1引数から`T = int, Allocator = std::polymorphic_allocator<int>`が導出され、第2引数から`Allocator = std::pmr::monotonic_buffer_resource*`が導出されます。同一のテンプレート引数に対して衝突する候補が発生しているので、推論は失敗しコンパイルエラーとなります。
+
+この2つ目の問題は、他のすべてのコンテナでも同様に発生します。
+
+これらの問題ではどちらも、アロケータ引数自体は1引数目のコンテナ型から決定可能であり、2引数目のアロケータ引数は追加の情報をもたらさないためCTADに寄与するべきではありませんでした。C++23ではこの第2アロケータ引数がCTADに寄与しないようにコンテナの仕様が調整されます。
+
+まず1つ目のコンテナアダプタにおける問題については原因が推論補助の制約にあるため、2引数推論補助（`Container`と`Allocator`を取るもの）では`Allocator`引数に対する制約を削除します。これにより、アロケータ型は`Container`型からのみ推論されるようになり、CTADが正しく動作するようになります。
+
+2つ目の`std::vector`等コンテナにおける問題については、2番目のアロケータ引数を`std::type_identity_t`で包むことでアロケータ引数をCTAD推論の対象から外します。これにより、アロケータ引数はCTADに寄与しなくなり、1引数目からのみテンプレート引数が推論されるようになり、CTADが正しく動作するようになります。
+
+```cpp
+namespace std {
+
+  template<typename T, typename Allocator>
+  class vector {
+
+    // C++20
+    vector(const vector<T, Allocator>&, const Allocator&);
+
+    // C++23
+    vector(const vector<T, Allocator>&, const type_identity_t<Allocator>&);
+  };
+  
+  // 生成される推論補助
+  template<typename T, typename Allocator>
+  vector(const vector<T, Allocator>&, const type_identity_t<Allocator>&) -> vector<T, Allocator>;
+}
+```
+
+CTADにおける推論時には関数テンプレート呼び出し時のテンプレート引数推論と同じことが行われているため、`std::type_identity_t<T>`の様に宣言された引数に対して`T`の値を渡しても、その引数はテンプレート引数`T`の推論に寄与しなくなります。
+
+```cpp
+template<typename T>
+void f(T);
+
+template<typename T>
+void g(std::type_identity_t<T>);
+
+int main() {
+  int x = 42;
+
+  f(10);  // ok、T = int
+  g(10);  // ng、Tは推論できない
+}
+```
+
+これは少し難しいですが、`const vector<T, Allocator>&`の引数に`vector`オブジェクトを渡す場合（上記生成される推論補助の第1引数で行われる推論）とは異なります。
+
+このような修正をすべてのコンテナのコピー/ムーブコンストラクタに対応するアロケータ引数付きのコンストラクタに対して行うことで2番目の問題はすべてのコンテナで解決されます。
+
+```cpp
+namespace pmr = std::pmr;
+pmr::monotonic_buffer_resource mr;
+pmr::polymorphic_allocator<int> a = &mr;
+pmr::vector<int> pv(a);
+
+auto ds3 = std::stack(pv, &mr);   // ok、C++23
+auto dv3 = std::vector(pv, &mr);  // ok、C++23
+```
+
 ## `std::pair`の転送対応
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p1951r1.html
 
