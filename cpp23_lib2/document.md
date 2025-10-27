@@ -227,7 +227,7 @@ template<typename T>
 void f(T);
 
 template<typename T>
-void g(std::type_identity_t<T>);
+void g(std::type_identity<T>::type);
 
 int main() {
   int x = 42;
@@ -251,8 +251,79 @@ auto ds3 = std::stack(pv, &mr);   // ok、C++23
 auto dv3 = std::vector(pv, &mr);  // ok、C++23
 ```
 
-## `std::pair`の転送対応
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p1951r1.html
+## `std::pair`の転送コンストラクタにおける`{}`初期化子への対応
+
+C++20の`std::pair`では、要素のデフォルトコンストラクタ呼び出しを意図して`{}`を引数に渡すと、静かに一時オブジェクトを生成してそれをコピーしてしまう場合があります。
+
+```cpp
+// std::stringとstd::vector<std::string>の一時オブジェクトが作られ、コピーされる
+std::pair<std::string, std::vector<std::string>> p("hello", {});
+```
+
+この例では、2つの引数どちらも`std::string`と`std::vector<std::string>`の一時オブジェクトを生成し、さらにそれらをコピーして`pair`の各要素を構築しています。
+
+`std::pair`にはいくつものコンストラクタがあり、その中には引数を転送して構築するコンストラクタもあります。これが使用されていればこのような問題は起こらないはずです。
+
+```cpp
+namespace std {
+
+  template<typename T1, typename T2>
+  struct pair {
+    ...
+
+    // 引数をコピーして構築するコンストラクタ
+    explicit(...) constexpr pair(const T1& x, const T2& y); // #1
+
+    // 引数を完全転送して構築するコンストラクタ
+    template <class U, class V>
+    explicit(...) constexpr pair(U&& x, V&& y); // #2
+
+    ...
+  };
+}
+```
+
+このコンストラクタのうち`#2`を使用してほしいわけです。しかし、引数に`{}`を指定していると`{}`からコンストラクタ引数のテンプレートパラメータを推論することができないため`#2`はオーバーロード解決時に候補から外され、代わりに`#1`が選択されます。`#1`はコンストラクタテンプレートではないため`std::pair`のテンプレートパラメータが指定されていれば良く、`{}`の型が分かります。
+
+`#1`のコンストラクタの呼び出しにおいては、コンストラクタ引数の型が`std::pair`のテンプレートパラメータに指定された型と一致しない場合、それぞれ`T1, T2`に暗黙変換されその一時オブジェクトがコンストラクタに渡され、そこからコピーして要素が初期化されることになります。
+
+先ほどの例では、`"hello"`は一時`std::string`オブジェクトに、`{}`は一時`std::vector<std::string>`オブジェクトに変換され、`std::pair`のコンストラクタに渡されます。`#1`のコンストラクタ内部からは2つの引数はどちらも`const &`なので各要素の初期化においてはコピーが行われます。これにより、一時オブジェクトを生成してそこからさらにコピーが両方の引数で起こります。
+
+この場合に`#2`のコンストラクタを選択しようとすると、次のように書く必要があります
+
+```cpp
+std::pair<std::string, std::vector<std::string>> p("hello", std::vector<std::string>{});
+```
+
+しかしこれはかなり冗長な記述です。
+
+`std::pair`の初期化において`{}`を活用できるようにするために、C++23からは`#2`の転送コンストラクタのテンプレートパラメータに`std::pair`のテンプレートパラメータがデフォルト引数として指定されるようになります。
+
+```cpp
+namespace std {
+
+  template<typename T1, typename T2>
+  struct pair {
+    ...
+
+    // 引数をコピーして構築するコンストラクタ
+    explicit(...) constexpr pair(const T1& x, const T2& y); // #1
+
+    // 引数を完全転送して構築するコンストラクタ
+    template <class U = T1, class V = T2>
+    explicit(...) constexpr pair(U&& x, V&& y); // #2
+
+    ...
+  };
+}
+```
+
+これによって、先ほどの例では`#2`のコンストラクタが選択されるようになり、コンストラクタ引数は完全転送されて`std::pair`内部で各要素のコンストラクタに直接引き渡されるようになります。そのため、`std::pair`のコンストラクタへの引数渡しで一時オブジェクトが生成され、さらにそこからコピーのようなことは起こらなくなります。
+
+```cpp
+// 引数は完全転送され、各要素は引数から直接初期化される（#2のコンストラクタが選択される
+std::pair<std::string, std::vector<std::string>> p("hello", {});
+```
 
 ## 連想コンテナ削除操作のヘテロジニアス化
 
