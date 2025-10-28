@@ -325,9 +325,80 @@ namespace std {
 std::pair<std::string, std::vector<std::string>> p("hello", {});
 ```
 
-## 連想コンテナ削除操作のヘテロジニアス化
+## 透過的な連想コンテナ削除操作の有効化
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2077r3.html
+C++20では、非順序連想コンテナに対して透過的な検索を行うことのできるオーバーロードが追加されました。「透過的」というのは連想コンテナのキーの型と直接比較可能な型については、キー型への変換を必要とせずにキーの比較を行う事が出来ることを指します（このようなオーバーロードをHeterogeneous Overloadとも呼びます）。C++14で順序付き連想コンテナの検索操作のHeterogeneous Overloadが追加されていたので、全ての連想コンテナで透過的な検索がサポートされています。
+
+C++23ではさらに、削除操作についてもHeterogeneous Overloadが追加されます。これにより、キー型と直接比較可能な型を使用して要素の削除を行うことができるようになります。これはすべての連想コンテナ（順序付き・非順序問わず）に対して追加され、次の2つの関数で利用可能になります。
+
+- `.erase()`
+- `.extract()`
+    - 厳密には削除ではない
+
+`.erase()`を例にすると、キーを受け取るオーバーロードについては次の2種類が提供されるようになります
+
+```cpp
+size_type erase(const key_type& x); // C++03
+
+template<class K>
+size_type erase(K&& x); // C++23
+```
+
+2つ目の関数テンプレートのものがHeterogeneous Overloadで、`key_type`と比較可能な型`K`を受け取ることができ、`x`は変換などを行われずに要素のキーとの直接比較によって処理されます。これによって使いやすさが向上するだけでなく、`key_type`の一時オブジェクトを作る必要がなくなるため効率的になります。
+
+ただし、Heterogeneous Overloadはデフォルトでは使用できず、有効化するためには連想コンテナならば比較クラス`Compare`に、非順序連想コンテナならばそれに加えてハッシュクラス`Hash`に、`is_transparent`メンバ型が定義されていて、`Key`と異なる型との直接比較および一貫したハッシュ生成をサポートしている必要があります。
+
+ここでは、`std::string`をキーとする連想コンテナによって有効する方法を見てみます。
+
+### （順序付き）連想コンテナ
+
+順序付き連想コンテナ（`std::set, std::map`とその`multi`バージョン）の場合、デフォルトの比較クラスがテンプレートパラメータに指定された型の比較しかできないため、`is_transparent`が定義されていないため有効化されません。デフォルトの比較クラス`std::less`等は`void`に対する特殊化に対してのみ`is_transparent`が定義される（比較がテンプレートになる）のでそれを使うか、C++20で追加された`std::ranges`にある同名の比較クラスを使うことで有効化できます。
+
+```cpp
+using namespace std::literals;
+
+int main() {
+  std::map<std::string, int, std::ranges::less> map = {
+    {"1", 1}, {"2", 2}, {"3", 3}
+  };
+
+  map.erase("1"sv); // ok
+  auto nh = map.extract("3"sv); // ok
+}
+```
+
+この場合、`std::string_view`から`std::string`への暗黙変換ができないことによって、Heterogeneous Overloadが有効化されていない場合どちらの呼び出しもコンパイルエラーとなります。
+
+### 非順序連想コンテナ
+
+非順序連想コンテナ（`std::unorderd_map, std::unorderd_set`とその`multi`バージョン）の場合、比較クラスは順序付き連想コンテナの場合と同じ方法で対応できますが、ハッシュクラスに関しては自前で用意する必要があります。
+
+```cpp
+using namespace std::literals;
+
+// string_viewとしてハッシュ化することで透過的なハッシュ計算を行う
+struct string_hash {
+  using hash_type = std::hash<std::string_view>;
+  using is_transparent = void;  // 👈これが必要
+
+  std::size_t operator()(std::string_view str) const {
+    return hash_type{}(str);
+  }
+};
+
+int main() {
+  std::unordered_map<std::string, int, string_hash, std::ranges::equal_to> map = {
+    {"1", 1}, {"2", 2}, {"3", 3}
+  };
+
+  map.erase("1"sv); // ok
+  auto nh = map.extract("3"sv); // ok
+}
+```
+
+この`string_hash`は`const char*, std::string, std::string_view`の3つの型（+`string_view`に変換できる型）に対してハッシュ計算を提供できます。これによって、`const char*`と`std::string_view`でHeterogeneous Overloadが有効化されます。
+
+`std::string`系の文字列クラスならこのようにするとハッシュの定義は簡単なのですが、他の型の場合はハッシュ共通化が難しい場合もあるかもしれません。そういう場合は自分でハッシュ実装をする必要があります。
 
 # 文字列・フォーマット
 
