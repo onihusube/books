@@ -406,6 +406,48 @@ int main() {
 
 ### `.contains()`
 
+C++20でメンバ関数に`.starts_with()`/`.ends_with()`が追加されたのに引き続いて、C++23では`.contains()`が追加されます。これは指定された部分文字列が含まれているかどうかを判定するものです。
+
+```cpp
+std::string str = "hello world";
+
+// C++20
+if (str.find("world") != std::string::npos) {
+  // 含まれている場合の処理
+  ...
+}
+
+// C++23
+if (str.contains("world")) {
+  // 含まれている場合の処理
+  ...
+}
+```
+
+`.find()`を使用した部分文字列の包含判定は次のような問題がありました
+
+- 含まれているかを調べているのに`!=`を使用する
+    - 肯定的なことを調べているのに否定的に書かなければならない
+- 調べているのは文字の位置なのか、含まれているかどうかなのか、含まれていないかどうかなのか、一見して分かりづらい
+
+対して、`.contains()`というメンバ関数は意図が明確で書くときも読むときもこれらの問題は起こらず、直観的に記述することができます。
+
+`std::string`/`std::string_view`共に、`.contains()`には3種類のオーバーロードが用意されます。
+
+```cpp
+constexpr bool contains(basic_string_view<charT, traits> str) const noexcept;
+constexpr bool contains(charT ch) const noexcept;
+constexpr bool contains(const charT* str) const;
+```
+
+```cpp
+std::string str = "hello world";
+
+bool b1 = str.contains("world"sv);  // string_viewによる部分文字列の包含チェック
+bool b2 = str.contains('w');        // 単一文字の包含チェック
+bool b3 = str.contains("world");    // 文字列ポインタによる部分文字列の包含チェック
+```
+
 ### `nullptr`コンストラクタ
 
 ### `.resize_and_overwrite()`
