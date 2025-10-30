@@ -448,8 +448,52 @@ bool b2 = str.contains('w');        // 単一文字の包含チェック
 bool b3 = str.contains("world");    // 文字列ポインタによる部分文字列の包含チェック
 ```
 
-### `nullptr`コンストラクタ
+### `nullptr`を取るコンストラクタ
 
+`std::string`/`std::string_view`はどちらも、`const char*`を取るコンストラクタが用意されています。これは文字列ポインタを渡すものですが、ポインタを引数に取るので`nullptr`を渡すことが可能です。
+
+```cpp
+std::string str1(nullptr);  // 💀 UB
+std::string str2(0);        // 💀 UB
+std::string str3 = 0;       // 💀 UB
+```
+
+このように構築された`std::string`/`std::string_view`オブジェクトは未定義動作を引き起こします。
+
+こんなコードは正気なら書かないと思われるのですが、それでも在野のコードベースにはこのようなコードが少なからず存在しているようです。C++23からは、このような構築をコンパイルエラーとして弾くために、`std::string`/`std::string_view`に`std::nullptr_t`を取るコンストラクタが`delete`で追加されます。
+
+```cpp
+namespace std {
+  template <class charT,
+            class traits = char_traits<charT>,
+            class Allocator = allocator<charT> >
+  class basic_string {
+    ...
+    
+    basic_string(nullptr_t) = delete; // C++23で追加
+    
+    ...
+  };
+
+  template <class CharT, class Traits = char_traits<CharT>>
+  class basic_string_view {
+    ...
+    
+    basic_string_view(nullptr_t) = delete; // C++23で追加
+    
+    ...
+  };
+}
+```
+
+上記例のようなコードは、このコンストラクタが選択されることでコンパイルエラーになります。
+
+```cpp
+// C++23から
+std::string str1(nullptr);  // ng
+std::string str2(0);        // ng
+std::string str3 = 0;       // ng
+```
 ### `.resize_and_overwrite()`
 
 ### `std::string::substr() &&`
