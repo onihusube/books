@@ -496,7 +496,75 @@ std::string str3 = 0;       // ng
 ```
 ### `.resize_and_overwrite()`
 
-### `std::string::substr() &&`
+### 効率的な部分文字列の取得
+
+`std::string`の`.substr()`は部分文字列を取得する関数ですが、結果はコピーされて新しい`std::string`オブジェクトとして返されます。
+
+```cpp
+// コマンドライン引数の一部を取り出す
+auto benchmark = std::string(argv[i]).substr(12);
+
+// prvalueなstringの一部を切り出す
+auto name = obs.stringValue().substr(0, 32);
+```
+
+これらの処理はどちらも現在はコピーとアロケーションが発生していますが、元の`std::string`オブジェクトが右辺値である場合は元の文字列の保持する領域を再利用することで余計なコピーとアロケーションを回避する実装を取ることができます。
+
+C++23からは、右辺値参照オーバーロードを利用してそのような最適化が有効になります。
+
+現在`.substr()`は`const`修飾されたものだけ定義されていますが、C++23からは`&&, const &`の2つのオーバーロードが定義されるようになります。
+
+```cpp
+// C++20まで
+constexpr basic_string substr(size_type pos = 0, size_type n = npos) const;
+
+// C++23から
+constexpr basic_string substr(size_type pos = 0, size_type n = npos) const &;
+constexpr basic_string substr(size_type pos = 0, size_type n = npos) &&;
+```
+
+`const &`のオーバーロードは従来と同じ動作をするもので、`&&`オーバーロードが新しく追加されたものです。`&&`オーバーロードでは、元の`std::string`オブジェクトが右辺値であることが分かっているため、その保持する文字列領域を再利用して部分文字列を構築します。
+
+```cpp
+auto f() -> std::string;
+
+// C++20 : 一時オブジェクトのstringから部分文字列のstringをコピーして作成
+// C++23 : 一時オブジェクトのstringのリソースを再利用して部分文字列を保持するstringオブジェクトを作成
+auto str1 = f().substr(...);
+
+// C++20 : 一時オブジェクトのstringから部分文字列のstringをコピーして作成
+// C++23 : 一時オブジェクトのstringのリソースを再利用して部分文字列を保持するstringオブジェクトを作成
+auto str2 = std::string(...).substr(...);
+
+auto s = std::string(...);
+
+// C++20 : sから部分文字列のstringをコピーして作成、sは変更されない
+// C++23 : sのリソースを再利用して部分文字列を保持するstringオブジェクトを作成、sは有効だが未規定な状態となる
+auto str3 = std::move(s).substr(...);
+```
+
+どれもC++20からの動作変更にはなりますが、`str3`の場合を除いて観測可能ではなかったので破壊的な変更ではありません。しかし、`str3`の場合の`s`の状態は破壊的変更となり、以前は変更されなかったのがムーブされることでムーブ後状態（有効だが未規定）となります。
+
+とはいえ、C++20でこのように記述するメリットはないためこう書かれることはあまりなく、書いたとしても明示的に`move`しているため`s`の値にはもはや関心が無いことを理解した上でコンパイラにそれを伝えているはずなので、この提案の変更によってその意図した振る舞いが得られることになります。
+
+また、部分文字列からの構築を行うコンストラクタにも同様に右辺値オーバーロードが追加されます。
+
+```cpp
+constexpr basic_string(basic_string&& str, size_type pos, const Allocator& a = Allocator());
+constexpr basic_string(basic_string&& str, size_type pos, size_type n, const Allocator& a = Allocator());
+```
+
+`.substr()`はいずれもこのタイプのコンストラクタを通して実装されるため、この2つは部分文字列からの構築という操作の異なる表記法になります。
+
+```cpp
+auto f() -> std::string;
+
+// この2つは同じ意味の操作
+std::string str1{f(), 5, 10};
+auto str2 = f().substr(5, 10);
+```
+
+ただし、コンストラクタの場合はアロケータを指定することができ、デフォルト構築できないようなカスタムアロケータを使用している場合により有用です。追加されたこのコンストラクタ（及び`.str() &&`）はどちらも、右辺値`string`の持つアロケータと渡されたアロケータ`a`が等しい場合（`str.get_allocator() == a`）にのみそのメモリの再利用が行われます。
 
 ### string_viewとspanをトリビアルコピー可能と規定
 
