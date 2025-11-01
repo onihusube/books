@@ -496,6 +496,129 @@ std::string str3 = 0;       // ng
 ```
 ### `.resize_and_overwrite()`
 
+`std::string`をバッファとして使用して、順次到着する文字列をバッファの`std::string`に追記していくような場合を考えます。この場合、`std::string`の長さはどんどん増加していくため、適宜キャパシティの増大とその領域への書き込みが発生します。この時
+
+1. メモリの確保回数を最小にする
+2. 増大したメモリを初期化（0埋め）しない
+3. キャパシティのチェックを省略する
+
+というパフォーマンスを向上させるために考慮すべき3つの要件をすべて同時に満たす方法が存在していませんでした。
+
+```cpp
+void f(std::string& buffer, std::span<std::string_view> new_data) {
+  // 毎回append()
+  // 追加の度にキャパシティチェック・必要なら増大・確保した領域の0埋め
+  // が行われる
+  for (auto append_str : new_data) {
+    buffer.append(append_str);  
+  }
+}
+```
+```cpp
+// 配列中の文字列の長さの合計を求める関数とする
+auto calc_length(std::span<std::string_view> data) -> std::size_t;
+
+void f(std::string& buffer, std::span<std::string_view> new_data) {
+  // reserve()してappend()
+  // 追加の度にキャパシティチェックが行われる
+  const std::size_t total_len = buffer.size() + calc_length(new_data);
+  buffer.resreve(total_len);
+
+  for (auto append_str : new_data) {
+    buffer.append(append_str);  
+  }
+}
+```
+```cpp
+auto calc_length(std::span<std::string_view> data) -> std::size_t;
+
+void f(std::string& buffer, std::span<std::string_view> new_data) {
+  // resize()してmemcpy()
+  // resize()時に0埋めが行われる
+  const std::size_t total_len = buffer.size() + calc_length(new_data);
+  buffer.resize(total_len);
+
+  char* dst = buffer.data() + buffer.size();
+  std::size_t append_len = 0;
+  for (auto append_str : new_data) {
+    const std::size_t step = append_str.size();
+    memcpy(dst + append_len, append_str.data(), step);
+
+    append_len += step;
+  }
+}
+```
+
+この後ろ2つの方法でも、上記要件の2/3しか満たせていません。パフォーマンスに敏感なコードではこのオーバーヘッドが問題になることがあり、そのようなコードベースでは独自の文字列型に対してこの手の操作をオーバーヘッドなし（上記3つの要件をすべて満たす）で行うためのAPIが用意されていたりもします。
+
+C++23からは、このような操作においてゼロオーバーヘッドを達成するために、`.resize_and_overwrite()`というメンバ関数が追加されます。上記の例はこの関数を用いて次のように書くことができるようになります
+
+```cpp
+auto calc_length(std::span<std::string_view> data) -> std::size_t;
+
+void f(std::string& buffer, std::span<std::string_view> new_data) {
+  // C++23 resize_and_overwrite()
+  // 上記3要件をすべて満たす
+  const std::size_t before_len = buffer.size();
+  const std::size_t total_len = before_len + calc_length(new_data);
+
+  buffer.resize_and_overwrite(total_len, [=](char* data, std::size_t length) {
+    char* dst = data + before_len;
+    std::size_t append_len = 0;
+
+    for (auto append_str : new_data) {
+      const std::size_t step = append_str.size();
+      memcpy(dst + append_len, append_str.data(), step);
+
+      append_len += step;
+    }
+    
+    assert((before_len + append_len) == length); // この場合は一致する
+
+    return length;  // 書き込んだ領域サイズを返す
+  });
+}
+```
+
+`str.resize_and_overwrite(new_length, op)`は次のような処理を行っています
+
+1. `new_length`がキャパシティよりも大きい場合、領域を確保する
+    - `str.reserve(new_length)`相当
+2. `auto r = op(str.data(), new_length)`を呼び出す
+    - 正確には、`std::move(op)(str.data(), new_length)`の様な呼び出しになる
+3. `r`を新しい文字列の長さとする
+    - この後で、`str.size() == r`となる
+
+これによって、文字列を追加する際に必要な長さのメモリを確保しつつもその領域をゼロ埋めせず、キャパシティのチェックは`.resize_and_overwrite()`の呼び出しにつき一回のみ、という動作が達成されます。したがって、ここまでの例の様な操作において最初の3要件をすべて満たす事ができます。
+
+```cpp
+// 疑似コードでの動作例
+template <class charT,
+         class traits = char_traits<charT>,
+         class Allocator = allocator<charT> >
+class basic_string {
+  charT* data_;
+  std::size_t length_;
+
+  ...
+
+  template <class Operation>
+  constexpr void resize_and_overwrite(size_type n, Operation op) {
+    this->reserve(n);
+    auto r = std::move(op)(data_, n);
+    lenght_ = static_cast<std::size_t>(r);
+  }
+};
+```
+
+このコードは細部をかなり単純化しているため正確ではないですが、おおむねこのような処理が行われます。
+
+渡す処理の`op`には文字列領域の先頭ポインタ（必要ならメモリ確保後）と`.resize_and_overwrite()`に渡した長さ`n`（第一引数）が渡されます。`op`の中では、サイズ拡大後の`std::string`の持つメモリ領域にほぼ自由にアクセスすることができ、その最大長は`n`になります。また、この領域は確保された後で初期化（0埋め）されていません。
+
+そのため、`op`の中では`std::string`の管理するメモリ領域に直接書き込みを行うことになります。この領域には`.resize_and_overwrite()`呼び出し以前にその`std::string`オブジェクトが保持していた文字列がそのまま配置されているため、上書きしない場合はこの領域を避ける必要があります（上記の例では`before_len`を使用して行っている）。
+
+書き込みをしたら書き込んだ長さを`op`の戻り値として返す必要があります。このとき、長さ`n`の領域全てに書き込みをする必要はなく`n`未満の数を返すことができ、`op`から返された値が新しい文字列長となります。なお、`op`の戻り値型は整数型である必要があり、`0`未満や`n`以上の値を返すと未定義動作になります。
+
 ### 効率的な部分文字列の取得
 
 `std::string`の`.substr()`は部分文字列を取得する関数ですが、結果はコピーされて新しい`std::string`オブジェクトとして返されます。
