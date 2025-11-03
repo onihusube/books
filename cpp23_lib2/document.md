@@ -695,15 +695,300 @@ https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2251r1.pdf
 
 ## `std::format`/`std::print`
 
+C++23では`range`の出力対応のほかに、追加でいくつかの標準の型が`std::format`/`std::print`対応しています（`range`の対応に関しては、「C++23 ranges」をご覧ください）。
+
 ### `pair`/`tuple`の対応
 
+`range`の対応において連想コンテナの出力には再帰的に`pair`のフォーマットが利用されており、`pair`と`tuple`のフォーマットもC++23で追加されています。
+
+```cpp
+int main() {
+  std::pair pair{"C++", 23};
+  std::tuple tuple{"C++", 23, 3.14, std::vector{1, 3, 5}};
+
+  std::println("{}", pair);
+  std::println("{}", tuple);
+}
+```
+```{style=planetext}
+("C++", 23)
+("C++", 23, 3.14, [1, 3, 5])
+```
+
+`std::format`/`std::print`は下回りの機構（`std::formatter`周り）が共通しているので、ここでは`std::print`を主に使用します。
+
+`pair`/`tuple`はそれぞれに個別の`std::fromatter`が用意されているのではなく、共通のものを使用しています。そのため、そのフォーマット仕様も共通しています。
+
+`pair`/`tuple`のフォーマットでは基本的に`()`で囲まれて出力され、要素型のフォーマットは再帰的にそれぞれの要素型のフォーマッタが使用されて出力されます。したがって、`pair`/`tuple`の全ての要素がフォーマット可能でないと出力できません（コンパイルエラーになる）。
+
+#### フォーマットオプション
+
+指定可能なオプションの全体像は次のようになっています
+
+```
+{ index : fill align width tuple-type }
+```
+
+`index`から`width`までは他の型と共通したオプションです。また、全てのオプションは省略可能です。
+
+```cpp
+int main() {
+  std::pair pair{"C++", 23};
+
+  std::println("{:>20}", pair);
+  std::println("{:^20}", pair);
+  std::println("{:<20}", pair);
+  std::println("{:*^20}", pair);
+}
+```
+```{style=planetext}
+         ("C++", 23)
+    ("C++", 23)     
+("C++", 23)         
+****("C++", 23)*****
+```
+
+`pair`/`tuple`固有なのは最後の`tuple-type`オプションで、次の2つのどちらかが有効です
+
+- `m`: 囲み文字を失くし、区切り文字を`: `にして出力
+    - `pair`もしくは、2要素の`tuple`限定
+- `n`: 囲み文字を省略する
+
+```cpp
+int main() {
+  std::pair pair{"C++", 23};
+  std::tuple tuple{"C++", 23, 3.14, std::vector{1, 3, 5}};
+
+  std::println("{:n}", pair);
+  std::println("{:m}", tuple);
+}
+```
+```{style=planetext}
+"C++": 23
+"C++", 23, 3.14, [1, 3, 5]
+```
+
+`m`オプションは連想コンテナをフォーマットする際のデフォルトでもあります。
+
+#### `std::formatter`の特殊なメンバ関数
+
+`pair`/`tuple`の`std::formatter`には他の型には無い特殊なメンバ関数が2つ追加されています
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class charT, formattable<charT>... Ts>
+  struct formatter<pair-or-tuple<Ts...>, charT> {
+    ...
+  public:
+    constexpr void set_separator(basic_string_view<charT> sep) noexcept;
+    constexpr void set_brackets(basic_string_view<charT> opening,
+                                basic_string_view<charT> closing) noexcept;
+
+    ...
+  };
+
+  template<class... Ts>
+    constexpr bool enable_nonlocking_formatter_optimization<pair-or-tuple<Ts...>> =
+      (enable_nonlocking_formatter_optimization<Ts> && ...);
+}
+```
+
+- `.set_separator()`: 各要素の区切り文字を指定する
+- `.set_brackets()`: 囲み文字を指定する
+
+どちらの関数も直接呼び出したところで通常のフォーマットに影響を与えることはできませんが、自作の型のカスタムフォーマッタを実装する際にこのフォーマッタを再利用して、これらの関数を呼び出すことで区切り文字や囲み文字の変更を簡単に指定できます。
+
+```cpp
+struct MyType {
+  int n;
+  std::string_view str;
+};
+
+template<>
+struct std::formatter<MyType, char> : public std::formatter<std::tuple<int, std::string_view>, char> {
+  template<class ParseContext>
+  constexpr auto parse(ParseContext& ctx) {
+    // デフォルトの区切り文字と囲み文字を変更する
+    this->set_separator(" -> ");
+    this->set_brackets("{", "}");
+
+    // tupleのフォーマッタに委譲
+    return std::formatter<std::tuple<int, std::string_view>, char>::parse(ctx);
+  }
+
+  template <class FormatContext>
+  constexpr auto format(const MyType& mt, FormatContext& ctx) const {
+    // tupleのフォーマッタに委譲
+    return std::formatter<std::tuple<int, std::string_view>, char>::format(
+      std::make_tuple(mt.n, mt.str), ctx);
+  }
+};
+
+static_assert(std::formattable<MyType, char>);  // formattableでテストしたほうがデバッグしやすい（かも
+
+int main() {
+  MyType m{.n = 0, .str = "zero"};
+
+  std::println("{}", m);
+}
+```
+```{style=planetext}
+{0 -> "zero"}
+```
+
+このような集成体型のフォーマット対応においては`pair`/`tuple`のフォーマッタを再利用することで比較的楽にフォーマット対応させることができ、これらの関数はその際に使用できます。
+
+#### パラメータパックのフォーマット
+
+`tuple`のフォーマットを利用することで、パラメータパック（あるいは可変長引数）のフォーマットを簡単に行うことができます。
+
+```cpp
+void print_pack(auto&&... args) {
+  std::print("{}", std::tie(args...));
+}
+
+int main() {
+  print_pack(1, "str", 3.1415, 'c', true);
+}
+```
+```{style=planetext}
+(1, "str\u{0}", 3.1415, 'c', true) 
+```
+
+パラメータパックを愚直にフォーマットしようとするとその要素数に合わせてフォーマット文字列を生成しなくてはならないため、`std::tie()`を使用して`tuple`のフォーマットを利用することで簡単にフォーマットできるようになります。
+
 ### `std::thread::id`
+
+非常に地味なところですが、`std::thread::id`のフォーマット対応もされています。
+
+```cpp
+int main() {
+  std::println("{}", std::this_thread::get_id());
+}
+```
+```{style=planetext}
+137625994856256
+```
+
+使用可能なオプションは最低限で、独自のオプションはありません。
+
+```
+{ index : fill align width }
+```
 
 ### `basic_format_string`を使用可能にする
 
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2508r1.html
 
-### デバッグオプション
+`std::format()`の引数型は`std::basic-format-string<charT, Args...>`というフォーマット文字列のコンパイル時チェックを行うための説明専用の型です。これは標準ライブラリ内部でのみ使用することを意図したものでユーザーは利用できないのですが、これをユーザーも利用したい場合があります。
+
+例えば、自前のログ出力ラッパ内で`std::format()`を使用してログメッセージをフォーマットしたい場合などです。
+
+```cpp
+template <typename... Args>
+void log(std::format_string<Args...> s, Args&&... args) {
+  // logging_enabledによってログを制御する
+  if (logging_enabled) {
+    log_raw(std::format(s, std::forward<Args>(args)...));
+  }
+}
+```
+
+C++20まではこの`std::format_string<Args...>`のような型が利用できなかったため、普通の文字列で受け取って実行時フォーマットを行う、標準ライブラリの内部実装を使用する、などの方法しかありませんでした。
+
+C++23からはこの`std::format_string<Args...>`などのコンパイル時チェック付のフォーマット文字列型がユーザーが利用可能な形で定義されるようになります。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class charT, class... Args>
+  struct basic_format_string {
+  private:
+    basic_string_view<charT> str; // 説明専用メンバ変数
+
+  public:
+    template<class T>
+    consteval basic_format_string(const T& s);
+
+    constexpr basic_string_view<charT> get() const noexcept { return str; }
+  };
+
+  // 文字型特化エイリアス
+  template<class... Args>
+  using format_string = basic_format_string<char, type_identity_t<Args>...>;
+  
+  template<class... Args>
+  using wformat_string = basic_format_string<wchar_t, type_identity_t<Args>...>;
+}
+```
+
+先ほどのログ出力ラッパのサンプルコードはそのまま動作するようになります。
+
+`basic_format_string`の`consteval`コンストラクタにおいてフォーマット文字列のコンパイル時チェックが行われているため、これを使用して受け取った文字列に対してはフォーマット文字列のコンパイル時チェックが行われています。
+
+### デバッグオプション（`:?`）
+
+文字・文字列のフォーマットオプションとして、`?`が利用できるようになります。これは、デバッグ用のログ出力時などに有用なもので、文字/文字列をエスケープして出力するものです。
+
+```cpp
+int main() {
+  std::println("{:?}, {:?}", "h\tllo", '\n');
+}
+```
+```{style=planetext}
+"h\tllo", '\n'
+```
+
+`?`は文字・文字列型の`type`オプションの一種であるため、他のオプションと組み合わせる場合は一番最後に指定します。
+
+```cpp
+int main() {
+  std::println("{:*^10?}", '\n');
+}
+```
+```{style=planetext}
+***'\n'***
+```
+
+`?`オプションのフォーマットでは、その文字列をC++コード上で再現可能な文字列リテラルとして有効な文字列を出力します。`?`で出力される文字列はそれをコピペしてC++ソースコードに貼り付けると、文字列リテラルとして元の文字列を得ることができます。このため、特にエスケープシーケンスの扱いが異なります。
+
+```cpp
+int main() {
+  std::println("{0:}\n{0:?}", "h\tllo");
+  std::println("{0:}\n{0:?}", "\n");
+  std::println("{0:}\n{0:?}", '\'');
+}
+```
+```{style=planetext}
+h	llo
+"h\tllo"
+
+
+"\n"
+'
+'\''
+```
+
+ユニコード文字が含まれている場合も、ユニバーサル文字名にエスケープされます。
+
+```cpp
+int main() {
+  std::println("{0:}\n{0:?}", "🤷🏻‍♂️");
+  std::println("{0:}\n{0:?}", "\u0301");
+  std::println("{0:}\n{0:?}", "e\u0301\u0323");
+}
+```
+```{style=planetext}
+🤷🏻‍♂️
+"🤷🏻\u{200d}♂️"
+́
+"\u{301}"
+ẹ́
+"ẹ́"
+```
+
+ただし、全ての文字がユニバーサル文字名に置き換えられるわけではありません。この規則は少し複雑ですが、基本的には単独で印字不可能な文字や他の文字に結合して作用する文字などがユニバーサル文字名に置き換えられるようになっています。
+
+`std::formatter`の文字/文字列型に対する特殊化にはこのオプションの指定を制御するために`.set_debug_format()`メンバ関数が追加されます。`.set_debug_format()`は呼び出す（引数無し戻り値なし）とフォーマッタの状態を`?`オプションが指定されたものとして更新します。直接使用することはあまりないですが、`pair`/`tuple`のフォーマッタの`.set_separator()`等と同様にカスタムのフォーマッタを定義する際に利用できます。
 
 ## iostream
 
