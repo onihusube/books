@@ -994,6 +994,58 @@ ẹ́
 
 ### `basic_ostream`の出力の`const volatile void*`対応
 
+C++20まで、標準出力ストリームを使用して`volatile`ポインタを出力すると、予期しない値が出力されていました。
+
+```cpp
+int main() {
+           int* p0 = reinterpret_cast<         int*>(0xdeadbeef);
+  volatile int* p1 = reinterpret_cast<volatile int*>(0xdeadbeef);
+
+  std::cout << p0 << std::endl;
+  std::cout << p1 << std::endl;
+}
+```
+```{style=planetext}
+0xdeadbeef
+1
+```
+
+標準出力ストリーム（`basic_ostream`）に対するストリーム出力演算子（`<<`）では、`const void*`（非`volatile`ポインタ）の出力を行うオーバーロードはあり、普通のポインタはこれを使用してアドレスが出力されます。しかし、CV修飾が合わないため`volatile`ポインタはこのオーバーロードを使用できず、ポインタ->`bool`の変換を介して`bool`値として出力されます。このため、`volatile`ポインタを出力すると`1`になります。
+
+C++23からは`const volatile void*`に対するストリーム出力演算子のオーバーロードが追加され、`volatile`ポインタもアドレスとして出力されるようになります。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class charT, class traits = char_traits<charT>>
+  class basic_ostream : virtual public basic_ios<charT, traits> {
+  public:
+    ...
+
+    // C++20まで、const volatile void*の出力時にはこれが使用されていた
+    basic_ostream& operator<<(bool n);
+    
+    ...
+
+    // C++23から追加されるconst volatile void*の出力オーバーロード
+    basic_ostream& operator<<(const volatile void* val);  // 👈
+
+    // 既存のポインタ関連の出力オーバーロード
+    basic_ostream& operator<<(const void* p);
+    basic_ostream& operator<<(nullptr_t);
+    basic_ostream& operator<<(basic_streambuf<char_type, traits>* sb);
+
+    ...
+  };
+}
+```
+
+これにより、先ほどのコードは変更なしでそのまま正しく出力されるようになります。
+
+```{style=planetext}
+0xdeadbeef
+0xdeadbeef
+```
+
 ### `noreplace`オープンモード
 
 # functional
