@@ -992,7 +992,7 @@ ẹ́
 
 ## iostream
 
-### `basic_ostream`の出力の`const volatile void*`対応
+### `basic_ostream`の`volatile`ポインタ出力のバグ修正
 
 C++20まで、標準出力ストリームを使用して`volatile`ポインタを出力すると、予期しない値が出力されていました。
 
@@ -1051,6 +1051,65 @@ namespace std {
 # functional
 
 ## `std::invoke_r()`
+
+C++17以前から、関数呼び出しという操作を規格上で統一的に表現するために`INVOKE`という仮想操作が定義されており、C++17ではそれに応じた呼び出しを行うライブラリ関数である`std::invoke`が追加されました。
+
+また、`INVOKE`した結果を指定した戻り値型`R`に変換する`INVOKE<R>`という操作も定義されており、こちらに対応するものとして`std::invoke<R>`のような形で提案されていましたが、C++17時点では不要であるとしてドロップされました。
+
+しかし、`INVOKE<void>(f, args...)`のような呼び出しは戻り値を明示的に破棄するために使用でき、`std::is_invocable_r`や`std::is_nothrow_invocable_r`は指定した戻り値型で呼び出せるかを調べられるようになっています。さらに、`std::visit`には戻り値型を指定する`std::visit<R>`が用意されています。
+
+これらの有用性は既に示されていたため、これらのものに準じる形で`std::invoke_r`がC++23で追加されます。
+
+```cpp{style=cppstddecl}
+namespace std {
+  // C++17 invoke()
+  template<class F, class... Args>
+  constexpr invoke_result_t<F, Args...> invoke(F&& f, Args&&... args)
+    noexcept(is_nothrow_invocable_v<F, Args...>);
+
+  // C++23 invoke_r()
+  template <class R, class F, class... Args>
+  constexpr R invoke_r(F&& f, Args&&... args)
+    noexcept(is_nothrow_invocable_r_v<R, F, Args...>);
+}
+```
+
+`std::invoke_r<R>(f, args...)`は`f`と`args...`を`std::invoke()`した結果を`R`に暗黙変換するものです。特に、`R`が`void`の場合は`static_cast<void>()`されます。
+
+`std::invoke_r`は`std::invoke`と比較して次のような利点があります。
+
+- `void`を指定すると戻り値を破棄できる
+- 戻り値型を変換して呼び出しできる
+    - 例えば、`T&&`を返す関数を`T`（*prvalue*）を返す関数に変換できる
+- 複数の戻り値型を返しうる呼び出しを指定した1つの型を返すように統一できる
+    - 例えば、共変戻り値型をアップキャストする
+
+```cpp
+[[nodiscard]]
+auto f1(int) -> int;
+
+template<typename T>
+auto f2(T) -> T&&;
+
+void example() {
+  // 戻り値の破棄
+  std::invoke_r<void>(f1, 0);
+
+  // 戻り値型の変換
+  int pr = std::invoke_r<int>(f2, 0);
+}
+
+struct base {
+  ...
+};
+
+template<typename F, typename... Args>
+  requires std::derived_from<std::invoke_result_t<F, Args...>, base>
+auto f3(F&& f, Args&&... args) -> base {
+  // 共変戻り値型のアップキャスト
+  return std::invoke_r<base>(std::forward<F>(f), std::forward<Args>(args)...);
+}
+```
 
 ## `std::move_only_function`
 
