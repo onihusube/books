@@ -689,9 +689,27 @@ auto str2 = f().substr(5, 10);
 
 ただし、コンストラクタの場合はアロケータを指定することができ、デフォルト構築できないようなカスタムアロケータを使用している場合により有用です。追加されたこのコンストラクタ（及び`.str() &&`）はどちらも、右辺値`string`の持つアロケータと渡されたアロケータ`a`が等しい場合（`str.get_allocator() == a`）にのみそのメモリの再利用が行われます。
 
-### string_viewとspanをトリビアルコピー可能と規定
+### `string_view`と`span`がトリビアルコピー可能であることを保証
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2251r1.pdf
+`std::span`と`std::string_view`は想定される定義及び特殊メンバ関数の規定からしてトリビアルコピー可能（*trivially copyable*）であることが期待されます。しかし、標準はその実装について何も規定しておらず、トリビアルコピー可能であるかどうかについても触れられていません。
+
+`std::span`と`std::string_view`はどちらも次のような特徴があります。
+
+- コピーコンストラクタは`default`定義
+- コピー代入演算子は`default`定義
+- デストラクタは`default`定義
+- 生ポインタと`std::size_t`によるサイズの2つのメンバ変数を持つ型として説明される
+- 多くのメンバは`constexpr`であり、ともに*trivially destructible*な型（これはC++17のトリビアル型の要件）
+
+この様に共通する性質がありその実装もほぼ同じで、必然的にトリビアルコピー可能であるはずです。実際、clangとGCCの実装はトリビアルコピー可能となっています。
+
+C++23からは、明示的にトリビアルコピー可能であることが規定され、保証されるようになります。
+
+```cpp
+// C++23から、どちらも必ずパスする
+static_assert(std::is_trivially_copyable_v<std::string_view>);  // 文字型によらない
+static_assert(std::is_trivially_copyable_v<std::span<int>>);    // 要素型によらない
+```
 
 ## `std::format`/`std::print`
 
