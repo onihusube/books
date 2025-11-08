@@ -400,6 +400,58 @@ int main() {
 
 `std::string`系の文字列クラスならこのようにするとハッシュの定義は簡単なのですが、他の型の場合はハッシュ共通化が難しい場合もあるかもしれません。そういう場合は自分でハッシュ実装をする必要があります。
 
+## イテレータ
+
+### `move_iterator<T*>`を`random_access_iterator`にする
+
+`std::move_iterator<T*>`のイテレータカテゴリについてC++17以前に議論された際には、パフォーマンス上の理由により`move_iterator<I>`は`I`の性質を継承するようにされました。
+
+```cpp
+std::vector<A> v;
+std::vector<A> temp = ...;
+
+using MI = std::move_iterator<std::vector<A>::iterator>;
+
+// MIがランダムアクセスイテレータであることで、ここでのアロケーションを一回で済ませられる
+v.insert(v.begin() + N, MI(temp.begin()), MI(temp.end()));
+```
+
+`vector::insert`では、挿入される要素数が予めわかっていれば`vector`の領域をあらかじめ拡張しておくことでアロケーションの回数を最小にできます。それができない場合、挿入要素数分`push_back()`するのと同じことになります。
+
+C++20にて`<ranges>`追加と共にイテレータライブラリが改修された際、`move_iterator<I>::iterator_concept`は常に`input_iterator`であるようにされており、C++20`move_iterator`は常に`input_iterator`となります。
+
+C++20ではイテレータ間距離（サイズ）を求められるかどうかはイテレータカテゴリから分離され、`sized_sentinel_for`コンセプトによって別に表されます。`move_iterator<I>`は自身のカテゴリとは関係なく、`I`が`sized_sentinel_for<I, I>`であれば`-`によって距離を定数時間で求めることができるため、`move_iterator`が`random_access_iterator`である必要はありません。
+
+すなわち、`std::move_iterator<T*>`はC++17イテレータとしてはランダムアクセスイテレータになりますが、C++20イテレータとしては`input_iterator`にしかなりません。
+
+```cpp
+// C++17イテレータとしてのイテレータカテゴリ
+static_assert(
+  std::same_as<
+    std::iterator_traits<std::move_iterator<int*>>::iterator_category,
+    std::random_access_iterator_tag
+  >
+); // ok
+
+// C++20イテレータとしてのイテレータカテゴリ
+static_assert(std::random_access_iterator<std::move_iterator<int*>>); // ng、C++20ではinput_iterator
+```
+
+C++17イテレータとC++20イテレータではイテレータの性質の定義やその取得経路が変わったことによってイテレータの性質（この場合は特にカテゴリ）の判定結果が変化しているものが他にもあります。しかし、イテレータカテゴリが変わる場合は`move_iterator`以外は全てC++20の方が強くなっており、これはその唯一の例外となっていました。
+
+C++20の`move_iterator`が`input_iterator`にしかならないのは、イテレータ範囲の中を自由に行き来できたとしても、一度`*`で参照してしまえば同じ要素への2回目以降のアクセスは安全では無くなるためです。ただ、この`move_iterator`を全面的に利用する`views::as_rvalue`がその影響を受けて常に`input_range`になってしまうなどの問題もありました。
+
+このため、C++23では`std::move_iterator<I>`は`I`のカテゴリを可能な限り継承するように変更されます（ただし、`contiguous_iterator`にはならない）。これにより、`std::move_iterator<T*>`は再び`random_access_iterator`になります。
+
+```cpp
+// C++20イテレータとしてのイテレータカテゴリ
+static_assert(std::random_access_iterator<std::move_iterator<int*>>); // ok、C++23から
+```
+
+### Poison Pillオーバーロードの削除
+https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2602r2.html
+
+
 # 文字列・フォーマット
 
 ## `std::string`/`std::string_view`
@@ -1261,14 +1313,6 @@ https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2212r2.html
 ## エンコーディングによる`format()`に振舞いの明確化
 
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2419r2.html
-
-# イテレータ
-
-## `move_iterator<T*>`をランダムアクセスイテレータにする
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2520r0.html
-
-## Poison Pillオーバーロードの削除
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2602r2.html
 
 # その他変更
 
