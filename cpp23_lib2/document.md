@@ -1249,6 +1249,387 @@ auto f3(F&& f, Args&&... args) -> base {
 
 ## `std::out_ptr`/`std::inout_ptr`
 
+C言語で書かれたコードやライブラリというものはまだまだ現役で、そのようなコードも比較的簡単に扱うことができるのがC++の強みの一つでもあります。Cのライブラリにおいてもリソース（特にメモリ）を実行時に確保して使用するタイプのライブラリは一般的であり、そのようなライブラリでは多くの場合リソースを確保する関数にポインタを渡して呼び出すとそのポインタに確保されたリソースが返り、リソースの解放も専用の関数を使用するというAPIを提供しています。
+
+```cpp
+// 引数に取ったポインタに確保したリソースを返却する
+error_num c_api_create_handle(int seed_value, int** p_handle);
+// リソース解放を行う
+void c_api_delete_handle(int* handle);
+
+
+void use_c_api() {
+  int* resource_handle{};
+
+  // リソースの取得
+  auto ec = c_api_create_handle(24, &resource_handle);
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの使用
+  ...
+
+  // リソースの解放
+  c_api_delete_handle(resource_handle);
+}
+```
+
+C++においてはこのようなパターンはRAIIで管理を自動化するのが定石であり、`std::unique_ptr`はそのためのクラスでもあります。一応現在でも、上記のようなC APIの返すリソースは`std::unique_ptr`で管理することはできます。
+
+```cpp
+/// Cライブラリのリソース管理API
+error_num c_api_create_handle(int seed_value, int** p_handle);
+void c_api_delete_handle(int* handle);
+
+void use_c_api() {
+  using deleter = decltype([](int* handle) { c_api_delete_handle(handle); });
+  // カスタムデリータをセットしたunique_ptr
+  std::unique_ptr<int, deleter> resource{};
+
+  // unique_ptrの管理するポインタのアドレス（ダブルポインタ）を取得する方法が無い
+  int* temp_ptr{};
+  auto ec = c_api_create_handle(24, &temp_ptr);
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // 一旦ポインタで受けてからスマートポインタにリソースをセットするしかない
+  resource.reset(temp_ptr);
+
+  // リソースの使用
+  ...
+
+  // リソースの解放は自動化される
+}
+```
+
+これでもRAIIによって管理は自動化されているので最初のコードからはだいぶましにはなります。しかし、リソース取得周辺のコードはこのためのハックによって少し汚くなっています。
+
+### `std::out_ptr`
+
+C++23ではこのような目的でスマートポインタを使用するためのユーティリティとして`std::out_ptr`が用意されます。`std::out_ptr`を使用すると上記`std::unique_ptr`を使おうとするコードをかなり簡略化できます。
+
+```cpp
+/// Cライブラリのリソース管理API
+error_num c_api_create_handle(int seed_value, int** p_handle);
+void c_api_delete_handle(int* handle);
+
+void use_c_api() {
+  using deleter = decltype([](int* handle) { c_api_delete_handle(handle); });
+  // カスタムデリータをセットしたunique_ptr
+  std::unique_ptr<int, deleter> resource{};
+
+  // std::out_ptr()を介してスマートポインタを直接渡すことができる
+  auto ec = c_api_create_handle(24, std::out_ptr(resource));  // 👈
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの使用
+  ...
+
+  // リソースの解放は自動
+}
+```
+
+`std::out_ptr`を使用することで、リソース取得時のコードが生ポインタを直接使う一番最初のコードと同等にシンプルになり、なおかつスマートポインタによってリソース管理が自動化されています。
+
+例では`std::uniue_ptr`を使用していますが、`std::shared_ptr`でもほぼ同様に使用できます。
+
+```cpp
+/// Cライブラリのリソース管理API
+error_num c_api_create_handle(int seed_value, int** p_handle);
+void c_api_delete_handle(int* handle);
+
+void use_c_api() {
+  using deleter = decltype([](int* handle) { c_api_delete_handle(handle); });
+
+  std::shared_ptr<int> resource{};
+
+  // shared_ptrの場合はデリータをここで渡す
+  auto ec = c_api_create_handle(24, std::out_ptr(resource, deleter{}));  // 👈
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの使用
+  ...
+
+  // リソースの解放は自動
+}
+```
+
+カスタムデリータを渡す場所に注意が必要です。`std::shared_ptr`で`std::out_ptr`を使用する場合、カスタムデリータの指定を省略するとコンパイルエラーとなります。これは、内部で`std::shared_ptr`にリソースの所有権を移す際にカスタムデリータのリセットが発生するのを防止するためです。
+
+
+### `std::inout_ptr()`
+
+さらに、C APIの中には適応的にリソースの再取得を行うタイプのものがあります。このようなAPIでは受け取ったポインタがリソースを保持していればそれを開放し、新しく確保したリソースを再設定します。
+
+```cpp
+/// Cライブラリのリソース管理API
+error_num c_api_create_handle(int seed_value, int** p_handle);
+void c_api_delete_handle(int* handle);
+// 必要に応じてリソースの解放と再取得を行うAPI
+error_num c_api_re_create_handle(int seed_value, int** p_handle);
+
+void use_c_api() {
+  int* resource_handle{};
+
+  // リソースの取得
+  auto ec = c_api_create_handle(24, &resource_handle);
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの使用
+  ...
+  
+  // リソースの再取得
+  auto ec = c_api_re_create_handle(24, &resource_handle);
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの解放
+  c_api_delete_handle(resource_handle);
+}
+```
+
+Cの使用感では変わらないのですが、これを`std::out_ptr`で扱おうとすると少し面倒になります。
+
+```cpp
+/// Cライブラリのリソース管理API
+error_num c_api_create_handle(int seed_value, int** p_handle);
+void c_api_delete_handle(int* handle);
+error_num c_api_re_create_handle(int seed_value, int** p_handle);
+
+void use_c_api() {
+  using deleter = decltype([](int* handle) { c_api_delete_handle(handle); });
+  // カスタムデリータをセットしたunique_ptr
+  std::unique_ptr<int, deleter> resource{};
+
+  auto ec = c_api_create_handle(24, std::out_ptr(resource));
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの使用
+  ...
+
+  // このタイプのAPIに渡すためにはまず、スマートポインタの管理から外さなければならない
+  auto* temp_handle = resource.release();
+
+  // リソースの再取得
+  auto ec = c_api_re_create_handle(24, &temp_handle);
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // 再度手動でセットする
+  resource.reest(temp_handle);
+
+  // リソースの解放は自動
+}
+```
+
+このタイプのAPIは以前に確保されたリソースのポインタを受け取り、内部で必要に応じてそれを開放し再確保したリソースのポインタをセットします。`std::out_ptr`は渡されたスマートポインタがリソースを保持している場合、それを開放してから新しいリソースをセットしようとしますが、渡したリソースの解放自体はC APIが行うため、`std::out_ptr`で元のリソースを開放してしまうと二重開放になってしまいます。
+
+すなわち、`std::out_ptr`はこのタイプのAPIで正しく使用できないため、この例のようにスマートポインタから所有権ごとポインタを取り出してそれをC APIに渡した後で手動でセットする、というコードを書かなければならなくなっています。
+
+そこで、このタイプのAPIを簡易に扱うために`std::inout_ptr`が用意されます。
+
+```cpp
+/// Cライブラリのリソース管理API
+error_num c_api_create_handle(int seed_value, int** p_handle);
+void c_api_delete_handle(int* handle);
+error_num c_api_re_create_handle(int seed_value, int** p_handle);
+
+void use_c_api() {
+  using deleter = decltype([](int* handle) { c_api_delete_handle(handle); });
+  // カスタムデリータをセットしたunique_ptr
+  std::unique_ptr<int, deleter> resource{};
+
+  auto ec = c_api_create_handle(24, std::out_ptr(resource));
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの使用
+  ...
+
+  // リソースの再取得
+  auto ec = c_api_re_create_handle(24, std::inout_ptr(resource)); // 👈
+
+  if (ec == C_API_ERROR_CONDITION) {
+    // エラーハンドル
+    ...
+  }
+
+  // リソースの解放は自動
+}
+```
+
+`std::inout_ptr`は一つ前の例で行われていた、スマートポインタから所有権ごとポインタを取り出してそれをC APIに渡した後で手動でセットする、というコードを自動化します。これによってこのリソースを再取得するタイプのAPIにおいてスマートポインタを使用するための雑多なコードが取り除かれます。
+
+なお、`std::shared_ptr`が共同所有されているときに所有権を一旦手放す方法が無いため、`std::inout_ptr`では`std::shared_ptr`を使用できません。
+
+### パフォーマンス上のメリット
+
+`std::out_ptr`/`std::inout_ptr`はC APIで使用する際に手動でやる必要があったスマートポインタを初期化するための操作を自動化してくれるもので、コード上でちょっと邪魔なコードを消し去ることができる程度のものに思えるかもしれません。
+
+しかし、そのようなコードをマニュアルで書く場合と比較して使用時のパフォーマンスが向上する場合があります。これは`std::inout_ptr`で特に顕著になります。
+
+さらに、`std::unique_ptr`や`std::shared_ptr`に特化した実装（内部に侵入できる実装）を取ることで最適化することができ、Cべた書きコードとほぼ同等まで近づけることができます。
+
+これらのパフォーマンス向上は
+
+- スマートポインタの内部ポインタを直接使うことによって中間ポインタが必要なくなる
+- `.reset()`/`.release()`の個別呼び出しによるオーバーヘッドを排除できる
+- 関連するスマートポインタ操作コードがコード上で離れることによる最適化機会の喪失を回避できる
+
+等によるようです。
+
+このような最適化が行われるかどうかは実装定義ではありますが、少なくとも`std::inout_ptr`はナイーブな実装でも同等の手書きコードよりもパフォーマンスが向上するはずです。
+
+### 実装の詳細
+
+`std::out_ptr`/`std::inout_ptr`自体はどちらも単なる関数です。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class Pointer = void, class Smart, class... Args>
+  auto out_ptr(Smart& s, Args&&... args);
+
+  template<class Pointer = void, class Smart, class... Args>
+  auto inout_ptr(Smart& s, Args&&... args);
+}
+```
+
+これらの関数はそれぞれ、`std::out_ptr_t`、`std::inout_ptr_t`というクラステンプレートのオブジェクトを返します。
+
+まず、`P`という型を次のように取得します
+
+1. `Pointer`: `is_void_v<Pointer> == false`の場合
+2. `T::pointer`: 1が取得できず、`T::pointer`が有効であり型名である場合
+3. `T​::​element_type*`: 2が取得できず、`T​::​element_type`が有効であり型名である場合
+4. `pointer_traits<T>​::​element_type*`: 3が取得できない場合
+
+これは例えば`Pointer`を指定していないとすると、`std::unique_ptr<T>`に対して`T*`（`std::unique_ptr<T>::pointer`）になります。
+
+そのうえで、次のものを構築して直接`return`します
+
+- `std::out_ptr()`: `std::out_ptr_t<Smart, P, Args&&...>(s, std​::​forward<Args>(args)...)`
+- `std::inout_ptr()`: `std::inout_ptr_t<Smart, P, Args&&...>(s, std​::​forward<Args>(args)...)`
+
+`std::out_ptr`/`std::inout_ptr`はほぼ、この`return`文一行の単純な関数となります。
+
+`std::out_ptr_t`、`std::inout_ptr_t`は次のようなクラステンプレートです
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class Smart, class Pointer, class... Args>
+  class out_ptr_t {
+  public:
+    explicit out_ptr_t(Smart&, Args...);
+    out_ptr_t(const out_ptr_t&) = delete;
+
+    ~out_ptr_t();
+
+    operator Pointer*() const noexcept;
+    operator void**() const noexcept;
+
+  private:
+    Smart& s;                   // exposition only
+    tuple<Args...> a;           // exposition only
+    Pointer p;                  // exposition only
+  };
+
+
+  template<class Smart, class Pointer, class... Args>
+  class inout_ptr_t {
+  public:
+    explicit inout_ptr_t(Smart&, Args...);
+    inout_ptr_t(const inout_ptr_t&) = delete;
+
+    ~inout_ptr_t();
+
+    operator Pointer*() const noexcept;
+    operator void**() const noexcept;
+
+  private:
+    Smart& s;                   // exposition only
+    tuple<Args...> a;           // exposition only
+    Pointer p;                  // exposition only
+  };
+}
+```
+
+`std::out_ptr`/`std::inout_ptr`のやることはほぼこのクラスのコンストラクタとデストラクタ、および変換演算子によって行われています。
+
+1. コンストラクタ: C API関数呼び出し前に、受け取ったスマートポインタをリセットする
+    - `std::out_ptr_t`: 保持するリソースを開放する
+    - `std::inout_ptr_t`: 保持するリソース（ポインタ）を所有権付きで取り出す
+    - `s, a`はコンストラクタで受け取った対応する引数で初期化される
+2. 変換演算子: C API関数への引数初期化時に、メンバで保持しているリソース受け取り用ポインタ（`p`）をキャストして渡す
+    - 例えば、`std::unique_ptr<T>`に対して、`T**`か`void**`のどちらかに変換して渡す
+      - 変換先はC API関数の引数型に応じて自動で決定される
+3. デストラクタ: C API関数の呼び出し終了後に、メンバで保持しているリソース受け取り用ポインタ（`p`）の値をコンストラクタで受け取ったスマートポインタ（`s`）にセットする
+    - 取得に失敗していたら（`nullptr`がセットされていたら）何もしない
+    - コンストラクタで受け取った追加の引数（`a`に保存されているもの）をスマートポインタに転送するのもここで行われる
+
+`std::inout_ptr`の説明の際に手でスマートポインタを操作していたコードと対応付けると分かりやすいかもしれません、C API呼び出し前の処理をコンストラクタで、呼び出し後の処理をデストラクタで行います。少しトリッキーかもしれませんが、`c_api_re_create_handle(24, std::inout_ptr(resource));`のように呼び出している時、`std::inout_ptr_t`の一時オブジェクト（第二引数に渡されている）は`c_api_re_create_handle()`の呼び出しが終了してこの文の実行が終了する際に破棄され、その時にデストラクタが呼ばれます。
+
+従って特に、デストラクタが呼び出されることが`std::out_ptr`/`std::inout_ptr`にとって非常に重要になります。`std::out_ptr`/`std::inout_ptr`の戻り値を一回受けて左辺値として取り回すことは可能ですが、それを行うとうまく動作しなくなります。
+
+なお、テンプレート化されていることから分かるかもしれませんが、`std::out_ptr`/`std::inout_ptr`は任意のスマートポインタで使用することができ、それは標準ライブラリ内のものだけが対象ではありません。例えば、Boostの提供するスマートポインタを使用することもできます。ただ、そのためには標準のスマートポインタとある程度インターフェース互換である必要があります。
+
+これらの実装は特にC++20など特有の機能を使用していないので、C++11以降であればここで例示している宣言の定義を具体的に実装していけばほぼそのまま実装できるはずです。
+
+### ポインタ型の明示的な指定
+
+WindowsのCOM APIのように、リソースへのポインタをリソース型のポインタではなく`void**`で受け取り、そこに特定の型のオブジェクトを生成して返すようなタイプのAPIも存在しています。そのようなAPIにおいて`std::out_ptr`が使用すべき正しいポインタ型を伝えるために、`std::out_ptr<P>(sp, ...)`のように第一テンプレート引数にポインタ型を指定することができます。
+
+例えば、WindowsのCOM APIではすべての基底型として`IUnknown`型あり、`QueryInterface()`等を介して取得できるインスタンスはAPIそのようなAPIの中にはリソース型の派生クラスを内部的に配置して返すものがあり、
+
+```cpp
+std::unique_ptr<ID3D11Device, COMDeleter> g_d11_device;
+
+int main () {
+	init_global_device();
+
+	std::unique_ptr<IUnknown, COMDeleter> dxgi_device;
+	IDXGIDevice * pDXGIDevice;
+	HRESULT hr = g_d11_device->QueryInterface(
+		__uuidof(IDXGIDevice), 
+		std::out_ptr<void*>(pDXGIDevice)); // !!
+	if (FAILED(hr)) {
+		// ...
+	}
+	// ...
+	return 0;
+}
+```
+
 ## `allocate_at_least()`
 
 ## `std::start_lifetime_as()`
