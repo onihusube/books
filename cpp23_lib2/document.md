@@ -1634,6 +1634,138 @@ int main () {
 
 ## `std::start_lifetime_as()`
 
+C++20で導入された*implicit-lifetime type*と呼ばれるカテゴリの型は、その型のメモリが確保された後に暗黙的に生存期間が開始されます。
+
+```cpp
+struct X { int a, b; };
+
+X* make_x() {
+  X *p = (X*)malloc(sizeof(struct X));
+
+  p->a = 1; // ok、C++20から
+  p->b = 2; // ok、C++20から
+
+  return p;
+}
+```
+
+この言語機能については、C++20 言語機能本の「トリビアルな型のオブジェクトを暗黙的に構築する」を参照してください。
+
+この仕様によって暗黙的に生存期間が開始されるのはいいのですが、ユーザーがそれを明示する手段はありませんでした。すなわち、*implicit-lifetime type*に対して明示的に同じ効果をもたらす関数が用意されていませんでした。
+
+C++23では、それが`std::start_lifetime_as<T>(p)`として提供されます。`std::start_lifetime_as<T>(p)`は、`p`の領域で`T`のオブジェクトの生存期間を開始して、そのオブジェクトへのポインタを返します。返されたポインタを介してオブジェクトを扱うことで、安全に使用できます。
+
+```cpp
+struct X { int a, b; };
+
+X* make_x() {
+  X *p = std::start_lifetime_as<X>(malloc(sizeof(struct X)));
+
+  p->a = 1; // ok
+  p->b = 2; // ok
+
+  return p;
+}
+```
+
+とはいえこの例では無い場合と変わりません。*implicit-lifetime type*の生存期間が自動で開始されるのは、指定されている一部のライブラリ関数（と実装定義の関数）のみであるため、例えばユーザー定義のアロケータやメモリ確保関数などではそれが起こりません。`std::start_lifetime_as()`は、その場合に明示的に生存期間を開始するために使用できます。
+
+```cpp
+// ユーザー定義のメモリ確保関数
+// メモリの確保のみを行うものとする
+auto allocate_memory(std::size_t N) -> std::byte*;
+
+struct X { int a, b; };
+
+int main() {
+  std::byte* mem = allocate_memory(sizeof(X));
+
+  // Xはimplicit-lifetime typeではあるものの、生存期間が開始されていない（ユーザー定義関数であるため）
+  X* ub_ptr1 = reinterpret_cast<X*>(mem);  
+  ub_ptr1->a = 1; // ub
+  ub_ptr1->b = 2; // ub
+
+  // launderはすでに生存期間が開始されているオブジェクトへのポインタを取得するものなので、ここで使用できない
+  X* ub_ptr2 = std::launder<X>(reinterpret_cast<X*>(mem));  
+  ub_ptr2->a = 1; // ub
+  ub_ptr2->b = 2; // ub
+
+  // start_lifetime_as()を通すことで生存期間を開始する
+  X* valid_ptr = std::start_lifetime_as<X>(mem);
+  valid_ptr->a = 1; // ok
+  valid_ptr->b = 2; // ok
+}
+```
+
+また、この関数は呼び出されていることによって指定された領域における指定された型のオブジェクトの生存期間を開始することをコンパイラに伝達する関数であるので、実行時に何かをするわけではありません。おそらく定義としてはほぼ何もしない関数になるでしょう。
+
+```cpp{style=cppstddecl}
+namespace std {
+  // 単一オブジェクト用
+  template<class T>
+  T* start_lifetime_as(void* p) noexcept;
+
+  template<class T>
+  const T* start_lifetime_as(const void* p) noexcept;
+  template<class T>
+  volatile T* start_lifetime_as(volatile void* p) noexcept;
+  template<class T>
+  const volatile T* start_lifetime_as(const volatile void* p) noexcept;
+
+  // 配列用
+  template<class T>
+  T* start_lifetime_as_array(void* p, size_t n) noexcept;
+
+  template<class T>
+  const T* start_lifetime_as_array(const void* p, size_t n) noexcept;
+  template<class T>
+  volatile T* start_lifetime_as_array(volatile void* p, size_t n) noexcept;
+  template<class T>
+  const volatile T* start_lifetime_as_array(const volatile void* p, size_t n) noexcept;
+}
+```
+
+単一オブジェクト用の関数と配列用の関数で2種類×4オーバーロードが用意されています。4パターンのオーバーロードは単にポインタのCV修飾を網羅するためのもので、関数の本質的な動作は同じです。
+
+配列用の`std::start_lifetime_as_array()`では、配列の領域の先頭ポインタとその長さを受け取って、その場所で`T`の配列オブジェクトの生存期間を開始してそのオブジェクトへのポインタを返します。注意点ですが、この関数は要素数が実行時に決まる配列型に対して使用するもので、要素数が静的に既知の配列型に対しては`start_lifetime_as()`を使用します。
+
+```cpp
+auto allocate_memory(std::size_t N) -> std::byte*;
+
+int main() {
+  std::byte* mem = allocate_memory(sizeof(int) * 10);
+
+  // 同じ領域に何度もオブジェクトを構築していることは無視して
+  auto* p1 = std::start_lifetime_as<int[5]>(mem); // ok、要素数既知の配列型の生存期間を開始
+  auto* p2 = std::start_lifetime_as<int[]>(mem);  // ub、要素数不明の配列型には使用できない
+
+  auto* p3 = std::start_lifetime_as_array<int>(mem, 10);    // ok、配列型`int[10]`の生存期間を開始
+  auto* p4 = std::start_lifetime_as_array<int[]>(mem, 10);  // ng、間違った使い方
+  auto* p5 = std::start_lifetime_as_array<int[5]>(mem, 2);  // ok、`int[5][2]`の生存期間を開始
+}
+```
+
+なお、`std::start_lifetime_as<T>()`で使用可能な型`T`は*implicit-lifetime type*である必要があり、その他の型では使用できません。ただし、配列型の場合は配列型そのものが要素型に関わらず*implicit-lifetime type*であるため、`std::start_lifetime_as_array()`では気にする必要はありません。
+
+もしこのようなメモリ領域に*implicit-lifetime type*ではない型のオブジェクトを構築したい場合は、配置`new`などを使用して明示的にコンストラクタを呼び出します。
+
+```cpp
+auto allocate_memory(std::size_t N) -> std::byte*;
+
+int main() {
+  std::byte* mem = allocate_memory(sizeof(std::vector<int>));
+  
+  auto* p1 = std::start_lifetime_as<std::vector<int>>(mem); // ng、std::vector<int>はimplicit-lifetime typeではない
+  auto* p2 = new (mem) std::vector<int>();    // ok、配置newでコンストラクタを呼び出し生存期間を開始
+
+  ...
+
+  std::destroy_at(p2);  // 明示的にデストラクタを呼び出す
+}
+```
+
+*implicit-lifetime type*ではない型の生存期間を終了するためにはデストラクタを明示的に呼び出す必要があります。
+
 ## `std::byteswap()`
 
 ##  std::allocator_traitsの特殊化禁止
