@@ -449,8 +449,120 @@ static_assert(std::random_access_iterator<std::move_iterator<int*>>); // ok、C+
 ```
 
 ### Poison Pillオーバーロードの削除
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2602r2.html
 
+Poison Pillオーバーロードとは、カスタマイゼーションポイントオブジェクト（CPO）の実装において使用されるテクニックで、`std`名前空間にある同名の関数を呼び出さないようにするためのものです。
+
+```cpp
+namespace std::ranges {
+
+  namespace impl {
+
+    // Poison Pillオーバーロード
+    // std::begin()を（名前探索的な意味で）毒殺する
+    void begin(auto&) = delete;
+    void begin(const auto&) = delete;
+
+    // ranges::begin CPOの実体
+    // 制約等は省略
+    struct begin_fn {
+
+      // ADLでbegin()を呼び出す
+      auto operator()(auto&& range) const {
+        return begin(range);  // ここではstd::begin()が見つからない
+      }
+
+    };
+  }
+
+  inline namespace cpo {
+    // ranges::begin CPO
+    inline constexpr impl::begin_fn begin;
+  }
+}
+```
+
+この例は`std::ranges::begin`CPOの効果の1つ（ADLによる非メンバ関数の探索）の簡略化された実装例です。`std::ranges::begin`の非メンバ関数探索ではADLによって探索が行われますが、`std::ranges::begin`自体が`std`名前空間で定義されているため非修飾名探索（ADLの1つ前の探索）において`std::begin()`が見つかってしまいます。この関数はC++20以前の古いものでありコンセプトによるチェックなどはなく使用する候補として適切ではないため、`std::ranges::begin`ではこれを呼び出さないようにしています。
+
+このことは標準ライブラリにあるほとんどのCPOに当てはまり、同様のテクニックが多用されています。
+
+一方で、このPoison PillオーバーロードはCPOにアダプトしたい型に対して不要な影響を及ぼしています。
+
+```cpp
+struct A {
+  friend auto begin(const A&) -> int const*;
+  friend auto end(const A&)   -> int const*;
+};
+
+struct B {
+  friend auto begin(B&) -> int*;
+  friend auto end(B&) -> int*;
+};
+```
+
+この2つの型はどちらも`range`コンセプトを満たすことが期待されます。しかし、`B`と`const A`は`range`ですが、`A`は`range`ではありません。
+
+これは、当初のPoison Pillオーバーロードが担っていたもう1つの役目である右辺値オブジェクトからのイテレータ取得禁止という効果の名残の悪影響によるものです。
+
+当初の`range`コンセプトでは右辺値の`range`は完全に禁止されていましたが、`std::string_view`のようにそのオブジェクトの生存期間とそこから取得できるイテレータの有効性が無関係であるような型は右辺値オブジェクトからイテレータを取得しても問題ないため、そのような型の右辺値も`range`コンセプトを満たすようにしたいという要望が上がりました。
+
+当初のRangeライブラリでは、そのハンドリングのためにPoison Pillオーバーロード（`begin(auto&&) = delete;`）を活用しました。型`A`で左辺値として`range`になれている状態でそれ以上何も準備せずに`begin(A{})`のように呼んだ時、Poison Pillオーバーロード（`begin(auto&&)`のもの）がADLによる候補よりも優先されるため`const`参照を取るオーバーロードだけでは右辺値オブジェクトからイテレータを取得できなくしています。右辺値オブジェクトに対して`begin`を有効にするには、`begin(A&&)`か`begin(A)`のようなオーバーロードを追加することでそれを明示するようにします。
+
+当初のRangeライブラリでは右辺値`range`をこのように非常に高度なテクニックによってオプトインするようにしていましたがこれには問題が多く（あ、あまりにも高度過ぎる）、これは後に`enable_borrowed_range`変数テンプレートによるより明確かつわかりやすいオプトイン方法に置き換えられ、現在に至っています。現在の`std::ranges::begin`をはじめとするCPOでは、`enable_borrowed_range`な型`R`に対して右辺値の入力を左辺値に実体化した上でディスパッチを行う（入力は常に左辺値として扱う）ことで規格の表現と実装を簡素化しています（規格ではこのことを*reified object*という用語で表現しています）。
+
+そのため、現在のPoison Pillオーバーロードには最初に紹介した`std`名前空間の同名関数の毒殺以外の役割はもはやありません。また、その変更によって、`std::ranges::begin`の行うディスパッチでは右辺値を直接扱うことがなくなったため`begin(auto&&)`という宣言ではPoison Pillオーバーロードが意図通りに機能しなくなり、現在の`auto&`と`const auto&`の2つのオーバーロードに置き換えられました。
+
+ここで、先ほどの例に戻ります。
+
+```cpp
+struct A {
+  friend auto begin(const A&) -> int const*;
+  friend auto end(const A&)   -> int const*;
+};
+
+struct B {
+  friend auto begin(B&) -> int*;
+  friend auto end(B&) -> int*;
+};
+```
+
+`A`のオブジェクトに対する`std::ranges::begin`はADLによって`A`の`begin()`（*Hidden frineds*定義のもの）を見つけてくれるはずで、そこでは2つのPoison Pillオーバーロードを含めたオーバーロード解決が行われます（`begin(auto&)`と`begin(const auto&)`）。前述のように、オーバーロード解決は実際の引数型の値カテゴリに関わらず`A`の左辺値オブジェクト（`A&`）に対して行われ、それに対しては`begin(const A&)`よりも`begin(auto&)`の宣言の方が優先順位が高くなります。そしてそれは`delete`されているため、素の型`A`に対する`range<A>`は`false`になります。しかし、`range<const A>`だとオーバーロード解決は`const A&`にマッチするため、定義されている`begin(const A&)`がPoison Pillオーバーロードよりも優先順位され、`range<const A>`は`true`となります。
+
+この例のようなコードは完全に合法かつ合理的であり、Poison Pillオーバーロードはそれを妨げています。Poison Pillオーバーロードを削除するとこの問題を解消できますが、Poison Pillオーバーロードにはまだ役割（`std`名前空間の同名関数の排除）が残ってます。
+
+しかしよく考えてみると、`std::begin(r)`は`r`がメンバ`begin()`を持っていたらそれを呼び出してくれるので、少なくとも標準ライブラリのものについてそれが呼び出されて困る理由はなく、`borrowed_range`であるか否かはすでに変数テンプレートによって弁別されるため、Poison Pillオーバーロードの有用な役割は実はもうありません。
+
+実のところ、Poison Pillオーバーロードの残った1つの役割が有用なのは`std::ranges::swap`のように、同名のメンバ関数を呼ぶのではなくADLで探しに行くようなCPOにおいてです。`std::swap()`は無制約であり、これを呼び出すと`swap`操作を定義しない任意の型（標準ライブラリ外のものも含めて）に対して`swap(a, b)`の呼び出しができてしまうため`std::swap()`は使用したくないのです。このことは特に、`std::swappable`コンセプトが`std::ranges::swap`を用いて定義されているため、そのコンセプトの有用性に直結します（`std`名前空間のものに対しては無条件で`std::swappable`が`true`になりうる）。
+
+ただこちらも、C++17以降はきちんと制約されていることが規定されているため、`std::swap()`にもPoison Pillオーバーロードは必要ありません。
+
+結局、標準ライブラリで唯一Poison Pillオーバーロードが必要なのは`std::ranges::iter_swap`だけです。これは`std::iter_swap()`について`std::swap()`と同様の問題がありますが、C++20でも`std::iter_swap()`は無制約であるため、ADLで`iter_swap()`を探しに行く際はPoison Pillオーバーロードが必要になります。
+
+これらの問題の対応のため、C++23では`std::ranges::iter_swap`以外のすべてのCPOの定義から、Poison Pillオーバーロードが取り除かれます。
+
+ただし、CPOが自分自身を発見しないためとグローバル名前空間で不必要な探索を行わないようにするために、CPOが非メンバ関数を探索する際はADLによって探索される（非修飾名探索がおこなわれない）ことが確実になるように追記します。この実装は単に、既存のPoison Pillオーバーロードが引数無しの宣言になるだけです。例えば`std::ranges::begin`なら、`void begin() = delete;`のようになります。
+
+```cpp
+namespace std::ranges {
+
+  namespace impl {
+
+    // C++20のPoison Pillオーバーロード
+    //void begin(auto&) = delete;
+    //void begin(const auto&) = delete;
+
+    // C++23で必要なもの
+    void begin() = delete;
+
+    struct begin_fn {
+
+      auto operator()(auto&& range) const {
+        return begin(range);
+      }
+
+    };
+  }
+}
+```
 
 # 文字列・フォーマット
 
