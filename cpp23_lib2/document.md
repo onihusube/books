@@ -1355,7 +1355,490 @@ auto f3(F&& f, Args&&... args) -> base {
 
 ## `std::move_only_function`
 
-## `std::bind_back()`
+`std::function`にはいくつか問題点が知られており、そのうちの一つにムーブのみが可能な（コピーできない）Callableオブジェクトを格納できないというものがあります。
+
+```cpp
+int main() {
+  auto lam = [m = std::make_unique<int>(10)](int n) -> int {
+    ...
+  };
+
+  static_assert(std::is_copy_constructible_v<decltype(lam)> == false);  // ✔
+
+  std::function<int(int)> func{std::move(lam)}; // ng
+}
+```
+
+これは、`std::function`が格納するものに対してコピー可能であることを求めているためです。
+
+これは`std::function`自体をコピー可能にするために、保持するものに対してもコピー可能であることを要求するためだと思われます。また、`std::function`はC++にムーブの概念が無かった時代に設計された`boost::function`をベースとしており、C++11でムーブセマンティクスとほぼ同時に導入されているため、ムーブについて考慮する時間が無かったのも理由にありそうです。
+
+C++23では、ムーブオンリーなCallableを格納するための汎用関数型として、`std::move_only_function`が導入されます。
+
+```cpp
+int main() {
+  auto lam = [m = std::make_unique<int>(10)](int n) -> int {
+    ...
+  };
+
+  static_assert(std::is_copy_constructible_v<decltype(lam)> == false);  // ✔
+
+  std::move_only_function<int(int)> func{std::move(lam)}; // ok
+}
+```
+
+ただし、`std::move_only_function`自身もムーブのみが可能でコピー不可な型となります。
+
+```cpp
+int main() {
+  ...
+
+  std::move_only_function<int(int)> func{std::move(lam)};     // ok
+  std::move_only_function<int(int)> func2 = func;             // ng
+  std::move_only_function<int(int)> func3 = std::move(func);  // ok
+}
+```
+
+### `const`の伝播と指定
+
+また、`std::function`の別の問題として`cosnt`性を正しく伝播して呼び出しが行えないというものもありました。
+
+```cpp
+#include <functional>
+
+struct F {
+  auto operator()() -> std::string_view {
+    return "operator()";
+  }
+
+  auto operator()() const -> std::string_view {
+    return "operator() const";
+  }
+};
+
+int main() {
+  F f1{};
+  const F& f2 = f;
+  
+  std::println("{}", f1());  // 非const版が呼ばれる
+  std::println("{}", f2());  // const版が呼ばれる
+
+  std::function<std::string_view()> func1{F{}};
+  const auto& func2 = func1;
+
+  std::println("{}", func1());  // 非const版が呼ばれる
+  std::println("{}", func2());  // 非const版が呼ばれる
+}
+```
+```{style=planetext}
+operator()
+operator() const
+operator()
+operator()
+```
+
+`std::function`自体の`operator()`は`const`修飾されているものの、内部で保持しているものの呼び出しを行うコンテキストは非`const`であるため、`std::function`は保持するメンバ関数の`const`修飾されたものを呼び出すことができず、その方法も提供されていません。
+
+標準ライブラリの`const`メンバ関数にはスレッドセーフ保証の意味合いもあるため、このことはともすればデータ競合を引き起こす可能性があります。
+
+`std::move_only_function`では保持する関数型の指定に`const`を指定することができ、これによって保持する関数の`const`有無を選択して呼び出すことができ、また`std::move_only_function`の`const`性が呼び出しコンテキスに適用されるようになります。
+
+```cpp
+#include <functional>
+
+struct F {
+  auto operator()() -> std::string_view {
+    return "operator()";
+  }
+
+  auto operator()() const -> std::string_view {
+    return "operator() const";
+  }
+};
+
+int main() {
+  std::move_only_function<std::string_view()> func1{F{}};
+  const auto& func2 = func1;
+  std::move_only_function<std::string_view() const> func3{F{}};
+  const auto& func4 = func3;
+
+  std::println("{}", func1());  // 非const版が呼ばれる
+  std::println("{}", func2());  // ng
+  std::println("{}", func3());  // const版が呼ばれる
+  std::println("{}", func4());  // const版が呼ばれる
+}
+```
+
+`func2`の呼び出しがコメントアウトされ改行出力されているとすると
+
+```{style=planetext}
+operator()
+
+operator() const
+operator() const
+```
+
+`std::move_only_function`のオブジェクト状態（`const`/非`const`）と`std::move_only_function`に指定された関数型によって呼び出し可能な関数は次のようになります
+
+|オブジェクト状態＼関数型|`R(Args...)`|`R(Args...) const`|
+|---|---|---|
+|非`const`|どちらも（非`const`優先）|`const`|
+|`const`|`❌`|`const`|
+
+行は`std::move_only_function`オブジェクトが`const`かどうか、列は`std::move_only_function<F>`の`F`に指定されている関数型で、表の要素はその組み合わせで呼び出すことのできる関数の`const`有無を表しています。そして、`❌`は呼び出し時にコンパイルエラーになることを表しています。
+
+すなわち、関数型に`const`と指定したら非`const`関数を呼び出すことはできず、関数型に`const`を指定しない場合に`const`状態から関数呼び出しを行うことができません。
+
+また、関数型に`const`を指定している場合は`std::move_only_function`オブジェクトそのものの`const`状態とは無関係に呼び出しを行うことができ、この時でも関数型で指定されたもの（`const`版）が呼び出されます。
+
+この動作は通常のメンバ関数の`const`修飾とオブジェクトの`const`の関係と一致しています。上記例だと`F`が両方を備えていたから少しわかりづらかったかもしれません。
+
+```cpp
+#include <functional>
+
+struct F {
+  // 非constオーバーロードを備えない
+  auto operator()() const -> std::string_view {
+    return "operator() const";
+  }
+};
+
+int main() {
+  F f1{};
+  const F& f2 = f1;
+
+  std::println("f1: {}", f1()); // const版が呼ばれる
+  std::println("f2: {}", f2()); // const版が呼ばれる
+
+  std::move_only_function<std::string_view() const> func1{F{}};
+  const auto& func2 = func1;
+
+  std::println("func1: {}", func1());  // const版が呼ばれる
+  std::println("func2: {}", func2());  // const版が呼ばれる
+  
+  std::move_only_function<std::string_view()> func3{F{}};
+  // 構築はできるものの、呼び出し可能な対象はない
+  const std::move_only_function<std::string_view()> func4{F{}};
+
+  std::println("func3: {}", func3()); // const版が呼ばれる
+  std::println("func4: {}", func4()); // ng
+}
+```
+
+`func4`の呼び出しがコメントアウトされているとすると
+
+```{style=planetext}
+f1: operator() const
+f2: operator() const
+func1: operator() const
+func2: operator() const
+func3: operator() const
+```
+
+ちなみに`std::function`で先程と同じ表を作るとこうなります
+
+|オブジェクト状態＼関数型|`R(Args...)`|`R(Args...) const`|
+|---|---|---|
+|非`const`|どちらも（非`const`優先）|`🤷‍♂️`|
+|`const`|どちらも（非`const`優先）|`🤷‍♂️`|
+
+`🤷‍♂️`は指定の方法が無い（`std::function<R() const>`はコンパイルエラー）ことを表しています。
+
+このように、`std::move_only_function`は保持する関数の`const`指定及び、呼び出し時の`const`性の正しい伝播をサポートしています。
+
+なお、`volatile`についてはサポートされていません。
+
+### 値カテゴリの伝播と指定
+
+`const`と同種の問題として、`std::function`は関数の参照修飾も正しく扱うことができず、`const`の場合と同様にオブジェクト状態を考慮した呼び出しを行えません。
+
+```cpp
+struct F1 {
+  auto operator()() & -> std::string_view {
+    return "operator() &";
+  }
+  auto operator()() && -> std::string_view {
+    return "operator() &&";
+  }
+};
+
+struct F2 {
+  auto operator()() && -> std::string_view {
+    return "operator() &&";
+  }
+};
+
+int main() {
+  F1 f1{};
+
+  std::println("f1 & : {}", f1()); // &版が呼ばれる
+  std::println("f1 &&: {}", std::move(f1)()); // &&版が呼ばれる
+
+  std::function<std::string_view()> func1{F1{}};
+
+  std::println("func1 & : {}", func1());  // &版が呼ばれる
+  std::println("func1 &&: {}", std::move(func1)());  // &版が呼ばれる
+
+
+  std::function<std::string_view()> func2{F2{}};  // ng
+}
+```
+
+`func2`の構築がコメントアウトされているとすると
+
+```{style=planetext}
+f1 & : operator() &
+f1 &&: operator() &&
+func1 & : operator() &
+func1 &&: operator() &
+```
+
+`std::move_only_function`では`const`の時と同様に、関数型に対して参照修飾を指定することができ、指定された関数型と`move_only_function`オブジェクトの状態によって適切な関数呼び出しが行われます。
+
+```cpp
+struct F1 {
+  auto operator()() & -> std::string_view {
+    return "operator() &";
+  }
+  auto operator()() && -> std::string_view {
+    return "operator() &&";
+  }
+};
+
+int main() {
+  std::move_only_function<std::string_view() &> func1{F1{}};
+
+  std::println("func1 & : {}", func1());  // &版が呼ばれる
+  std::println("func1 &&: {}", std::move(func1)());  // ng
+
+  std::move_only_function<std::string_view() &&> func2{F2{}};
+  
+  std::println("func2 & : {}", func2());  // ng
+  std::println("func2 &&: {}", std::move(func2)());  // &&版が呼ばれる
+  
+  std::move_only_function<std::string_view()> func3{F1{}};
+  
+  std::println("func3 & : {}", func3());  // &版が呼ばれる
+  std::println("func3 &&: {}", std::move(func3)());  // &版が呼ばれる!?
+}
+```
+
+ngになるケースは改行のみが出力されているとすると
+
+```{style=planetext}
+func1 & : operator() &
+
+
+func2 &&: operator() &&
+func3 & : operator() &
+func3 &&: operator() &
+```
+
+参照修飾を指定する場合は指定された参照修飾に合致する関数のみを呼び出すようになり、呼び出しにおいてはオブジェクトの状態（値カテゴリ）を考慮するようになります。
+
+参照修飾を指定しない場合の挙動は少し直感的ではないかもしれませんが、これもまた通常のCallableオブジェクトの呼び出しを再現しています。
+
+```cpp
+struct F1 {
+  auto operator()() -> std::string_view {
+    return "operator()";
+  }
+};
+
+int main() {
+  F1 f1{};
+  
+  std::println("f1 &  : {}", f1()); 
+  std::println("f1 && : {}", std::move(f1)());  // ok
+  
+  std::move_only_function<std::string_view()> func{F1{}};
+  
+  std::println("func & : {}", func());
+  std::println("func &&: {}", std::move(func)()); // ok
+}
+```
+```{style=planetext}
+f1 &  : operator()
+f1 && : operator()
+func & : operator()
+func &&: operator()
+```
+
+オブジェクト状態と関数型の参照修飾の指定による呼び出し可能な関数は次のようになります
+
+|オブジェクト状態＼関数型|`R(Args...)`|`R(Args...) &`|`R(Args...) &&`|
+|---|---|---|---|
+|`&`|無/`&`|無/`&`|`❌`|
+|`&&`|無/`&`|`❌`|無/`&&`|
+
+`❌`は呼び出せない（コンパイルエラーとなる）ことを表し、無/`&`/`&&`は呼び出される`operator()`の種別を表しています。無は参照修飾無しで`operator()`が宣言されていることを表しており、無と`&`/`&&`ありは同時にオーバーロードすることはできませんが、無で定義された`operator()`はどちらの値カテゴリ/参照修飾に対してもマッチし呼び出されます。
+
+### `noexcept`の指定
+
+さらに、`std::move_only_function`では関数の`noexcept`指定もサポートしています。
+
+```cpp
+auto f1() -> std::string_view {
+  return "f1()";
+}
+
+auto f2() noexcept -> std::string_view {
+  return "f2() noexcept";
+}
+
+int main() {
+  std::move_only_function<std::string_view()> func1{f1};
+  std::move_only_function<std::string_view() noexcept> func2{f2};
+  std::move_only_function<std::string_view()> func3{f2};  // ok
+  std::move_only_function<std::string_view() noexcept> func4{f1}; // ng
+
+  std::println("func1 : {}", func1());
+  std::println("func2 : {}", func2());
+  std::println("func3 : {}", func3());
+}
+```
+
+`func4`の構築がコメントアウトされているとすると
+
+```{style=planetext}
+func1 : f1()
+func2 : f2() noexcept
+func3 : f2() noexcept
+```
+
+指定しない場合は`noexcept`性は考慮されずに呼び出されますが、指定した場合は`noexcept`なもののみが呼び出されます。`noexcept`指定した場合に`noexcept`指定されている関数しか呼び出せない（保持できない）ようになるだけで、指定しない場合に指定されていない関数しか扱えなくなるわけではありません。
+
+`noexcept`なしと`noexcept(false)`、`noexcept`ありと`noexcept(true)`は同じ指定として扱われます。
+
+関数の`noexcept`指定は関数型に適用されるものの関数呼び出し時には考慮されないため、それによるオーバーロードや呼び分けはできません。`noexcept`の指定はあくまで、`move_only_function`の関数呼び出しが例外を投げないことを強く保証（あるいは要求）することができるようにするためのものです。そして、このために`move_only_function`の関数呼び出し時のnullチェックは強い事前条件になっており、`move_only_function`の関数呼び出しは`noexcept`指定によって完全に無例外にすることができます。
+
+`const`/参照修飾と`noexcept`の指定は互いに組み合わせて使用できます。例えば、`move_only_function<R() const & noexcept>`のような指定が可能です。この組み合わせによる呼び出し可能な候補について表を書くこともできなくはないのですが、かなり巨大かつ難解になってしまうのでここでは省略します（書いてみると勉強になるかもしれません）。
+
+
+### 改善点のまとめ
+
+まとめると、`std::move_only_function`は`std::function`に対して次のような改善がなされたものです
+
+1. ムーブのみが可能なものを扱える
+    - `std::unique_ptr`をキャプチャしたラムダのように、コピー不可能な*Callable*オブジェクトを受け入れられる
+2. 関数型に`const`/参照修飾や`noexcept`を指定可能
+    - `const`性や値カテゴリを正しく伝播できる
+3. 呼び出しには強い事前条件が設定される
+    - これによって、呼び出し時の`null`チェックが省略される
+    - 呼び出し時に`move_only_function`自体が例外送出しない
+4. `target_type()`および`target()`を持たない
+    - RTTIが不用になる
+
+なお、この1以外の改善を`std::function`に適用したもの（`move_only_function`のコピー対応版）については、`std::copyable_function`としてC++26で導入される予定です。
+
+### 実装について
+
+`std::move_only_function`の実装の基本は`std::function`と同じで、使用しないプライマリテンプレートに対して関数型によって部分特殊化したテンプレートを使用して行われます。
+
+```cpp{style=cppstddecl}
+namespace std {
+
+  // プライマリテンプレート
+  template<typename...>
+  class move_only_function;
+
+  // 関数型で特殊化
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...)> {
+    void* erase_ptr;
+
+    ...
+
+    R operator()(Args... args) {
+      // targe_funcは保持しているCallableとする
+      return std::invoke_r<R>(targe_func, std::forward<Args>(args)...);
+    }
+  };
+}
+```
+
+この部分特殊化の中で型消去によって任意のCallableを保持し、`operator()`を介して呼び出すようにします。実際は型消去によって呼び出しはさらに別の場所で行われ、実装の自由度としてSOO(Small Object Optimization)が許可されているためもう少し複雑になります。
+
+`std::move_only_function`が`std::function`と異なる最大の点は`const`/参照修飾に加えて`noexcept`の指定までサポートしている点です。これらはテンプレート化できないため別の方法が必要になりそうにも思えますが、実際には力業で解決されます。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<typename...>
+  class move_only_function;
+
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...)>;
+
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) const>;
+  
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) &>;
+  
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) noexcept>;
+
+  ...
+  
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) const && noexcept>;
+}
+```
+
+このように、部分特殊化の関数型で可能な組み合わせを網羅しておくことですべての指定を受け入れるようにすることができます。
+
+あとは、これらの特殊化それぞれでその指定に合わせた`operator()`と呼び出しを行うようにすることで、`move_only_function`は実装されます。
+
+```cpp{style=cppstddecl}
+namespace std {
+
+  ...
+
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) const> {
+    ...
+
+    R operator()(Args... args) const {
+      // targe_funcは保持しているCallableとする
+      return std::invoke_r<R>(std::as_const(targe_func), std::forward<Args>(args)...);
+    }
+  };
+  
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) &> {
+    ...
+
+    R operator()(Args... args) & {
+      return std::invoke_r<R>(targe_func, std::forward<Args>(args)...);
+    }
+  };
+  
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) noexcept> {
+    ...
+
+    R operator()(Args... args) noexcept {
+      return std::invoke_r<R>(targe_func, std::forward<Args>(args)...);
+    }
+  };
+
+  ...
+  
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) const && noexcept> {
+    ...
+
+    R operator()(Args... args) const && noexcept {
+      // targe_funcは保持しているCallableとする
+      return std::invoke_r<R>(std::move(std::as_const(targe_func)), std::forward<Args>(args)...);
+    }
+  };
+}
+```
+
+部分特殊化している関数型に指定されているものはそのままその特殊化の`operator()`に適用されるようにされます。`operator()`ではそれをさらに保持するCallableに適用することで`move_only_function`オブジェクト自体の状態と指定された関数型の両方を考慮した呼び出しを行います。
+
+実際にはここまでべた書きはされず可能な限り実装は共通化されるでしょうが、基本的にはこのように実装されるはずです。
 
 # memory
 
