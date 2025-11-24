@@ -1745,8 +1745,6 @@ namespace std {
   // 関数型で特殊化
   template<typename R, typename... Args>
   class move_only_function<R(Args...)> {
-    void* erase_ptr;
-
     ...
 
     R operator()(Args... args) {
@@ -1829,16 +1827,72 @@ namespace std {
     ...
 
     R operator()(Args... args) const && noexcept {
-      // targe_funcは保持しているCallableとする
       return std::invoke_r<R>(std::move(std::as_const(targe_func)), std::forward<Args>(args)...);
     }
   };
 }
 ```
 
+実際にはここまでべた書きはされず可能な限り実装は共通化されるでしょうが、基本的にはこのように実装されるはずです。
+
 部分特殊化している関数型に指定されているものはそのままその特殊化の`operator()`に適用されるようにされます。`operator()`ではそれをさらに保持するCallableに適用することで`move_only_function`オブジェクト自体の状態と指定された関数型の両方を考慮した呼び出しを行います。
 
-実際にはここまでべた書きはされず可能な限り実装は共通化されるでしょうが、基本的にはこのように実装されるはずです。
+このようになっているため、`move_only_function`の呼び出しを行った際に保持しているCallableに対してどのオーバーロードが呼び出されるのかは、`move_only_function`のテンプレートパラメータに指定したものに基づいて決定されます。`move_only_function`の関数型に修飾/`noexcept`を指定するとそれに合致するものしか呼び出せなくなるというよりは、呼び出し時にそれを指定して呼び出すようになるという方が素直かもしれません（`noexcept`は少し異なりますが）。
+
+保持するCallableが指定された関数型と修飾および`noexcept`有無によって呼び出し可能かどうかは`move_only_function`の構築・代入の時点で静的に検査され、呼び出し可能な候補が無い場合はそこでコンパイルエラーになります。`move_only_function`に対する呼び出し時点では、その状態（`const`/値カテゴリ）で呼び出し可能な`move_only_function::operator()`があるかどうか、だけが静的に検査されます。
+
+```cpp{style=cppstddecl}
+namespace std {
+
+  ...
+  
+  // 修飾等無しの場合の例
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...)> {
+    ...
+    
+    template<typename F>
+      requires std::is_invocable_r_v<R, std::decay_t<F> , Args...> &&
+               std::is_invocable_r_v<R, std::decay_t<F>&, Args...>
+    move_only_function(F&& f) {
+      ...
+    }
+
+    ...
+
+    // 修飾無しメンバ関数は非const状態なら値カテゴリによらず呼び出しが可能
+    R operator()(Args... args) {
+      // ただし、*thisは常に左辺値として扱う（区別可能な情報がない
+      return std::invoke_r<R>(targe_func, std::forward<Args>(args)...);
+    }
+  };
+
+  ...
+
+  // & noexcept の場合の例
+  template<typename R, typename... Args>
+  class move_only_function<R(Args...) & noexcept> {
+    ...
+
+    template<typename F>
+      requires std::is_nothrow_invocable_r_v<R, std::decay_t<F>&, Args...>
+    move_only_function(F&& f) {
+      ...
+    }
+
+    ...
+
+    // targe_funcの呼び出しがnoexceptであることはコンストラクタでチェック済み
+    R operator()(Args... args) & noexcept {
+      return std::invoke_r<R>(targe_func, std::forward<Args>(args)...);
+    }
+  };
+
+  ...
+}
+```
+
+実際には制約はもう少し複雑になります。
 
 # memory
 
