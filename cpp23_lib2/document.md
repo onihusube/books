@@ -2351,6 +2351,83 @@ int main() {
 
 ## `allocate_at_least()`
 
+例えば次のような`std::vector::reserve()`の呼び出しにおいて
+
+```cpp
+std::vector<char> v;
+v.reserve(37);
+
+...
+
+v.reserve(38);
+```
+
+使用される`operator new`（あるいはその内部の確保関数）が実際に37バイト丁度を確保する、という事はほぼありません（アライメントの制約やパフォーマンスの向上など、実装の都合による）。
+
+しかし、`std::vector`の内部実装からは実際にどれだけの量を確保したのかを知る方法が無いため、1回目の`reserve()`時に37バイト分のメモリ確保依頼しか行っていなければ、2回目の`reserve(38)`で再度のメモリ確保を行わずに38バイト目を安全に使用する方法はありません。
+
+`std::vector::reserve()`の実装は簡単には次のようになります
+
+```cpp
+void vector::reserve(size_t new_cap) {
+  if (capacity_ >= new_cap) return;
+
+  const size_t bytes = new_cap;
+  void *newp = alloc_.allocate(new_cap);
+  memcpy(newp, ptr_, capacity_);
+  
+  ptr_ = newp;
+  capacity_ = bytes;
+}
+```
+
+`capacity_`というのが使用可能なメモリ量を記録している`std::vector`のメンバに対応しますが、この実装においてはこれはあくまでユーザーが指定した値`new_cap`で更新されます。3行目の`::operator new`が実際に確保している`new_cap`を超える部分の領域サイズを知る方法はありません（実際の実装ではメモリ確保の回数を要素数に対して償却定数に抑える工夫がなされるのでもう少し複雑になる）。
+
+僅かではありますが、この余剰部分の量を知ることができればメモリ確保を行う回数を削減できる可能性があります。
+
+この用途のために、C++23では`std::allocator_traits`及び`std::allocator`のインターフェースとして`allocate_at_least()`が追加されます。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<typename Pointer, typename SizeType = size_t>
+  struct allocation_result {
+    Pointer ptr;
+    SizeType count;
+  };
+
+  template<typename T>
+  class allocator {
+    
+    ...
+
+    constexpr T* allocate(size_t n);
+    
+    constexpr allocation_result<T*> allocate_at_least(size_t n);  // 👈
+    
+    ...
+
+  };
+}
+```
+
+`allocate_at_least()`は`allocate()`同様にメモリ確保を行う関数ですが、その戻り値として確保した領域のポインタに加えて実際に確保して使用可能なサイズを返します。このサイズ情報を活用することで、要求したサイズを超えた部分のメモリ領域を安全に使用できるようになります。
+
+これによって、先ほどの`reserve()`実装は次のように改善できます
+
+```cpp
+void vector::reserve(size_t new_cap) {
+  if (capacity_ >= new_cap) return;
+
+  auto [newp, new_size] = alloc_.allocate_at_least(new_cap, return_size);  // 実際の確保サイズを受け取る
+  memcpy(newp, ptr_, capacity_);
+
+  ptr_ = newp;
+  capacity_ = new_size; // 実際に使用可能なサイズでキャパシティを更新
+}
+```
+
+この例のように標準ライブラリ実装内で活用される機能ではありますが、独自のコンテナを実装している場合も同様に恩恵を受けることができます。
+
 ## `std::start_lifetime_as()`
 
 C++20で導入された*implicit-lifetime type*と呼ばれるカテゴリの型は、その型のメモリが確保された後に暗黙的に生存期間が開始されます。
