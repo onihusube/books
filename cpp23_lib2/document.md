@@ -2700,6 +2700,35 @@ int main() {
 
 ## `std::to_underlying()`
 
+`std::to_underlying()`はある列挙型の値をその基底型の整数値へ変換する関数です。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template <class T>
+  constexpr underlying_type_t<T> to_underlying(T value) noexcept {
+    return static_cast<underlying_type_t<T>>(value);
+  }
+}
+```
+```cpp
+#include <utility>
+
+enum class E : std::uint32_t {
+  A = -1,
+  B = 10,
+  C = 23,
+};
+
+int main() {
+  E e = E::B;
+  auto se = std::to_underlying(e);
+
+  assrt(se == 10);  // ✅
+}
+```
+
+非常に小さく単純な関数ではありますが、このような変換処理は頻繁に必要になるため様々なコードベースで見かけることができます。また、上記の実装例のような正しいキャストを行い実装するのが案外難しかったことから標準ライブラリに追加されています。
+
 ## `std::forward_like()` 
 
 ## `std::optional`のモナディック操作
