@@ -2653,6 +2653,51 @@ C++23ではこの問題を解決するために、`std::allocator_traits`のユ�
 
 ## `std::visit()`の制限緩和
 
+`std::visit`は引数列の最後に受け取る`std::variant`をテンプレートで受け取っています。
+
+```cpp
+namespace std {
+  // visit()の宣言例（戻り値型指定をする方
+  template<typename R, typename Visitor, typename... Variants>
+  constexpr R visit(Visitor&& vis, Variants&&... vars);
+}
+```
+
+可変長引数で受けているのは複数の`std::variant`を同時に扱うことができるためですが、この`vars`に渡すことのできる型としては`std::variant`の特殊化のみでした。
+
+C++23からはそれが少し緩和され、`std::variant`（の任意の特殊化）を曖昧でない`public`な基底クラスとして持つ型でも呼べるようになります。
+
+```cpp
+// variantによってステートマシンを表現する例
+struct State : public std::variant<Disconnected, Connecting, Connected> {
+  using std::variant::variant;
+  
+  // variantにはないこの用途での専用APIを追加する
+  bool is_connected() const {
+    return std::holds_alternative<Connected>(*this);
+  }
+  
+  friend std::ostream& operator<<(std::ostream&, const State&) {
+    ...
+  }
+};
+
+int main() {
+  State state = ...;
+
+  if (state.is_connected()) {
+    ...
+  }
+
+  // 状態に応じた処理にvisit()を使用
+  std::visit(overloaded {
+      [](const Disconnected& s) { ... },
+      [](const Connecting& s) { ... },
+      [](const Connected& s) { ... },
+    }, state);  // ok、State型でもvisit()が使える
+}
+```
+
 ## `std::to_underlying()`
 
 ## `std::forward_like()` 
