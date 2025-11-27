@@ -2803,12 +2803,63 @@ void do_something(int number_that_is_only_0_1_2_or_3) {
 
 規格的には、`std::unreachable()`は決して満たされない事前条件を持っていることで呼び出しが行われた瞬間に事前条件違反が発生することで未定義動作となり、未定義の呼び出しを伴うことによってコンパイラはその場所が実行されないと仮定する事ができ、それによって到達不能性を表現します。ちなみに、この決して満たされない事前条件は"`false` is `true`"と指定されています。
 
-## `std::exchange`の`noexcept`指定調整
+## `std::exchange`の`noexcept`指定
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2401r0.html
+`std::exchange`はオブジェクトの値の交換を行うことができる関数であり、うまく利用すると地味に便利に使用することができるユーティリティ関数です。しかし、C++20までは`std::exchange`は`noexcept`指定されておらず、これを使用した関数の`noexcept`を書くのが少し面倒でした。
 
-## `std::apply`の`noexcept`調整
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2517r1.html
+```cpp{style=cppstddecl}
+namespace std {
+  // 規格に規定されているexchangeの定義の例
+  template<class T, class U = T>
+  constexpr T exchange(T& obj, U&& new_val) { // noexceptは規定にない
+    T old_val = std::move(obj);
+    obj = std::forward<U>(new_val);
+    return old_val;
+  }
+}
+```
+
+指定されている実装を見ると、例外を投げうるのは1行目の`T`のムーブ構築と、2行目の`U -> T`のムーブ代入、`return`文における暗黙ムーブ時の`T`のムーブ構築です。そのため、`std::exchange`が例外を投げるかどうかは`std::is_nothrow_move_constructible<T>`と`std::is_nothrow_assignable<T&, U>`によって求めることができます。
+
+C++23からは、これらを条件とした`noexcept`が`std::exchange`に付加されるようになります。
+
+```cpp{style=cppstddecl}
+namespace std {
+  // 規格に規定されているexchangeの定義の例
+  template<class T, class U = T>
+  constexpr T exchange(T& obj, U&& new_val)
+    noexcept(is_nothrow_move_constructible<T> && is_nothrow_assignable<T&, U>)
+  {
+    ...
+  }
+}
+```
+
+これにより、`std::exchange`を使用する関数の`noexcept`指定は`noexcept(noexcept(std::exchange(...)))`のように書くことかできるようになります。
+
+## `std::apply`の`noexcept`指定
+
+C++20では、`std::exchange`同様に`std::apply`でも`noexcept`指定がされていませんでした。
+
+```cpp{style=cppstddecl}
+namespace std {
+  // 説明専用関数
+  template<class F, class Tuple, size_t... I>
+  constexpr decltype(auto)
+    apply-impl(F&& f, Tuple&& t, index_sequence<I...>) {
+      return invoke(forward<F>(f), get<I>(forward<Tuple>(t))...)
+    }
+
+  template<class F, class Tuple>
+  constexpr decltype(auto)
+    apply(F&& f, Tuple&& t) { // noexceptは規定にない
+      return apply-impl(forward<F>(f), forward<Tuple>(t),
+                  make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{});
+    }
+}
+```
+
+こちらの場合は少し実装が複雑ですが、`apply-impl()`で利用可能なテンプレート引数等を用いると、`noexcept(invoke(forward<F>(f), get<I>(forward<Tuple>(t))...))`のように指定でき、C++23ではこれが`std::apply()`の`noexcept`として指定されるようになります。
 
 ## tuple-likeオブジェクトの相互変換
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2165r4.pdf
