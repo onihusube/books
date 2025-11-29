@@ -2723,7 +2723,7 @@ int main() {
   E e = E::B;
   auto se = std::to_underlying(e);
 
-  assrt(se == 10);  // ✅
+  assert(se == 10);  // ✅
 }
 ```
 
@@ -2732,6 +2732,157 @@ int main() {
 ## `std::forward_like()` 
 
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2445r1.pdf
+
+`std::forward_like()`はDeducing thisを用いた関数においてそのメンバ変数を適切に完全転送するために使用するユーティリティ関数であり、`std::forward()`とよく似たものです。
+
+Deducing thisについては「C++23 コア言語機能」を参照していただくことにして、そこでは`std::optional`の様なクラス型においての`.value()`関数の実装を集約する例を挙げていました。分かりやすく単純化すると次のようなコードになりますが、この時にメンバの完全転送をどのように記述するかが問題になります
+
+```cpp
+template<typename T>
+struct wrap {
+  T v;
+
+  template<typename Self>
+  auto value(this Self&& self) -> decltype(auto) {
+    return std::forward<Self>(self).v;  // あってる？
+  }
+};
+```
+
+`this`引数をテンプレート化することによって、`*this`の値カテゴリをそのテンプレートパラメータ`Self`から取得できるようになり、それを用いることで4種のオーバーロードを1つにまとめられるようになりました。しかし、`std::forward<Self>(self).v`は本当にあらゆる場合に適切な完全転送になっているのでしょうか？
+
+`*this`の状態（`const`と値カテゴリ）とメンバ変数の宣言型（`const`/参照修飾の有無）、それらの組み合わせ時の`std::forward<Self>(self).v`の型を一覧すると次の表のようになります
+
+|`this`（`self`）|メンバ（`v`）|`std::forwad(self).v`|
+|---|---|---|
+|||`&&`|
+|`&`||`&`|
+|`&&`||`&&`|
+|`const`||`const &&`|
+|`const &`||`const &`|
+|`const &&`||`const &&`|
+
+表中の空白は`const`も参照修飾もない状態です（`this`の場合はコピーされている、すなわち*prvlaue*の状態、変数の場合は`const`でも参照でもない状態）。
+
+メンバ変数が普通に（`const`でも参照でもなく）宣言されている場合は問題ないように見えます。
+
+次はメンバ変数が`const`である場合です
+
+|`this`（`self`）|メンバ（`v`）|`std::forwad(self).v`|
+|---|---|---|
+||`const`|`const &&`|
+|`&`|`const`|`const &`|
+|`&&`|`const`|`const &&`|
+|`const`|`const`|`const &&`|
+|`const &`|`const`|`const &`|
+|`const &&`|`const`|`const &&`|
+
+ここも正しい結果になっていそうです。では次はメンバ変数が参照である場合です
+
+|`this`（`self`）|メンバ（`v`）|`std::forwad(self).v`|
+|---|---|---|
+||`&`|`&`|
+|`&`|`&`|`&`|
+|`&&`|`&`|`&`|
+|`const`|`&`|`&`|
+|`const &`|`&`|`&`|
+|`const &&`|`&`|`&`|
+||`&&`|`&`|
+|`&`|`&&`|`&`|
+|`&&`|`&&`|`&`|
+|`const`|`&&`|`&`|
+|`const &`|`&&`|`&`|
+|`const &&`|`&&`|`&`|
+
+ここで問題が起きています。`std::forwad(self).v`ではメンバが参照型だと`*this`の値カテゴリや状態に関係なく左辺値（`&`）として扱われてしまいます。`const`は適用されることが望ましく、両方が右辺値（参照）であるならば結果もまた右辺値になる方が直観的です。
+
+`const`と参照の組み合わせでも同じ問題が発生しています
+
+|`this`（`self`）|メンバ（`v`）|`std::forwad(self).v`|
+|---|---|---|
+||`const &`|`const &`|
+|`&`|`const &`|`const &`|
+|`&&`|`const &`|`const &`|
+|`const`|`const &`|`const &`|
+|`const &`|`const &`|`const &`|
+|`const &&`|`const &`|`const &`|
+||`const &&`|`const &`|
+|`&`|`const &&`|`const &`|
+|`&&`|`const &&`|`const &`|
+|`const`|`const &&`|`const &`|
+|`const &`|`const &&`|`const &`|
+|`const &&`|`const &&`|`const &`|
+
+このように、`std::forwad(self).v`ではメンバ変数が参照である場合の完全転送が正確ではありません。
+
+`std::forward_like()`は、このような場合に`*this`の状態とメンバ変数の宣言型に応じてそれらをマージした形の最適な完全転送を実現するためのユーティリティです。
+
+```cpp
+template<typename T>
+struct wrap {
+  T v;
+
+  template<typename Self>
+  auto value(this Self&& self) -> decltype(auto) {
+    return std::forward_like<Self>(self).v;
+  }
+};
+```
+
+`std::forward_like()`の場合、先ほど問題のあったメンバ変数が参照である場合にも正しい完全転送を行えます。先ほどの表に`std::forward_like()`の結果を追記するとつぎのようになります（列表記を一部省略しています）
+
+|`this`|`v`|`std::forwad`|`std::forward_like`|
+|---|---|---|---|
+||`&`|`&`|`&&`|
+|`&`|`&`|`&`|`&`|
+|`&&`|`&`|`&`|`&&`|
+|`const`|`&`|`&`|`const &&`|
+|`const &`|`&`|`&`|`const &`|
+|`const &&`|`&`|`&`|`const &&`|
+||`&&`|`&`|`&&`|
+|`&`|`&&`|`&`|`&`|
+|`&&`|`&&`|`&`|`&&`|
+|`const`|`&&`|`&`|`const &&`|
+|`const &`|`&&`|`&`|`const &`|
+|`const &&`|`&&`|`&`|`const &&`|
+
+このように、メンバ変数が参照である場合も適切に`*this`の状態が適用されるようになります。なお、メンバ変数が参照でも`const`でもない場合は`std::forwad`の結果と変わりません。
+
+メンバが`const`参照である場合も同様に修正されます
+
+|`this`|`v`|`std::forwad`|`std::forward_like`|
+|---|---|---|---|
+||`const &`|`const &`|`const &&`|
+|`&`|`const &`|`const &`|`const &`|
+|`&&`|`const &`|`const &`|`const &&`|
+|`const`|`const &`|`const &`|`const &&`|
+|`const &`|`const &`|`const &`|`const &`|
+|`const &&`|`const &`|`const &`|`const &&`|
+||`const &&`|`const &`|`const &&`|
+|`&`|`const &&`|`const &`|`const &`|
+|`&&`|`const &&`|`const &`|`const &&`|
+|`const`|`const &&`|`const &`|`const &&`|
+|`const &`|`const &&`|`const &`|`const &`|
+|`const &&`|`const &&`|`const &`|`const &&`|
+
+`std::forward_like()`の型決定モデルでは、`*this`の`const`/値カテゴリの状態とメンバ変数の宣言型の`const`/参照修飾の状態をマージした結果を生成します。この時、`*this`の状態を参照そのものではなく参照先にも適用するような決定モデルになっています。そのため、参照メンバは`*this`が右辺値であれば右辺値参照になります。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class T, class U>
+  constexpr auto forward_like(U&& x) noexcept -> ...;
+}
+```
+
+`std::forward_like`のテンプレートパラメータ`T`はユーザーが明示的に指定するもので、これは通常`this Slef&& self`のようにテンプレートパラメータ`Self`で`this`引数を受けているときの`Self`を指定します。`U`はテンプレート引数推論によって決定されるもので通常ユーザーが指定する必要はありません。
+
+また、`this auto&& self`のように引数を受ける場合は`decltype(self)`を`T`に指定すればokです
+
+```cpp
+auto value(this auto&& self) -> decltype(auto) {
+  return std::forward_like<decltype(self)>(self).v;
+}
+```
 
 ## `std::optional`のモナディック操作
 
