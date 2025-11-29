@@ -2884,7 +2884,139 @@ auto value(this auto&& self) -> decltype(auto) {
 }
 ```
 
-## `std::optional`のモナディック操作
+## `std::optional`のモナドインターフェース
+
+「C++23 ライブラリ機能1」で紹介した`std::expected`はモナドインターフェースを持っていましたが、`std::optional`にもほぼ同じものが導入されます。ただし`std::optional`の無効値が`std::nullopt`固定という事情もあり、一部だけかつ微妙に違いがあります。
+
+まず、`std::optional`のモナドインターフェースとして導入されるのは次の3つです
+
+- `.and_then(f)`: `std::optional<T>` -> `std::optional<U>`
+    - `f`: `T` -> `std::optional<U>`
+- `.or_else(f)`: `std::optional<T>` -> `std::optional<T>`
+    - `f`: `void` -> `std::optional<U>`
+- `.transform(f)`: `std::optional<T>` -> `std::optional<U>`
+    - `f`: `T` -> `U`
+
+`.and_then()`と`.transform()`は`std::expected`のそれと同じものとなりますが、`.or_else()`だけが少し異なっています。
+
+`.or_else()`に渡す関数は引数として`std::nullopt_t`を受け取るのではなく何も受け取らず、戻り値は任意の`std::optional<U>`ではなく呼び出した`std::optional<T>`と同じ型の`std::optional<T>`を返す必要があります（その有効状態を切り替えることはできます）。
+
+そのほか動作や役割などは`std:expected`のものと共通しています（詳しい説明は「C++23 ライブラリ機能1」もご覧ください）。
+
+`.and_then()`のサンプルコード
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs)
+  -> std::optional<std::string>;
+
+void example() {
+  // ファイルを開いて内容を出力してから返す
+  auto res = attempt_to_open("file.txt")
+                .and_then(extract_content)
+                .and_then([](auto file_str) {
+                   std::println("file content: {:s}", file_str);
+                   return std::optional<std::string>{std::move(file_str)};
+                 });
+
+  ...
+}
+```
+
+`attempt_to_open()`か`extract_content()`が失敗によって無効値を保持する`optional`を返した場合、`res`は無効状態になります。
+
+`.or_else()`のサンプルコード
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs)
+  -> std::optional<std::string>;
+
+// ファイルオープンエラーをハンドリング、
+auto on_error() -> std::optional<std::string> {
+  // 空文字のstringに変換
+  return { "" };
+}
+
+void example() {
+  // ファイルを開いてエラーを処理する
+  auto res = attempt_to_open("file.txt")
+                .and_then(extract_content)
+                .or_else(on_error);
+
+  assert(res.has_value());  // ✅
+
+  ...
+}
+```
+
+この場合、`.or_else(on_error)`は前の2つの処理が失敗（無効値）を返した場合にのみ呼ばれて、エラー状態を空文字列に変換することで最終的な`res`は常に有効状態となります。
+
+`.transform()`のサンプルコード
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs) -> std::string;
+
+void example() {
+  // ファイルを開いて内容を出力してから返す
+  auto res = attempt_to_open("file.txt")
+                .transform(extract_content)
+                .transform([](auto file_str) {
+                  std::println("file content: {:s}", file_str);
+                  return file_str;
+                 });
+
+  ...
+}
+```
+
+`.transform()`に渡す処理は`optional`が有効状態の場合のみ呼ばれるため、この場合の`res`は`attempt_to_open()`の結果によって無効状態になりえます。`.transform()`は`optional`の有効状態を変更できないため、この場合に`extract_content`のエラーを`optional`の無効値という形で報告することはできません。
+
+なおこちらの`.transform()`は渡す関数の戻り値型を`void`にすることはできません。
+
+この3つの関数はいずれも`std::optional`そのものを返すため、メソッドチェーンの形で組み合わせて使用できます。
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルオープンエラーをハンドリング
+auto attempt_recovery()
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs)
+  -> std::string;
+
+// 読み取った内容を検証
+auto ensure_valid_content(std::string file_data)
+  -> std::optional<std::string>;
+
+
+void example() {
+  // ファイルを開いて内容を読み取って返す
+  auto res = attempt_to_open("file.txt")
+                .or_else(attempt_recovery)
+                .transform(extract_content)
+                .and_then(ensure_valid_content);
+
+  ...
+}
+```
 
 ## `std::unreachable()`
 
