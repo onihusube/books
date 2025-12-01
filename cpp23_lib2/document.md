@@ -3144,9 +3144,133 @@ namespace std {
 
 こちらの場合は少し実装が複雑ですが、`apply-impl()`で利用可能なテンプレート引数等を用いると、`noexcept(invoke(forward<F>(f), get<I>(forward<Tuple>(t))...))`のように指定でき、C++23ではこれが`std::apply()`の`noexcept`として指定されるようになります。
 
-## tuple-likeオブジェクトの相互変換
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2165r4.pdf
+##　`std::pair`と2要素`std::tuple`/`tuple`ライクな型との間での互換性の向上
 
+`std::pair<T, U>`と2要素の`std::tuple<T, U>`は意味論的に同一の型であり、標準ライブラリに両方が存在しているのは歴史的経緯以外の理由がありません。この2つの型は多くのインターフェースを共有していますが、一部非互換な部分があります。
+
+```cpp
+int main() {
+  std::pair p1{1, 3.0};
+
+  // pairからtupleを構築できるが
+  std::tuple t1{p1};  // ok
+
+  // tupleからpairを構築できない
+  std::pair<int, double> p2{t1};  // ng
+
+  // pairとtupleで比較できない
+  bool b = p1 == t1;  // ng
+  auto c = p1 <=> t1; // ng
+}
+```
+
+`std::tuple`のインターフェースのことをタプルプロトコルと呼び、タプルプロトコルを実装している型は`std::tuple`を使用できる場所で`std::tuple`の代わりに使用することができます。`std::pair`と2要素`std::tuple`の非互換はタプルプロトコルを介してその影響を大きくしています。標準ライブラリ中でタプルプロトコルを実装している型には次のものがあります
+
+- `std::array`
+- `subrange`
+- `view::enumrate`の参照型
+
+例えば、`std::map`等の連想コンテナはその要素型として`std::pair`を使用していますが、`std::pair`が`std::tuple`あるいは`tuple`ライクな型から構築できないことによって、`<ranges>`のAPIでは2要素の`std::tuple`の代わりに`std::pair`を使用するようにしています。
+
+```cpp
+auto tuple_seq() -> std::vector<std::tuple<int, std::string_view>>;
+auto pair_seq() -> std::vector<std::pair<int, std::string_view>>;
+
+int main() {
+  namespace ranges = std::ranges;
+
+  auto m1 = tuple_seq() | ranges::to<std::map>(); // ng
+  auto m2 = pair_seq() | ranges::to<std::map>();  // ok
+}
+```
+
+C++23では、このような`std::tuple`およびそれと互換のある型と`std::pair`との間の非互換性がかなり軽減されます。具体的には
+
+- 2要素`tuple`ライクな型から`std::pair`を構築できる
+- 現在`std::pair`から構築できる場所では、2要素の`tuple`ライクな型からも構築できる
+    - `std::tuple`そのものでも
+- `tuple`と`tuple`ライクな型との比較が定義される
+    - `==`と`<=>`
+- `std::tuple`と`tuple`ライクな型との間の`common_type`/`common_reference`が定義される
+
+などの変更がなされます。
+
+これによって、最初の例でできなかったことが可能になるとともに、それは`tuple`ライクな型へも展開されます。
+
+```cpp
+int main() {
+  std::pair p1{1, 3.0};
+
+  // pairからtupleを構築できる
+  std::tuple t1{p1}; // ok
+
+  // tupleからpairを構築できる
+  std::pair<int, double> p2{t1};  // ok、C++23から
+
+  // pairとtupleで比較できる
+  bool b = p1 == t1;  // ok、C++23から
+  auto c = p1 <=> t1; // ok、C++23から
+
+  // このことはtupleライクな型へも拡張される
+  std::array<int, 2> arr{1, 2};
+
+  std::pair<int, int> p3{arr};  // ok、C++23から
+  std::tuple<int, int> t2{arr}; // ok、C++23から
+
+  p3 == arr;  // ok、C++23から
+  t2 == arr;  // ok、C++23から
+}
+```
+
+また、`std::map`等連想コンテナが`std::pair`を使用し続けることは変わらないものの、この非互換性の緩和とそれを考慮したサポートの追加によって、2要素`tuple`ライクな型のシーケンス（イテレータ）からの変換が行えるようになります。
+
+```cpp
+auto tuple_seq() -> std::vector<std::tuple<int, std::string_view>>;
+auto pair_seq() -> std::vector<std::pair<int, std::string_view>>;
+
+int main() {
+  namespace ranges = std::ranges;
+
+  auto m1 = tuple_seq() | ranges::to<std::map>(); // ok、C++23から
+  auto m2 = pair_seq() | ranges::to<std::map>();  // ok
+}
+```
+
+ただし、これらの変更によって既存のコードがコンパイルエラーを起こす場合があります。
+
+一つは、条件演算子の結果型です
+
+```cpp
+// C++20まではxの型はtuple<int, int>
+// C++23からはコンパイルエラー（相互に変換可能になるため）
+auto x = true ? tuple{0,0} : pair{0,0};
+```
+
+もう一つは`std::tuple`への変換演算子とタプルプロトコルを両方備えていた場合です
+
+```cpp
+struct M {
+  operator tuple<int, int>() const { return {1, 1}; }
+};
+
+namespace std {
+  template <> struct tuple_size<M> : integral_constant<size_t, 2> { };
+  template <int I> struct tuple_element<I, M> { using type = int; };
+  template <int I> auto get(M) { return 2; }
+}
+
+int main() {
+  M m{};
+
+  // C++20まで、tuple<int, int>{1, 1}
+  // C++23から、tuple<int, int>{2, 2}
+  std::tuple t{};
+}
+```
+
+これは、新しく追加される`tuple`ライクな型から構築するコンストラクタが変換演算子呼び出しよりも優先されるためです。
+
+しかし、どちらのケースもかなり稀であり存在する可能性が低いと判断されたため、破壊的変更が受け入れられています。
 
 ## `std::barrier`の同期保証の変更
 
