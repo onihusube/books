@@ -3389,6 +3389,39 @@ C++23では、`std::barrier`の保証を次のように変更することでこ�
 
 ## `std::is_scoped_enum`
 
+`std::is_scoped_enum<E>`は、型`E`が列挙型かつスコープ付き列挙型（`enum class`）であるかを判定する型特性です。
+
+```cpp
+struct S {};
+enum E1 { A, B, C };          // スコープなし列挙型
+enum class E2 { A, B, C };    // スコープ付き列挙型
+
+static_assert(std::is_scoped_enum_v<S> == false);
+static_assert(std::is_scoped_enum_v<E1> == false);
+static_assert(std::is_scoped_enum_v<E2>); // enum classだけでtrue
+```
+
+スコープ付き列挙型だけを検出したい場合というのは非常に稀とは思われますが、提案ではC++11以前のレガシーなコードからの移行の際に旧来の列挙型からスコープ付き列挙型への変更を検出するのに使用した、という実用例が報告されています。
+
+### 実装について
+
+列挙型を検出することは`std::is_enum`で可能ですが、それがスコープ付き列挙型かどうかを検出するという部分がこの型特性の肝になります。これは単純に、列挙型の値がその基底型へ暗黙変換可能であるかどうかを調べることによって実装できます。
+
+```cpp
+template<typename E, bool = std::is_enum_v<E>>
+inline constexpr bool is_scoped_enum_check = false;
+
+// enum classは整数型へ暗黙変換できないのでそれを追加でチェックする
+template<typename E>
+inline constexpr bool is_scoped_enum_check<E, true>
+  = std::is_convertible_v<E, std::underlying_type_t<E>> == false;
+
+template<typename E>
+struct is_scoped_enum : std::bool_constant<is_scoped_enum_check<E>> {};
+```
+
+スコープ付き列挙型ではその列挙型の値を基底型含めた整数型に暗黙変換できないため、列挙型`E`に対する`std::is_convertible_v<E, std::underlying_type_t<E>>`は常に`false`となり、これを利用してスコープ付き列挙型を検出できます。
+
 ## 一時オブジェクトが参照に束縛されたことを検出する型特性
 
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2255r2.html
