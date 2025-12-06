@@ -3573,6 +3573,57 @@ struct func {
 
 ## `std::is_implicit_lifetime`
 
+C++20では*implicit-lifetime type*と呼ばれる型のカテゴリが導入されましたが、それは特定の一部の型というわけではなく、例えばユーザー定義型も含まれます。
+
+*implicit-lifetime type*ではない型に対しては配置`new`を使用して明示的に生存期間を開始する必要があるなど、プログラマが*implicit-lifetime type*を識別できる必要がありますがその手段は提供されていませんでした。
+
+他にも、自作のクラス型が当初は*implicit-lifetime type*だったものの変更の過程でその性質が失われた場合、静かに未定義動作を引き起こすことになります。これを静的に検査できればそのようなバグをコンパイルエラーとして報告することができます。
+
+`std::is_implicit_lifetime<T>`は、このために導入される*implicit-lifetime type*を識別するための型特性です。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class T>
+  struct is_implicit_lifetime;
+
+  template<class T>
+  inline constexpr bool is_implicit_lifetime_v = is_implicit_lifetime<T>::value;
+}
+```
+
+C++23時点で、*implicit-lifetime type*に該当する型は次のいずれかのものです
+
+- スカラ型
+- *implicit-lifetime class types*
+    - ユーザー定義デストラクタを持たない集成体型
+    - もしくは、少なくとも一つの資格のある（*eligible*）トリビアルなコンストラクタを持ち、かつ削除されていないトリビアルなデストラクタを持つ型
+- 配列型（要素型は問わない）
+- 上記の型のCV修飾付きの型
+
+特に、*implicit-lifetime class types*の「ユーザー定義デストラクタを持たない集成体型」という条件において、デストラクタがユーザー定義されているかどうかをユーザーコードで検出する方法が無いため、これをユーザーコードで再現することはできません。このことも、この型特性が必要になる理由の一つです。
+
+```cpp
+struct A { int x; };
+struct B { ~B() {} }; // implicit-lifetime typeではない
+union C { int x; double y; };
+struct D {
+  D() = default;  // 資格のあるトリビアルなコンストラクタ
+  ~D() = default; // 削除されていないトリビアルなデストラクタ
+  int x;
+};
+
+// スカラ型と配列型
+static_assert(std::is_implicit_lifetime_v<int>);
+static_assert(std::is_implicit_lifetime_v<std::string[10]>);
+
+// クラス型
+static_assert(std::is_implicit_lifetime_v<std::string> == false);
+static_assert(std::is_implicit_lifetime_v<A>);
+static_assert(std::is_implicit_lifetime_v<B> == false);
+static_assert(std::is_implicit_lifetime_v<C>);
+static_assert(std::is_implicit_lifetime_v<D>);
+```
+
 ## reference_wrapper のcommon_reference_tが参照型となる
 
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2655r3.html
