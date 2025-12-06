@@ -3424,7 +3424,152 @@ struct is_scoped_enum : std::bool_constant<is_scoped_enum_check<E>> {};
 
 ## 一時オブジェクトが参照に束縛されたことを検出する型特性
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2255r2.html
+標準ライブラリを始めとするジェネリックなライブラリでは、ある型`T`を別の型の値から変換して初期化する事がよく必要になります。この時、`T`が`const`参照型だと容易にダングリング参照が作成されます。
+
+```cpp
+using namespace std::string_literals;
+
+std::tuple<const std::string&> t1("hello");  // ub、ダングリング参照
+```
+
+例えばこの例での`t1`は常にダングリング参照を生成します。`std::string`の一時オブジェクトは`std::tuple`のコンストラクタの内側で作成され（引数を完全転送して内部変数を構築するコンストラクタが呼ばれるため）、内部で`const std::string&`を初期化した後、コンストラクタの完了と共に寿命が尽きます。このため、`std::string_view`で受けた時とは異なりこのコードは常に未定義動作となります。
+
+また、別の例として参照を返す`std::function`があります。
+
+```cpp
+std::function<const std::string&()> f = [] { return ""; };
+
+auto& str = f();  // ダングリング参照を返す
+```
+
+この場合は、`std::function`の`operator()`の中で保持する関数が呼び出される際にその戻り値が`std::function`の関数型に指定された戻り値型に暗黙変換されることで一時オブジェクトが生成され、その一時オブジェクトへの参照が返されます。このため、`str`は常にダングリング参照となります。
+
+この問題は上記例のように、標準ライブラリ内部ですら普通に起こりえます。そのうえ、一部の実装では標準ライブラリ内部で起こるコンパイラの警告を抑制していることがあるため、コンパイラの警告で気付くことができなくなる場合もあります。
+
+C++23では、このような一時オブジェクトが参照に束縛されたことを検出する型特性が2種類追加されます。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class T, class U>
+  struct reference_constructs_from_temporary;
+
+  template<class T, class U>
+  struct reference_converts_from_temporary;
+
+  template<class T, class U>
+  inline constexpr bool reference_constructs_from_temporary_v
+    = reference_constructs_from_temporary<T, U>::value;
+
+  template<class T, class U>
+  inline constexpr bool reference_converts_from_temporary_v
+    = reference_converts_from_temporary<T, U>::value;
+}
+```
+
+これらの型特性の名前の`constructs`と`converts`は検出する対象の構築（`T t(u)`）と変換（`T t = u`）の違いを表しています。この2つの型特性は、型`U`から`T`の構築/変換時に一時オブジェクトの寿命延長が発生する場合に`true`を返すものです。
+
+`R t(u);`あるいは`R t = u;`、`U = decltype(u)`として、このような変数初期化時に一時オブジェクトの寿命延長が発生するのは、次の場合です
+
+- `R`が`const T&`の参照型であり、`U`が`T`のprvalueである場合
+- `R`が`const T&`の参照型であり、`U`が`T`に変換可能である場合
+- `R`が`T&&`の参照型であり、`U`が`T`のprvalueである場合
+- `R`が`T&&`の参照型であり、`U`が`T`に変換可能である場合
+
+このいずれかに該当する場合に、参照`t`は`u`あるいは`u`から変換される一時オブジェクトを束縛し、なおかつその一時オブジェクトの寿命は`t`の寿命まで延長されます。通常の実行パスの変数として使用する際は問題ないのですが、クラスのメンバの初期化や関数の戻り値でこれが起こると、その一時オブジェクトの寿命は初期化や関数のスコープを抜けた時点で終了してしまい、ダングリング参照が発生します。
+
+したがって、この2つの型特性が`true`を返す場合はまず`T`が参照型である必要があります。
+
+```cpp
+// 単純に寿命延長が行われる場合
+static_assert(std::reference_constructs_from_temporary_v<const int&, int>);
+static_assert(std::reference_constructs_from_temporary_v<int&&, int>);
+static_assert(std::reference_converts_from_temporary_v<const int&, int>);
+static_assert(std::reference_converts_from_temporary_v<int&&, int>);
+
+// 変換された一時オブジェクトの寿命延長が行われる場合
+static_assert(std::reference_constructs_from_temporary_v<const int&, short>);
+static_assert(std::reference_constructs_from_temporary_v<int&&, short>);
+static_assert(std::reference_converts_from_temporary_v<const int&, short>);
+static_assert(std::reference_converts_from_temporary_v<int&&, short>);
+
+// 寿命延長が行われない（そもそもコンパイルエラーになる）場合
+static_assert(std::reference_constructs_from_temporary_v<int&, int> == false);
+static_assert(std::reference_converts_from_temporary_v<int&, int> == false);
+
+// 寿命延長が行われない（非参照の）場合
+static_assert(std::reference_constructs_from_temporary_v<int, int> == false);
+static_assert(std::reference_converts_from_temporary_v<int, int> == false);
+
+// 寿命延長が行われない（uが参照である）場合
+static_assert(std::reference_constructs_from_temporary_v<int&&, int&&> == false);
+static_assert(std::reference_converts_from_temporary_v<int&&, int&&> == false);
+static_assert(std::reference_constructs_from_temporary_v<const int&, int&&> == false);
+static_assert(std::reference_converts_from_temporary_v<const int&, int&&> == false);
+```
+
+ここでは`T`として`int`を例に使用していますが他のクラス型等でも同じです。ただし、クラス型の場合は変換可能のケースに変換コンストラクタや派生クラスから基底クラスへの変換なども含まれるようになります。
+
+この例で見る限りは`std::reference_constructs_from_temporary`と`std::reference_converts_from_temporary`は名前が異なり扱う初期化形式も異なっているものの、C++23時点では同じ`T, U`に対して同じ結果となるはずです。これは、参照の初期化において`T&& t(u);`と`T&& t = u;`の両方で寿命延長が発生する場合の条件が同じであるためです。
+
+名前が異なっているのはおそらく、将来的に両者の条件が異なる可能性を残しているためと考えられます。あるいは、`reference_constructs_from_temporary`はコンストラクタの文脈で、`reference_converts_from_temporary`は暗黙変換（関数戻り値）の文脈で使用するという使い分けを意識しているのかもしれません。
+
+### 標準ライブラリへの適用
+
+さらに、この新しい2つの型特性を利用して標準ライブラリ内で最初の例のような問題が起こる場所で使用して、ダングリング参照を生成するような変換が行われる場合にコンパイルエラーとして検出するようになります。これは次のものに対して適用されます
+
+- `std::pair`のコンストラクタ
+- `std::tuple`のコンストラクタ
+- `std::make_from_tuple()`
+- `std::invoke_r()`
+    - 正確には、標準規定で使用されている`INVOKE<R>`操作に対して適用される
+
+これによって、最初のダングリング参照を生成するような例はコンパイルエラーになるようになります。
+
+```cpp
+// ダングリング参照の形成を検出することでコンパイルエラーになる
+std::tuple<const std::string&> t1("hello");  // ng
+std::function<const std::string&()> f = [] { return ""; };  // ng
+```
+
+これは単純化したクラスで再現すると、次のようなことが行われています
+
+```cpp
+// std::tupleの単純化クラス
+template<typename T>
+struct wrap {
+  T t;
+
+  // Tに変換可能な型から構築するコンストラクタ
+  template<std::convertible_to<T> U>
+    requires (std::reference_constructs_from_temporary_v<T, U> == false) // 👈
+  wrap(U&& u)
+    : t(std::forward<U>(u))
+  {}
+};
+
+// std::functionの単純化クラス
+template<std::invocable F>
+struct func {
+  using R = const int&;
+
+  F f;
+
+  func(F&& f)
+    requires (std::reference_converts_from_temporary_v<R, std::invoke_result_t<F>> == false) // 👈
+    : f(std::forward<F>(f))
+  {}
+
+  auto operator()() -> R {
+    return std::invoke_r<R>(f);
+  }
+}
+```
+
+`wrap`のコンストラクタの場合は保持するメンバの初期化時、すなわち`T t(u);`のような初期化式においてダングリング参照が生成される（参照の寿命延長が起こる）かを検出したいため`reference_constructs_from_temporary`を使用しています。
+
+`func`のコンストラクタの場合はラップする関数の呼び出し時の戻り値型変換時、すなわち`R r = f();`の様な初期化式においてダングリング参照が生成されるかを検出したいため`reference_converts_from_temporary`を使用しています。
+
+なお、これらの型特性の実装はユーザーコードでは再現できず、コンパイラのサポートが必要です。
 
 ## `std::is_implicit_lifetime`
 
