@@ -3624,9 +3624,66 @@ static_assert(std::is_implicit_lifetime_v<C>);
 static_assert(std::is_implicit_lifetime_v<D>);
 ```
 
-## reference_wrapper のcommon_reference_tが参照型となる
+## `std::reference_wrapper<T>`と`T&`の間の`common_reference`を`T&`にする
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2655r3.html
+`std::common_reference`はC++20で追加された2つの型の間の共通の参照型を求める型特性です。
+
+`std::reference_wrapper<T>`は`T`の参照となるクラス型で、ほぼ`T&`と同様の働きをし、相互に変換することができます。
+
+```cpp
+int i = 1;
+std::reference_wrapper<int> jr = j; // ok、暗黙変換
+int& ir = std::ref(i);              // ok、暗黙変換
+
+int j = 2;
+int& r = false ? i : std::ref(j); // ng、型が一つに定まらない
+```
+
+ただ、2つの型が相互変換可能であるために条件演算子では型を1つに絞ることができずにエラーとなります。
+
+`std::common_reference`では、`std::basic_common_reference`が特殊化されていない場合にこの例の最後の条件演算子の結果型としてそれを求めようとし、それもだめなら`std::common_type`に頼ります。
+
+そのため、`std::common_reference_t<T&, std::reference_wrapper<T>>`の結果は、`std::common_type_t<T&, std::reference_wrapper<T>>`と同じになり、この型は`T`となります。
+
+```cpp
+static_assert(
+  std::same_as<
+    std::common_reference_t<int&, std::reference_wrapper<int>>,
+    int
+  >
+);
+```
+
+C++23ではこれが修正され、`std::common_reference_t<T&, std::reference_wrapper<T>>`の結果が`T&`になるように変更されます。
+
+```cpp
+static_assert(
+  std::same_as<
+    std::common_reference_t<int&, std::reference_wrapper<int>>,
+    int&
+  >
+);
+```
+
+また、`std::reference_wrapper`に対するCVと参照修飾も正しく扱えるようになります。
+
+```cpp
+static_assert(
+  std::same_as<
+    std::common_reference_t<int&, std::reference_wrapper<int>&>,
+    int&  // 以前はint
+  >
+);
+
+static_assert(
+  std::same_as<
+    std::common_reference_t<int&, const std::reference_wrapper<int>&>,
+    int&  // 以前はconst int&
+  >
+);
+```
+
+標準ライブラリ中でも`<ranges>`などで`std::common_reference`が使用されているため、この変更によってそれらの振る舞いも改善されます（コピーや一時オブジェクト生成が参照になるなど）。
 
 ## 比較コンセプトのムーブオンリー型対応
 
