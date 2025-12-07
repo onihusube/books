@@ -3865,41 +3865,96 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
 
 なお、このことは`std::print()`などでも同様に適用されます。
 
-# その他変更
+# 大域的な変更
+
+ここでは、大きくはないものの同種の変更がより広いライブラリ機能にわたるものについて簡単にまとめておきます。その性質上、個別に列挙する場合は抜けがあるかもしれませんがご容赦ください。
 
 ## constexpr対応
 
-### `std::unique_ptr`の`constxpr`対応
+次の関数はC++23から`constexpr`指定されるようになり、定数式で使用可能となります。
 
-### `std::bitset`の`constexpr`対応
-
-### `<cmath>`/`<cstdllib>`の数学関数
-
-### `std::type_info::operator==`の`constexpr`対応
-
-### `to_chars`/`form_chars`の整数型オーバーロード
-
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2291r3.pdf
-
-### `std::optional, std::variant`の一部の関数など
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2231r1.html
+- `std::unique_ptr`のメンバ関数と関連関数
+    - `nullptr`との比較ではない順序付け比較演算子（`<`など）は除く
+    - ハッシュサポートは除く
+- `std::bitset`のメンバ関数と関連関数
+    - `<<`は除く
+    - ハッシュサポートは除く
+- `<cmath>`/`<cstdllib>`の数学関数の一部
+    - `<cstdllib>`の`abs`/`div`系関数
+    - `<cmath>`では三角関数・双曲線関数・指数/対数関数・平方根などの主要な関数は対象外
+- `std::type_info::operator==`
+- `to_chars`/`form_chars`の整数型用オーバーロード
+- `std::optional, std::variant`の一部の関数
+    - これによって、`std::optional, std::variant`は全てのメンバ関数が`constexpr`対応した
 
 ## 非推奨化・削除
 
-### std::aligned_storage and std::aligned_union
+次のものは、C++23で非推奨となりました。削除されるまでは使用することができますが、なるべく早期に使用を辞めることが推奨されます。
 
-### std::numeric_limits::has_denorm
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2614r2.pdf
+- `std::aligned_storage`と`std::aligned_union`
+    - 正しく使用するのが難しく、間違って使用するのが簡単だったため
+- `std::std::allocator::is_always_equal`
+    - アロケータの状態の有無を表現する型だったが、定義を忘れることによるバグが多かったため
+- `std::numeric_limits::has_denorm`関連
+    - `std::numeric_limits::has_denorm_loss`
+    - `std::numeric_limits::has_denorm`
+    - `std::float_denorm_style`
+    - 非正規化数のサポート状況はコンパイル時定数で表現可能な性質ではなく、有効に使用することができなかったため
 
-### ガベージコレクション関連API
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2186r2.html
+次のものは、C++23で削除されたものです。非推奨と異なり、削除されたものは使用できなくなります。
 
-### いくつかのCヘッダの非推奨化解除
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2340r1.html
+- ガベージコレクション関連API
+    - `std::declare_reachable`
+    - `std::undeclare_reachable`
+    - `std::declare_no_pointers`
+    - `std::undeclare_no_pointers`
+    - `std::get_pointer_safety`
+    - `std::pointer_safety`
+    - `__STDCPP_STRICT_POINTER_SAFETY__`
+    - GCサポートのために役に立っていなかったため
+
+## 非推奨化の解除
+
+次のものは、以前に非推奨だったもののC++23で解除されたものです。
+
+- Cヘッダ
+  - `<cxxx>`に対する`xxx.h`
+  - Cの標準ライブラリヘッダ
 
 ## フリースタンディング対応
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p1642r11.html
+次のものは、C++23からフリースタンディングライブラリ機能であることが指定されるようになります。フリースタンディング機能は、組み込み環境などOSが無い環境で動くプログラムコードにおいても使用できるものです。
+
+- ヘッダの全体
+    - `<cstddef>`
+    - `<version>`
+    - `<limits>`
+    - `<climits>`
+    - `<cfloat>`
+    - `<cstdint>`
+    - `<new>`
+    - `<typeinfo>`
+    - `<source_location>`
+    - `<exception>`
+    - `<initializer_list>`
+    - `<compare>`
+    - `<coroutine>`
+    - `<cstdarg>`
+    - `<concepts>`
+    - `<utility>`
+    - `<tuple>`
+    - `<type_traits>`
+    - `<ratio>`
+    - `<bit>`
+- 一部の機能
+    - `<cstdlib>`
+    - `<memory>`
+    - `<functional>`
+    - `<iterator>`
+    - `<ranges>`
+    - `<atomic>`
+
+フリースタンディング機能の性質上、動的メモリ確保やスレッドサポート、iostreamに関するものは除かれています。
 
 \clearpage
 
