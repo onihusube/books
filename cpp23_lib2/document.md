@@ -3509,7 +3509,7 @@ static_assert(std::reference_converts_from_temporary_v<const int&, int&&> == fal
 
 ここでは`T`として`int`を例に使用していますが他のクラス型等でも同じです。ただし、クラス型の場合は変換可能のケースに変換コンストラクタや派生クラスから基底クラスへの変換なども含まれるようになります。
 
-この例で見る限りは`std::reference_constructs_from_temporary`と`std::reference_converts_from_temporary`は名前が異なり扱う初期化形式も異なっているものの、C++23時点では同じ`T, U`に対して同じ結果となるはずです。これは、参照の初期化において`T&& t(u);`と`T&& t = u;`の両方で寿命延長が発生する場合の条件が同じであるためです。
+`std::reference_constructs_from_temporary`と`std::reference_converts_from_temporary`は名前が異なり扱う初期化形式も異なっているものの、C++23時点では同じ`T, U`に対して同じ結果となるはずです。これは、参照の初期化において`T&& t(u);`と`T&& t = u;`の両方で寿命延長が発生する場合の条件が同じであるためです。直接初期化とコピー初期化の形式は値の初期化あれば`explicit`な変換が考慮されるかが異なりますが、参照の初期化の場合はどちらにおいても考慮されません。
 
 名前が異なっているのはおそらく、将来的に両者の条件が異なる可能性を残しているためと考えられます。あるいは、`reference_constructs_from_temporary`はコンストラクタの文脈で、`reference_converts_from_temporary`は暗黙変換（関数戻り値）の文脈で使用するという使い分けを意識しているのかもしれません。
 
@@ -3687,7 +3687,124 @@ static_assert(
 
 ## 比較コンセプトのムーブオンリー型対応
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2404r3.pdf
+`std::equality_comparable_with`を始めとする比較可能性を定義するコンセプトは、その定義内で`std::common_reference`を用いて共通参照型を求めて、そのうえでの比較の成立を要求しているところがあります。例えば、C++23時点では`std::equality_comparable_with`は次のように定義されていました
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class T, class U>
+  concept equality_comparable_with =
+    equality_comparable<T> && equality_comparable<U> &&
+    common_reference_with<
+      const remove_reference_t<T>&, 
+      const remove_reference_t<U>&
+    > &&
+    equality_comparable<
+      common_reference_t<
+        const remove_reference_t<T>&,
+        const remove_reference_t<U>&>> &&
+    weakly-equality-comparable-with<T, U>;
+}
+```
+
+このうち、`common_reference_with`によって`T, U`の共通参照型が存在することを要求しており、その後の`common_reference_t<const T&, const U&>`に対する`equality_comparable`によって共通参照型の上での同値比較可能性を要求しています。
+
+`common_reference_with<T, U>`で表現される共通参照型の定義においては、`T, U`はその共通参照型に変換可能であることを要求しており、これが`T`あるいは`U`がムーブオンリー型である場合に問題となります。
+
+```cpp
+// Tが何でもあったとしても
+static_assert(std::equality_comparable_with<std::unique_ptr<T>, std::nullptr_t>); // ng
+
+int main() {
+  std::unique_ptr<int> p;
+  p == nullptr; // ok、比較は可能であるはず
+}
+```
+
+`common_reference_with<T, U>`は次のように定義されます
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class T, class U>
+  concept common_reference_with =
+    same_as<common_reference_t<T, U>, common_reference_t<U, T>> &&
+    convertible_to<T, common_reference_t<T, U>> &&
+    convertible_to<U, common_reference_t<T, U>>;
+}
+```
+
+問題になるのは最後にある`convertible_to`の制約です。
+
+`std::equality_comparable_with<std::unique_ptr<T>, std::nullptr_t>`の場合、`std::common_reference_t<const std::unique_ptr<T>&, const std::nullptr_t&>`は`std::unique_ptr<T>`となり、`std::convertible_to<const std::unique_ptr<T>&, std::unique_ptr<T>>`が要求されますが、これは`std::unique_ptr`に`copyable`であることを要求することと同じであり、`std::unique_ptr`はムーブオンリー型なので満たされません。
+
+このため、`equality_comparable_with`中の`common_reference_with`の制約が満たされず、`std::equality_comparable_with<std::unique_ptr<T>, std::nullptr_t>`は常に満たされなくなります。
+
+これと同様のことが他の異種型間比較のコンセプトでも起こっており、次のものが該当します
+
+- `std::three_way_comparable_with`
+- `std::equality_comparable_with`
+- `std::totally_ordered_with`
+
+そもそもこのような共通参照型の上での比較可能性の要求は、`std::equality_comparable_with<T, U>`のように異なる型`T, U`の間の比較を定義するコンセプトにおいて2つの異なる型の間での比較（二項関係）を数学的に考えた時に、その2つの型を包含するような型`V`が存在してその上での二項関係が定義されている必要がある、という考え方によるものです。この型`V`を定義するのが`std::common_reference_t<T, U>`であり、`std::common_reference_with<T, U>`はそのような型`V`が存在することを指定します。
+
+これは実行時にそのような変換が行われるわけではなく、数学的な比較の定義をC++のコンセプト定義にエンコードする際に`common_reference`を使用しているだけです。そのため、`common_reference_with`を使用していることに実利的な意味があるわけではありません。
+
+C++23では、これらの異種型比較のコンセプトの`common_reference_with`要件がムーブオンリー型に対応できる別の説明専用コンセプトに置き換えられることで、ムーブオンリー型で動作しない問題が修正されます。ただし、共通参照型の上での比較可能性の要求とその背景にある数学的な考察についての意図には変化がありません。
+
+具体的にはまず、`common_reference_with`の代わりになる`comparison-common-type-with`という説明専用のコンセプトを導入します
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<
+    class T,
+    class U,
+    class C = common_reference_t<const T&, const U&>
+  >
+  concept comparison-common-type-with-impl =
+    same_as<
+      common_reference_t<const T&, const U&>,
+      common_reference_t<const U&, const T&>
+    > &&
+    requires {
+      requires
+        convertible_to<const T&, const C&> ||
+        convertible_to<T, const C&>;
+      requires
+        convertible_to<const U&, const C&> ||
+        convertible_to<U, const C&>;
+    };
+
+  template<class T, class U>
+  concept comparison-common-type-with = 
+    comparison-common-type-with-impl<remove_cvref_t<T>, remove_cvref_t<U>>;
+}
+```
+
+非常に複雑ですが、先ほどの`common_reference_with`の定義をベースにして、`convertible_to`の部分を`T`や`U`がムーブオンリー型である場合にも対応できるように変更したものです。比較系コンセプトでのみ使用するものであるため、そこで行われている`const`参照化の処理もここで行われています。
+
+そして、`std::equality_comparable_with`などの異種型比較のコンセプトにおいて、`common_reference_with`の部分をこの新しい`comparison-common-type-with`に置き換えます。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<class T, class U>
+  concept equality_comparable_with =
+    equality_comparable<T> && equality_comparable<U> &&
+    comparison-common-type-with<T, U> &&  // 👈
+    equality_comparable<
+      common_reference_t<
+        const remove_reference_t<T>&,
+        const remove_reference_t<U>&>> &&
+    weakly-equality-comparable-with<T, U>;
+}
+```
+
+これらの変更によって、`std::unique_ptr`における比較可能性を正しく表現できるようになります。
+
+```cpp
+// Tが何でもあったとしても
+static_assert(std::equality_comparable_with<std::unique_ptr<T>, std::nullptr_t>); // ok
+```
+
+また同時に、異種型間比較系コンセプトの意味論要件についても同様にムーブオンリー型を考慮するように調整が行われています。とはいえ、意味論要件が大きく変更されるわけではなく、共通参照型の上での比較に関連するところでコピーではなくムーブも考慮するようになるだけです。
 
 # chrono
 
