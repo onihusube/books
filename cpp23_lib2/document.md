@@ -3808,9 +3808,36 @@ static_assert(std::equality_comparable_with<std::unique_ptr<T>, std::nullptr_t>)
 
 # chrono
 
-## `time_point<>::clock`の要件緩和
+## `time_point`の時計型の要件緩和
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2212r2.html
+`std::chrono::time_point`は時間軸上の一点を指定する型で、その時間基準（始点（*epoch*）と分解能）を指定するために時計型と時間間隔を表す2つのテンプレートパラメータを受け取ります。
+
+```cpp{style=cppstddecl}
+namespace std::chrono {
+  template <class Clock, class Duration = typename Clock::duration>
+  class time_point;
+}
+```
+
+うち1つ目の時計型`Clock`には*Cpp17Clock*要件という要求がなされています。これは、`std::chrono::system_clock`や`std::chrono::steady_clock`などと同じ扱いができることを要求しています。
+
+一方、C++20ではローカル時間を表す型として`std::chrono::local_t`が導入されました。これは、`std::chrono::time_zone`とともに用いることで任意のタイムゾーンにおけるローカルの時刻を表現することができるものです。
+
+`local_t`に対する特殊化`std::chrono::time_point<local_t, Duration>`も提供されますが、`local_t`は空のクラスであり*Cpp17Clock*要件を満たしていません。規格では`local_t`だけを特別扱いする事で`time_point`を特殊化することを許可しています。
+
+この`local_t`のように、時計型ではないが任意の時間を表す型を定義し、その時間表現として`time_point`を特殊化することはユーザーコードでも有用ではあったものの、C++20では*Cpp17Clock*要件を満たすように実装する必要があり、かなり煩雑かつ制限がありました（`now()`が`static`メンバ関数でないとならないなど）。
+
+C++23ではこの制限が緩和され、`std::chrono::time_point`の`Clock`テンプレートパラメータ（1つ目の引数）としてユーザーが提供する任意の型を使用できるようになります。
+
+この提案文書では、次のようなユースケースが紹介されています
+
+- 状態を持つ時計型を扱いたい場合（非`static`な`now()`を提供したい）
+- 異なる`time_point`で1日の時間を表現したい場合
+    - 年月日のない24時間のタイムスタンプで表現される時刻を扱う
+- 手を出せないシステムが使用している`time_point`を再現したい場合
+- 異なるコンピュータ間のタイムスタンプを比較・処理する場合
+
+この変更がなされたとしても既存のライブラリ機能とそれを使ったコードに影響はなく、`local_t`が既にあることから実装にも影響はありません。
 
 ## エンコーディングによる`format()`に振舞いの明確化
 
