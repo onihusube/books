@@ -34,12 +34,7 @@ okuduke:
 
 C++の最新の事情を知るにはほぼ毎月公開されている提案文書を読むのが確実ですが、それにはかなりの労力が必要です。それをやってくれている人ももはや少なく、最新のC++に関する（特に日本語の）記事もあまりない中で、それでもC++の最新の機能に興味がある方の要望に応えるために本書があります。本書を読むことによって、C++23の一端に触れることができ、それがどのように使用できてどのように役立つのかを学ぶことができます。
 
-本書はC++23で追加された標準ライブラリ機能のうち、ヘッダ単位でまとまるような大きなものについて解説する本です。C++23の言語機能に関する解説は既刊の「C++23 コア言語機能」で解説しています。また、次のライブラリヘッダについては「C++23 コア言語機能」で解説を行っているため、ここでは省略しています
-
-- `<stdfloat>`
-- `<generator>`
-
-これら以外のライブラリ機能の細かい修正や改善等については、引き続き「C++23 ライブラリ機能2」として刊行予定です。
+本書はC++23で追加された標準ライブラリ機能のうち、ヘッダ単位未満の小さめの機能について解説する本です。特に、「C++23 ライブラリ機能1」で取り扱われなかったC++23で追加されたライブラリ機能の残りの部分の解説を行っています。
 
 ## 注意など
 
@@ -49,7 +44,7 @@ C++の最新の事情を知るにはほぼ毎月公開されている提案文�
 
 ## サンプルコードのお約束
 
-- ヘッダのインクルード/インポートはすべて省略し、サンプルコードの最初で`import std;`しているものとします。
+- ヘッダのインクルード/インポートは基本的に省略し、サンプルコードの最初で`import std;`しているものとします。
 - 主題と関係ないところを`...`で省略していることがあります。
 - 行の末尾コメントで`ok/ng`と表示することで、それがコンパイル可能かどうかを示しています。`// ok`はコンパイルが通り未定義動作がないこと、`// ng`はコンパイルエラーとなることをそれぞれ表しています。
 
@@ -171,7 +166,7 @@ auto dv3 = std::vector(pv, &mr);  // ng
 
 ここで起きていることは先ほどとは少し異なっており、CTADが暗黙に生成される推論補助を利用する経路で問題が起きています。
 
-CTADでは、明示的に定義された推論補助に加えてコンストラクタから生成した推論補助が使用されます。ここではアロケータを受け取るコピーコンストラクタから生成された推論補助が使用されており、
+CTADでは、明示的に定義された推論補助に加えてコンストラクタから生成した推論補助が使用されます。ここではアロケータを受け取るコピーコンストラクタから生成された推論補助が使用されています。
 
 ```cpp
 namespace std {
@@ -256,7 +251,7 @@ auto dv3 = std::vector(pv, &mr);  // ok、C++23
 C++20の`std::pair`では、要素のデフォルトコンストラクタ呼び出しを意図して`{}`を引数に渡すと、静かに一時オブジェクトを生成してそれをコピーしてしまう場合があります。
 
 ```cpp
-// std::stringとstd::vector<std::string>の一時オブジェクトが作られ、コピーされる
+// stringとvector<string>の一時オブジェクトが作られ、コピーされる
 std::pair<std::string, std::vector<std::string>> p("hello", {});
 ```
 
@@ -272,24 +267,23 @@ namespace std {
     ...
 
     // 引数をコピーして構築するコンストラクタ
-    explicit(...) constexpr pair(const T1& x, const T2& y); // #1
+    explicit(...) constexpr pair(const T1& x, const T2& y); // (1)
 
     // 引数を完全転送して構築するコンストラクタ
     template <class U, class V>
-    explicit(...) constexpr pair(U&& x, V&& y); // #2
-
+    explicit(...) constexpr pair(U&& x, V&& y); // (2)
     ...
   };
 }
 ```
 
-このコンストラクタのうち`#2`を使用してほしいわけです。しかし、引数に`{}`を指定していると`{}`からコンストラクタ引数のテンプレートパラメータを推論することができないため`#2`はオーバーロード解決時に候補から外され、代わりに`#1`が選択されます。`#1`はコンストラクタテンプレートではないため`std::pair`のテンプレートパラメータが指定されていれば良く、`{}`の型が分かります。
+このコンストラクタのうち`(2)`を使用してほしいわけです。しかし、引数に`{}`を指定していると`{}`からコンストラクタ引数のテンプレートパラメータを推論することができないため`(2)`はオーバーロード解決時に候補から外され、代わりに`(1)`が選択されます。`(1)`はコンストラクタテンプレートではなく`std::pair`のテンプレートパラメータが直接使用されているため`{}`の型が分かります。
 
-`#1`のコンストラクタの呼び出しにおいては、コンストラクタ引数の型が`std::pair`のテンプレートパラメータに指定された型と一致しない場合、それぞれ`T1, T2`に暗黙変換されその一時オブジェクトがコンストラクタに渡され、そこからコピーして要素が初期化されることになります。
+`(1)`のコンストラクタの呼び出しにおいては、コンストラクタ引数の型が`std::pair`のテンプレートパラメータに指定された型と一致しない場合、それぞれ`T1, T2`に暗黙変換されその一時オブジェクトがコンストラクタに渡され、そこからコピーして要素が初期化されることになります。
 
-先ほどの例では、`"hello"`は一時`std::string`オブジェクトに、`{}`は一時`std::vector<std::string>`オブジェクトに変換され、`std::pair`のコンストラクタに渡されます。`#1`のコンストラクタ内部からは2つの引数はどちらも`const &`なので各要素の初期化においてはコピーが行われます。これにより、一時オブジェクトを生成してそこからさらにコピーが両方の引数で起こります。
+先ほどの例では、`"hello"`は一時`std::string`オブジェクトに、`{}`は一時`std::vector<std::string>`オブジェクトに変換され、`std::pair`のコンストラクタに渡されます。`(1)`のコンストラクタ内部からは2つの引数はどちらも`const &`なので各要素の初期化においてはコピーが行われます。これにより、一時オブジェクトを生成してそこからさらにコピーが両方の引数で起こります。
 
-この場合に`#2`のコンストラクタを選択しようとすると、次のように書く必要があります
+この場合に`(2)`のコンストラクタを選択しようとすると、次のように書く必要があります
 
 ```cpp
 std::pair<std::string, std::vector<std::string>> p("hello", std::vector<std::string>{});
@@ -297,7 +291,7 @@ std::pair<std::string, std::vector<std::string>> p("hello", std::vector<std::str
 
 しかしこれはかなり冗長な記述です。
 
-`std::pair`の初期化において`{}`を活用できるようにするために、C++23からは`#2`の転送コンストラクタのテンプレートパラメータに`std::pair`のテンプレートパラメータがデフォルト引数として指定されるようになります。
+`std::pair`の初期化において`{}`を活用できるようにするために、C++23からは`(2)`の転送コンストラクタのテンプレートパラメータに`std::pair`のテンプレートパラメータがデフォルト引数として指定されるようになります。
 
 ```cpp
 namespace std {
@@ -307,21 +301,21 @@ namespace std {
     ...
 
     // 引数をコピーして構築するコンストラクタ
-    explicit(...) constexpr pair(const T1& x, const T2& y); // #1
+    explicit(...) constexpr pair(const T1& x, const T2& y); // (1)
 
     // 引数を完全転送して構築するコンストラクタ
     template <class U = T1, class V = T2>
-    explicit(...) constexpr pair(U&& x, V&& y); // #2
+    explicit(...) constexpr pair(U&& x, V&& y); // (2)
 
     ...
   };
 }
 ```
 
-これによって、先ほどの例では`#2`のコンストラクタが選択されるようになり、コンストラクタ引数は完全転送されて`std::pair`内部で各要素のコンストラクタに直接引き渡されるようになります。そのため、`std::pair`のコンストラクタへの引数渡しで一時オブジェクトが生成され、さらにそこからコピーのようなことは起こらなくなります。
+これによって、先ほどの例では`(2)`のコンストラクタが選択されるようになり、コンストラクタ引数は完全転送されて`std::pair`内部で各要素のコンストラクタに直接引き渡されるようになります。そのため、`std::pair`のコンストラクタへの引数渡しで一時オブジェクトが生成され、さらにそこからコピーのようなことは起こらなくなります。
 
 ```cpp
-// 引数は完全転送され、各要素は引数から直接初期化される（#2のコンストラクタが選択される
+// 引数は完全転送され、各要素は引数から直接初期化される（(2)のコンストラクタが選択される
 std::pair<std::string, std::vector<std::string>> p("hello", {});
 ```
 
@@ -348,11 +342,11 @@ size_type erase(K&& x); // C++23
 
 ただし、Heterogeneous Overloadはデフォルトでは使用できず、有効化するためには連想コンテナならば比較クラス`Compare`に、非順序連想コンテナならばそれに加えてハッシュクラス`Hash`に、`is_transparent`メンバ型が定義されていて、`Key`と異なる型との直接比較および一貫したハッシュ生成をサポートしている必要があります。
 
-ここでは、`std::string`をキーとする連想コンテナによって有効する方法を見てみます。
+ここでは、`std::string`をキーとする連想コンテナによって有効化する方法を見てみます。
 
 ### （順序付き）連想コンテナ
 
-順序付き連想コンテナ（`std::set, std::map`とその`multi`バージョン）の場合、デフォルトの比較クラスがテンプレートパラメータに指定された型の比較しかできないため、`is_transparent`が定義されていないため有効化されません。デフォルトの比較クラス`std::less`等は`void`に対する特殊化に対してのみ`is_transparent`が定義される（比較がテンプレートになる）のでそれを使うか、C++20で追加された`std::ranges`にある同名の比較クラスを使うことで有効化できます。
+順序付き連想コンテナ（`std::set, std::map`とその`multi`バージョン）の場合、デフォルトの比較クラスがテンプレートパラメータに指定された型の比較しかできないことから`is_transparent`が定義されていないため有効化されません。デフォルトの比較クラス`std::less`等は`void`に対する特殊化に対してのみ`is_transparent`が定義される（比較がテンプレートになる）のでそれを使うか、C++20で追加された`std::ranges`にある同名の比較クラスを使うことで有効化できます。
 
 ```cpp
 using namespace std::literals;
@@ -379,7 +373,7 @@ using namespace std::literals;
 // string_viewとしてハッシュ化することで透過的なハッシュ計算を行う
 struct string_hash {
   using hash_type = std::hash<std::string_view>;
-  using is_transparent = void;  // 👈これが必要
+  using is_transparent = void;  // 👈 これが必要
 
   std::size_t operator()(std::string_view str) const {
     return hash_type{}(str);
@@ -400,7 +394,7 @@ int main() {
 
 `std::string`系の文字列クラスならこのようにするとハッシュの定義は簡単なのですが、他の型の場合はハッシュ共通化が難しい場合もあるかもしれません。そういう場合は自分でハッシュ実装をする必要があります。
 
-## イテレータ
+## `<ranges>`/`<iterator>`
 
 ### `move_iterator<T*>`を`random_access_iterator`にする
 
@@ -418,7 +412,7 @@ v.insert(v.begin() + N, MI(temp.begin()), MI(temp.end()));
 
 `vector::insert`では、挿入される要素数が予めわかっていれば`vector`の領域をあらかじめ拡張しておくことでアロケーションの回数を最小にできます。それができない場合、挿入要素数分`push_back()`するのと同じことになります。
 
-C++20にて`<ranges>`追加と共にイテレータライブラリが改修された際、`move_iterator<I>::iterator_concept`は常に`input_iterator`であるようにされており、C++20`move_iterator`は常に`input_iterator`となります。
+C++20にて`<ranges>`の追加と共にイテレータライブラリが改修された際、`move_iterator<I>::iterator_concept`は常に`input_iterator`となるようにされており、C++20`move_iterator`は常に`input_iterator`となります。
 
 C++20ではイテレータ間距離（サイズ）を求められるかどうかはイテレータカテゴリから分離され、`sized_sentinel_for`コンセプトによって別に表されます。`move_iterator<I>`は自身のカテゴリとは関係なく、`I`が`sized_sentinel_for<I, I>`であれば`-`によって距離を定数時間で求めることができるため、`move_iterator`が`random_access_iterator`である必要はありません。
 
@@ -507,7 +501,7 @@ struct B {
 
 当初のRangeライブラリでは、そのハンドリングのためにPoison Pillオーバーロード（`begin(auto&&) = delete;`）を活用しました。型`A`で左辺値として`range`になれている状態でそれ以上何も準備せずに`begin(A{})`のように呼んだ時、Poison Pillオーバーロード（`begin(auto&&)`のもの）がADLによる候補よりも優先されるため`const`参照を取るオーバーロードだけでは右辺値オブジェクトからイテレータを取得できなくしています。右辺値オブジェクトに対して`begin`を有効にするには、`begin(A&&)`か`begin(A)`のようなオーバーロードを追加することでそれを明示するようにします。
 
-当初のRangeライブラリでは右辺値`range`をこのように非常に高度なテクニックによってオプトインするようにしていましたがこれには問題が多く（あ、あまりにも高度過ぎる）、これは後に`enable_borrowed_range`変数テンプレートによるより明確かつわかりやすいオプトイン方法に置き換えられ、現在に至っています。現在の`std::ranges::begin`をはじめとするCPOでは、`enable_borrowed_range`な型`R`に対して右辺値の入力を左辺値に実体化した上でディスパッチを行う（入力は常に左辺値として扱う）ことで規格の表現と実装を簡素化しています（規格ではこのことを*reified object*という用語で表現しています）。
+当初のRangeライブラリでは右辺値`range`をこのように非常に高度なテクニックによってオプトインするようにしていましたがこれには問題が多く（あまりにも高度過ぎる）、これは後に`enable_borrowed_range`変数テンプレートによるより明確かつわかりやすいオプトイン方法に置き換えられ、現在に至っています。現在の`std::ranges::begin`をはじめとするCPOでは、`enable_borrowed_range`な型`R`に対して右辺値の入力を左辺値に実体化した上でディスパッチを行う（入力は常に左辺値として扱う）ことで規格の表現と実装を簡素化しています（規格ではこのことを*reified object*という用語で表現しています）。
 
 そのため、現在のPoison Pillオーバーロードには最初に紹介した`std`名前空間の同名関数の毒殺以外の役割はもはやありません。また、その変更によって、`std::ranges::begin`の行うディスパッチでは右辺値を直接扱うことがなくなったため`begin(auto&&)`という宣言ではPoison Pillオーバーロードが意図通りに機能しなくなり、現在の`auto&`と`const auto&`の2つのオーバーロードに置き換えられました。
 
@@ -525,7 +519,7 @@ struct B {
 };
 ```
 
-`A`のオブジェクトに対する`std::ranges::begin`はADLによって`A`の`begin()`（*Hidden frineds*定義のもの）を見つけてくれるはずで、そこでは2つのPoison Pillオーバーロードを含めたオーバーロード解決が行われます（`begin(auto&)`と`begin(const auto&)`）。前述のように、オーバーロード解決は実際の引数型の値カテゴリに関わらず`A`の左辺値オブジェクト（`A&`）に対して行われ、それに対しては`begin(const A&)`よりも`begin(auto&)`の宣言の方が優先順位が高くなります。そしてそれは`delete`されているため、素の型`A`に対する`range<A>`は`false`になります。しかし、`range<const A>`だとオーバーロード解決は`const A&`にマッチするため、定義されている`begin(const A&)`がPoison Pillオーバーロードよりも優先順位され、`range<const A>`は`true`となります。
+`A`のオブジェクトに対する`std::ranges::begin`はADLによって`A`の`begin()`（*Hidden frineds*定義のもの）を見つけてくれるはずで、そこでは2つのPoison Pillオーバーロードを含めたオーバーロード解決が行われます（`begin(auto&)`と`begin(const auto&)`）。前述のように、オーバーロード解決は実際の引数型の値カテゴリに関わらず`A`の左辺値オブジェクト（`A&`）に対して行われ、それに対しては`begin(const A&)`よりも`begin(auto&)`の宣言の方が優先順位が高くなります。そしてそれは`delete`されているため、素の型`A`に対する`range<A>`は`false`になります。しかし、`range<const A>`だとオーバーロード解決は`const A&`にマッチするため、定義されている`begin(const A&)`がPoison Pillオーバーロードよりも優先され、`range<const A>`は`true`となります。
 
 この例のようなコードは完全に合法かつ合理的であり、Poison Pillオーバーロードはそれを妨げています。Poison Pillオーバーロードを削除するとこの問題を解消できますが、Poison Pillオーバーロードにはまだ役割（`std`名前空間の同名関数の排除）が残ってます。
 
@@ -564,6 +558,8 @@ namespace std::ranges {
 }
 ```
 
+\clearpage
+
 # 文字列・フォーマット
 
 ## `std::string`/`std::string_view`
@@ -597,6 +593,8 @@ if (str.contains("world")) {
 対して、`.contains()`というメンバ関数は意図が明確で書くときも読むときもこれらの問題は起こらず、直観的に記述することができます。
 
 `std::string`/`std::string_view`共に、`.contains()`には3種類のオーバーロードが用意されます。
+
+\clearpage
 
 ```cpp
 constexpr bool contains(basic_string_view<charT, traits> str) const noexcept;
@@ -726,21 +724,23 @@ void f(std::string& buffer, std::span<std::string_view> new_data) {
   const std::size_t before_len = buffer.size();
   const std::size_t total_len = before_len + calc_length(new_data);
 
-  buffer.resize_and_overwrite(total_len, [=](char* data, std::size_t length) {
-    char* dst = data + before_len;
-    std::size_t append_len = 0;
+  buffer.resize_and_overwrite(total_len,
+    [=](char* data, std::size_t length) {
+      char* dst = data + before_len;
+      std::size_t append_len = 0;
 
-    for (auto append_str : new_data) {
-      const std::size_t step = append_str.size();
-      memcpy(dst + append_len, append_str.data(), step);
+      for (auto append_str : new_data) {
+        const std::size_t step = append_str.size();
+        memcpy(dst + append_len, append_str.data(), step);
 
-      append_len += step;
+        append_len += step;
+      }
+      
+      assert((before_len + append_len) == length); // この場合は一致する
+
+      return length;  // 書き込んだ領域サイズを返す
     }
-    
-    assert((before_len + append_len) == length); // この場合は一致する
-
-    return length;  // 書き込んだ領域サイズを返す
-  });
+  );
 }
 ```
 
@@ -801,7 +801,7 @@ C++23からは、右辺値参照オーバーロードを利用してそのよう
 
 現在`.substr()`は`const`修飾されたものだけ定義されていますが、C++23からは`&&, const &`の2つのオーバーロードが定義されるようになります。
 
-```cpp
+```cpp{style=cppstddecl}
 // C++20まで
 constexpr basic_string substr(size_type pos = 0, size_type n = npos) const;
 
@@ -836,7 +836,7 @@ auto str3 = std::move(s).substr(...);
 
 また、部分文字列からの構築を行うコンストラクタにも同様に右辺値オーバーロードが追加されます。
 
-```cpp
+```cpp{style=cppstddecl}
 constexpr basic_string(basic_string&& str, size_type pos, const Allocator& a = Allocator());
 constexpr basic_string(basic_string&& str, size_type pos, size_type n, const Allocator& a = Allocator());
 ```
@@ -870,9 +870,9 @@ auto str2 = f().substr(5, 10);
 C++23からは、明示的にトリビアルコピー可能であることが規定され、保証されるようになります。
 
 ```cpp
-// C++23から、どちらも必ずパスする
-static_assert(std::is_trivially_copyable_v<std::string_view>);  // 文字型によらない
-static_assert(std::is_trivially_copyable_v<std::span<int>>);    // 要素型によらない
+// C++23から、要素型/文字型によらずどちらもパスすることが保証される
+static_assert(std::is_trivially_copyable_v<std::string_view>);
+static_assert(std::is_trivially_copyable_v<std::span<int>>);
 ```
 
 ## `std::format`/`std::print`
@@ -905,6 +905,8 @@ int main() {
 
 #### フォーマットオプション
 
+　
+
 指定可能なオプションの全体像は次のようになっています
 
 ```
@@ -932,7 +934,7 @@ int main() {
 
 `pair`/`tuple`固有なのは最後の`tuple-type`オプションで、次の2つのどちらかが有効です
 
-- `m`: 囲み文字を失くし、区切り文字を`: `にして出力
+- `m`: 囲み文字をなくし、区切り文字を`: `にして出力
     - `pair`もしくは、2要素の`tuple`限定
 - `n`: 囲み文字を省略する
 
@@ -953,6 +955,8 @@ int main() {
 `m`オプションは連想コンテナをフォーマットする際のデフォルトでもあります。
 
 #### `std::formatter`の特殊なメンバ関数
+
+　
 
 `pair`/`tuple`の`std::formatter`には他の型には無い特殊なメンバ関数が2つ追加されています
 
@@ -1006,7 +1010,8 @@ struct std::formatter<MyType, char> : public std::formatter<std::tuple<int, std:
   }
 };
 
-static_assert(std::formattable<MyType, char>);  // formattableでテストしたほうがデバッグしやすい（かも
+// formattableでテストしたほうがデバッグしやすい（かも
+static_assert(std::formattable<MyType, char>);
 
 int main() {
   MyType m{.n = 0, .str = "zero"};
@@ -1022,7 +1027,9 @@ int main() {
 
 #### パラメータパックのフォーマット
 
-`tuple`のフォーマットを利用することで、パラメータパック（あるいは可変長引数）のフォーマットを簡単に行うことができます。
+　
+
+`tuple`のフォーマットを利用することで、パラメータパック（可変長テンプレート引数）のフォーマットを簡単に行うことができます。
 
 ```cpp
 void print_pack(auto&&... args) {
@@ -1037,7 +1044,7 @@ int main() {
 (1, "str\u{0}", 3.1415, 'c', true) 
 ```
 
-パラメータパックを愚直にフォーマットしようとするとその要素数に合わせてフォーマット文字列を生成しなくてはならないため、`std::tie()`を使用して`tuple`のフォーマットを利用することで簡単にフォーマットできるようになります。
+パラメータパックを愚直にフォーマットしようとするとその要素数に合わせてフォーマット文字列を生成しなくてはなりませんが、`std::tie()`を使用して`tuple`のフォーマットを利用することで簡単にフォーマットできるようになります。
 
 ### `std::thread::id`
 
@@ -1058,9 +1065,7 @@ int main() {
 { index : fill align width }
 ```
 
-### `basic_format_string`を使用可能にする
-
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2508r1.html
+### `basic_format_string`をユーザーが使用可能にする
 
 `std::format()`の引数型は`std::basic-format-string<charT, Args...>`というフォーマット文字列のコンパイル時チェックを行うための説明専用の型です。これは標準ライブラリ内部でのみ使用することを意図したものでユーザーは利用できないのですが、これをユーザーも利用したい場合があります。
 
@@ -1076,7 +1081,7 @@ void log(std::format_string<Args...> s, Args&&... args) {
 }
 ```
 
-C++20まではこの`std::format_string<Args...>`のような型が利用できなかったため、普通の文字列で受け取って実行時フォーマットを行う、標準ライブラリの内部実装を使用する、などの方法しかありませんでした。
+C++20ではこの`std::format_string<Args...>`のような型が利用できなかったため、フォーマット文字列をこのように受け取ることはできず、普通の文字列で受け取って実行時フォーマットを行う、標準ライブラリの内部実装を使用する、などの方法しかありませんでした。
 
 C++23からはこの`std::format_string<Args...>`などのコンパイル時チェック付のフォーマット文字列型がユーザーが利用可能な形で定義されるようになります。
 
@@ -1107,7 +1112,7 @@ namespace std {
 
 `basic_format_string`の`consteval`コンストラクタにおいてフォーマット文字列のコンパイル時チェックが行われているため、これを使用して受け取った文字列に対してはフォーマット文字列のコンパイル時チェックが行われています。
 
-### デバッグオプション（`:?`）
+### デバッグオプション（`?`）
 
 文字・文字列のフォーマットオプションとして、`?`が利用できるようになります。これは、デバッグ用のログ出力時などに有用なもので、文字/文字列をエスケープして出力するものです。
 
@@ -1192,7 +1197,7 @@ int main() {
 1
 ```
 
-標準出力ストリーム（`basic_ostream`）に対するストリーム出力演算子（`<<`）では、`const void*`（非`volatile`ポインタ）の出力を行うオーバーロードはあり、普通のポインタはこれを使用してアドレスが出力されます。しかし、CV修飾が合わないため`volatile`ポインタはこのオーバーロードを使用できず、ポインタ->`bool`の変換を介して`bool`値として出力されます。このため、`volatile`ポインタを出力すると`1`になります。
+標準出力ストリーム（`basic_ostream`）に対するストリーム出力演算子（`<<`）では、`const void*`（非`volatile`ポインタ）の出力を行うオーバーロードはあり、普通のポインタはこれを使用してアドレスが出力されます。しかし、CV修飾が合わないため`volatile`ポインタはこのオーバーロードを使用できず、ポインタ->`bool`の変換を介して`bool`値として出力されます。このため、`nullptr`ではない`volatile`ポインタを出力すると`1`（`true`）になります。
 
 C++23からは`const volatile void*`に対するストリーム出力演算子のオーバーロードが追加され、`volatile`ポインタもアドレスとして出力されるようになります。
 
@@ -1230,7 +1235,7 @@ namespace std {
 
 ### 排他モードでのファイルオープン（`noreplace`）
 
-C++コードからファイルをオープン（作成）しようとする場合、`<fstream>`のファイルストリームを使用することが多いと思います。ファイルの作成時に考慮すべきことは色々あるのですが、その中に「ファイルを新規で作成するが既に存在する場合は何もしない（作成に失敗してほしい）」というものがあります。一見単純なこの要件はセキュリティに敏感なアプリケーションでは厳密に達成することが難しい場合があります。
+C++コードからファイルをオープン（作成）しようとする場合、`<fstream>`のファイルストリームを使用することが多いと思います。ファイルの作成時に考慮すべきことは色々あるのですが、その中に「ファイルを新規で作成するが既に存在する場合は何もしない（作成に失敗してほしい）」というものがあります。一見単純なこの要件はセキュリティに敏感なアプリケーションで必要になりますが、厳密に達成することが難しい場合があります。
 
 ```cpp
 using fs = std::fielsystem;
@@ -1269,6 +1274,11 @@ auto file_open(fs::path filename) -> std::ofstream {
   // ファイルの存在をチェックしてからファイルオープン
   std::ofstream ofs{filename, ofs.out | ofs.noreplace};
 
+  if (!ofs) {
+    // ファイルオープンに失敗（既に存在していたなど）
+    throw std::runtime_error("file open failed");
+  }
+
   ...
 
   return ofs;
@@ -1290,7 +1300,9 @@ auto file_open(const char* filename) -> FILE* {
 }
 ```
 
-# functional
+\clearpage
+
+# `<functional>`
 
 ## `std::invoke_r()`
 
@@ -1300,7 +1312,7 @@ C++17以前から、関数呼び出しという操作を規格上で統一的に
 
 しかし、`INVOKE<void>(f, args...)`のような呼び出しは戻り値を明示的に破棄するために使用でき、`std::is_invocable_r`や`std::is_nothrow_invocable_r`は指定した戻り値型で呼び出せるかを調べられるようになっています。さらに、`std::visit`には戻り値型を指定する`std::visit<R>`が用意されています。
 
-これらの有用性は既に示されていたため、これらのものに準じる形で`std::invoke_r`がC++23で追加されます。
+このように、これらの有用性は既に示されていたため、これらのものに準じる形で`std::invoke_r`がC++23で追加されます。
 
 ```cpp{style=cppstddecl}
 namespace std {
@@ -1331,7 +1343,7 @@ namespace std {
 auto f1(int) -> int;
 
 template<typename T>
-auto f2(T) -> T&&;
+auto f2(T&&) -> T&&;
 
 void example() {
   // 戻り値の破棄
@@ -1371,7 +1383,7 @@ int main() {
 
 これは、`std::function`が格納するものに対してコピー可能であることを求めているためです。
 
-これは`std::function`自体をコピー可能にするために、保持するものに対してもコピー可能であることを要求するためだと思われます。また、`std::function`はC++にムーブの概念が無かった時代に設計された`boost::function`をベースとしており、C++11でムーブセマンティクスとほぼ同時に導入されているため、ムーブについて考慮する時間が無かったのも理由にありそうです。
+これは`std::function`自体をコピー可能にするために、保持するものに対してもコピー可能であることを要求するためだと思われます。また、`std::function`はC++にムーブの概念が無かった時代に設計された`boost::function`をベースとしており、C++11でムーブセマンティクスとほぼ同時に導入されているため、ムーブについて考慮する時間が無かったことも理由にありそうです。
 
 C++23では、ムーブオンリーなCallableを格納するための汎用関数型として、`std::move_only_function`が導入されます。
 
@@ -1404,8 +1416,6 @@ int main() {
 また、`std::function`の別の問題として`cosnt`性を正しく伝播して呼び出しが行えないというものもありました。
 
 ```cpp
-#include <functional>
-
 struct F {
   auto operator()() -> std::string_view {
     return "operator()";
@@ -1441,11 +1451,9 @@ operator()
 
 標準ライブラリの`const`メンバ関数にはスレッドセーフ保証の意味合いもあるため、このことはともすればデータ競合を引き起こす可能性があります。
 
-`std::move_only_function`では保持する関数型の指定に`const`を指定することができ、これによって保持する関数の`const`有無を選択して呼び出すことができ、また`std::move_only_function`の`const`性が呼び出しコンテキスに適用されるようになります。
+`std::move_only_function`では保持する関数型の指定に`const`を指定することができ、これによって保持する関数の`const`有無を選択して呼び出すことができ、また`std::move_only_function`の`const`性が呼び出しコンテキストに適用されるようになります。
 
 ```cpp
-#include <functional>
-
 struct F {
   auto operator()() -> std::string_view {
     return "operator()";
@@ -1494,8 +1502,6 @@ operator() const
 この動作は通常のメンバ関数の`const`修飾とオブジェクトの`const`の関係と一致しています。上記例だと`F`が両方を備えていたから少しわかりづらかったかもしれません。
 
 ```cpp
-#include <functional>
-
 struct F {
   // 非constオーバーロードを備えない
   auto operator()() const -> std::string_view {
@@ -1539,10 +1545,10 @@ func3: operator() const
 
 |オブジェクト状態＼関数型|`R(Args...)`|`R(Args...) const`|
 |---|---|---|
-|非`const`|どちらも（非`const`優先）|`🤷‍♂️`|
-|`const`|どちらも（非`const`優先）|`🤷‍♂️`|
+|非`const`|どちらも（非`const`優先）|`🤷`|
+|`const`|どちらも（非`const`優先）|`🤷`|
 
-`🤷‍♂️`は指定の方法が無い（`std::function<R() const>`はコンパイルエラー）ことを表しています。
+`🤷`は指定の方法が無い（`std::function<R() const>`はコンパイルエラー）ことを表しています。
 
 このように、`std::move_only_function`は保持する関数の`const`指定及び、呼び出し時の`const`性の正しい伝播をサポートしています。
 
@@ -1860,6 +1866,7 @@ namespace std {
 
     ...
 
+
     // 修飾無しメンバ関数は非const状態なら値カテゴリによらず呼び出しが可能
     R operator()(Args... args) {
       // ただし、*thisは常に左辺値として扱う（区別可能な情報がない
@@ -1894,7 +1901,9 @@ namespace std {
 
 実際には制約はもう少し複雑になります。
 
-# memory
+\clearpage
+
+# `<memory>`
 
 ## `std::out_ptr`/`std::inout_ptr`
 
@@ -2176,19 +2185,19 @@ namespace std {
 
 これらの関数はそれぞれ、`std::out_ptr_t`、`std::inout_ptr_t`というクラステンプレートのオブジェクトを返します。
 
-まず、`P`という型を次のように取得します
+その際にはまず、`P`という型を次のように取得します
 
 1. `Pointer`: `is_void_v<Pointer> == false`の場合
 2. `T::pointer`: 1が取得できず、`T::pointer`が有効であり型名である場合
-3. `T​::​element_type*`: 2が取得できず、`T​::​element_type`が有効であり型名である場合
-4. `pointer_traits<T>​::​element_type*`: 3が取得できない場合
+3. `T::element_type*`: 2が取得できず、`T::element_type`が有効であり型名である場合
+4. `pointer_traits<T>::element_type*`: 3が取得できない場合
 
 これは例えば`Pointer`を指定していないとすると、`std::unique_ptr<T>`に対して`T*`（`std::unique_ptr<T>::pointer`）になります。
 
 そのうえで、次のものを構築して直接`return`します
 
-- `std::out_ptr()`: `std::out_ptr_t<Smart, P, Args&&...>(s, std​::​forward<Args>(args)...)`
-- `std::inout_ptr()`: `std::inout_ptr_t<Smart, P, Args&&...>(s, std​::​forward<Args>(args)...)`
+- `std::out_ptr()`: `std::out_ptr_t<Smart, P, Args&&...>(s, std::forward<Args>(args)...)`
+- `std::inout_ptr()`: `std::inout_ptr_t<Smart, P, Args&&...>(s, std::forward<Args>(args)...)`
 
 `std::out_ptr`/`std::inout_ptr`はほぼ、この`return`文一行の単純な関数となります。
 
@@ -2208,9 +2217,9 @@ namespace std {
     operator void**() const noexcept;
 
   private:
-    Smart& s;                   // exposition only
-    tuple<Args...> a;           // exposition only
-    Pointer p;                  // exposition only
+    Smart& s;                   // 説明専用
+    tuple<Args...> a;           // 説明専用
+    Pointer p;                  // 説明専用
   };
 
 
@@ -2226,9 +2235,9 @@ namespace std {
     operator void**() const noexcept;
 
   private:
-    Smart& s;                   // exposition only
-    tuple<Args...> a;           // exposition only
-    Pointer p;                  // exposition only
+    Smart& s;                   // 説明専用
+    tuple<Args...> a;           // 説明専用
+    Pointer p;                  // 説明専用
   };
 }
 ```
@@ -2239,7 +2248,7 @@ namespace std {
     - `std::out_ptr_t`: 保持するリソースを開放する
     - `std::inout_ptr_t`: 保持するリソース（ポインタ）を所有権付きで取り出す
     - `s, a`はコンストラクタで受け取った対応する引数で初期化される
-2. 変換演算子: C API関数への引数初期化時に、メンバで保持しているリソース受け取り用ポインタ（`p`）をキャストして渡す
+2. 変換演算子: C API関数への引数初期化時に、メンバで保持しているリソース受け取り用ポインタ（`p`）のアドレスをキャストして渡す
     - 例えば、`std::unique_ptr<T>`に対して、`T**`か`void**`のどちらかに変換して渡す
       - 変換先はC API関数の引数型に応じて自動で決定される
 3. デストラクタ: C API関数の呼び出し終了後に、メンバで保持しているリソース受け取り用ポインタ（`p`）の値をコンストラクタで受け取ったスマートポインタ（`s`）にセットする
@@ -2250,9 +2259,9 @@ namespace std {
 
 従って特に、デストラクタが呼び出されることが`std::out_ptr`/`std::inout_ptr`にとって非常に重要になります。`std::out_ptr`/`std::inout_ptr`の戻り値を一回受けて左辺値として取り回すことは可能ですが、それを行うとうまく動作しなくなります。
 
-なお、テンプレート化されていることから分かるかもしれませんが、`std::out_ptr`/`std::inout_ptr`は任意のスマートポインタで使用することができ、それは標準ライブラリ内のものだけが対象ではありません。例えば、Boostの提供するスマートポインタを使用することもできます。ただ、そのためには標準のスマートポインタとある程度インターフェース互換である必要があります。
+また、テンプレート化されていることから分かるかもしれませんが、`std::out_ptr`/`std::inout_ptr`は任意のスマートポインタで使用することができ、それは標準ライブラリ内のものだけが対象ではありません。例えば、Boostの提供するスマートポインタを使用することもできます。ただ、そのためには標準のスマートポインタとある程度インターフェース互換である必要があります。
 
-これらの実装は特にC++20など特有の機能を使用していないので、C++11以降であればここで例示している宣言の定義を具体的に実装していけばほぼそのまま実装できるはずです。
+なお、これらの実装は特にC++20など特有の機能を使用していないので、C++11以降であればここで例示している宣言の定義を具体的に実装していけばほぼそのまま実装できるはずです。
 
 ### ポインタ型の明示的な指定
 
@@ -2280,7 +2289,7 @@ int main() {
 ```cpp
 struct base { ... };
 struct derived : public base { 
-  int ID = 1;
+  static constexpr int ID = 1;
   ...
 };
 
@@ -2562,80 +2571,6 @@ int main() {
 
 *implicit-lifetime type*ではない型の生存期間を終了するためにはデストラクタを明示的に呼び出す必要があります。
 
-## `std::byteswap()`
-
-※この項目は「C++20 ライブラリ機能1」に早まって掲載されていたものとほぼ同一です。`std::byteswap`はC++20ではなく23から利用可能になります。
-
-バイトオーダーとは値のバイト配列をメモリ上に保存する際の順序の事で、エンディアンとも呼ばれます。大別すると、ビッグエンディアンとリトルエンディアンの2つがあります。
-
-エンディアンは値（オブジェクト）をバイト列として読み出すときに問題となるほか、ネットワークバイトオーダーはビッグエンディアンである一方でx86 CPUはリトルエンディアンであることから、ネットワーク越しに送受信したバイト列を読み替える（*punning*する）際に問題となったりします。
-
-リトルエンディアンとビッグエンディアンはバイトスワップという操作によって簡単に相互変換することができますが、これまでのC++にはそれを行うための標準的な方法がありませんでした（一応POSIX規格に`htonl()/ntohl()`という関数はありました）。
-
-C++23からはそのために、`std::byteswap()`が用意されます。この`std::byteswap()`の入力は、符号付きも含めた整数型を使用可能です。
-
-```cpp{style=cppstddecl}
-namespace std {
-  template<std::integral T>
-  constexpr T byteswap(T value) noexcept;
-}
-```
-
-```cpp
-#include <bit>
-
-int main() {
-  // プログラマが扱うのはビッグエンディアン
-  constexpr std::uint32_t n = 0x1234ABCD;
-
-  // リトルエンディアンに変換
-  std::uint32_t lite = std::byteswap(n);
-  // ビッグエンディアンに変換
-  std::uint32_t bige = std::byteswap(lite);
-
-  std::println("{:#X}", lite);
-  std::println("{:#X}", bige);
-}
-```
-```{style=planetext}
-0XCDAB3412
-0X1234ABCD
-```
-
-バイトスワップは、バイト列の真ん中（全体の長さが偶数の場合はバイト境界、奇数の場合は中心バイト）を中心とした点対称のような交換によってバイト列の並べ替えを行います。
-
-ややこしい点として、先ほどのサンプルコードはx86 CPU等リトルエンディアンのCPUで動かしたとき、想定（コメントの記述）とメモリ上の実際の配置は逆になります。例えば、最初の`n`はメモリ上ではリトルエンディアンで格納されており、それを`byteswap()`するとメモリ上の配置としてはビッグエンディアンに見えるようになりますが、CPUはいつもリトルエンディアンとして読み出すため、その値（のバイト表現）はまた実際のメモリ上の配置とは逆になります。
-
-```cpp
-#include <bit>
-
-int main() {
-  // 0x1234ABCDをビッグエンディアンで配置
-  std::array<std::uint8_t, 4> bytes{0x12, 0x34, 0xAB, 0xCD};
-
-  auto n = std::bit_cast<std::uint32_t>(bytes);
-  // メモリ配置は|12|34|AB|CD|
-  // 値は0xCDAB3412
-
-  std::uint32_t lite = std::byteswap(n);
-  // メモリ配置は|CD|AB|34|12|
-  // 値は0x1234ABCD
-
-  std::uint32_t bige = std::byteswap(lite);
-  // メモリ配置は|12|34|AB|CD|
-  // 値は0xCDAB3412
-
-  std::println("{:#X}", lite);
-  std::println("{:#X}", bige);
-}
-```
-```{style=planetext}
-0X1234ABCD
-0XCDAB3412
-```
-
-すなわち、この関数はメモリ上の配置としてバイトスワップを行うのではなく、読み出した値のバイト表現についてバイトスワップを行います（そしてその上で再度環境のエンディアンによってメモリに格納されます）。とはいえ、リトルエンディアンとビッグエンディアンは相互変換可能であることもあり、多くの場合にこのことを意識する必要はないはずです。
-
 ## `std::allocator_traits`のユーザー定義特殊化の禁止
 
 C++11で導入された`std::allocator_traits`には、主に次の2つの目的がありました
@@ -2645,58 +2580,13 @@ C++11で導入された`std::allocator_traits`には、主に次の2つの目的
 
 しかし、C++20時点ではユーザーが`std::allocator_traits`の特殊化を定義することが許可されているため、2つ目の目的は達成されていません。ユーザーが`std::allocator_traits`を特殊化する場合は標準のものと同じインターフェースを備えることを要求していますが、`std::allocator_traits`のAPIが拡張されるとそのユーザー定義特殊化は非準拠なものになってしまいます。もちろん、ユーザー定義特殊化を更新して新しいAPIに対応させることは可能ですが、それが行われるまでの間は非準拠な状態になります。
 
-このことは既に悪影響を及ぼしており、すぐ上の`allocate_at_least()`は当初この問題を考慮していたためフリー関数も追加されていました。
+このことは既に悪影響を及ぼしており、少し前の`allocate_at_least()`は当初この問題を考慮していたためフリー関数も追加されていました。
 
-C++23ではこの問題を解決するために、`std::allocator_traits`のユーザー定義特殊化が禁止されます。現在そのようなことをしているコードは、サポートされなくなります。
+C++23ではこの問題を解決するために、`std::allocator_traits`のユーザー定義特殊化が禁止されます。現在そのようなことをしているコードはサポートされなくなります。
 
-# utility
+\clearpage
 
-## `std::visit()`の制限緩和
-
-`std::visit`は引数列の最後に受け取る`std::variant`をテンプレートで受け取っています。
-
-```cpp
-namespace std {
-  // visit()の宣言例（戻り値型指定をする方
-  template<typename R, typename Visitor, typename... Variants>
-  constexpr R visit(Visitor&& vis, Variants&&... vars);
-}
-```
-
-可変長引数で受けているのは複数の`std::variant`を同時に扱うことができるためですが、この`vars`に渡すことのできる型としては`std::variant`の特殊化のみでした。
-
-C++23からはそれが少し緩和され、`std::variant`（の任意の特殊化）を曖昧でない`public`な基底クラスとして持つ型でも呼べるようになります。
-
-```cpp
-// variantによってステートマシンを表現する例
-struct State : public std::variant<Disconnected, Connecting, Connected> {
-  using std::variant::variant;
-  
-  // variantにはないこの用途での専用APIを追加する
-  bool is_connected() const {
-    return std::holds_alternative<Connected>(*this);
-  }
-  
-  friend std::ostream& operator<<(std::ostream&, const State&) {
-    ...
-  }
-};
-
-int main() {
-  State state = ...;
-
-  if (state.is_connected()) {
-    ...
-  }
-
-  // 状態に応じた処理にvisit()を使用
-  std::visit(overloaded {
-      [](const Disconnected& s) { ... },
-      [](const Connecting& s) { ... },
-      [](const Connected& s) { ... },
-    }, state);  // ok、State型でもvisit()が使える
-}
-```
+# `<utility>`
 
 ## `std::to_underlying()`
 
@@ -2730,8 +2620,6 @@ int main() {
 非常に小さく単純な関数ではありますが、このような変換処理は頻繁に必要になるため様々なコードベースで見かけることができます。また、上記の実装例のような正しいキャストを行い実装するのが案外難しかったことから標準ライブラリに追加されています。
 
 ## `std::forward_like()` 
-
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2445r1.pdf
 
 `std::forward_like()`はDeducing thisを用いた関数においてそのメンバ変数を適切に完全転送するために使用するユーティリティ関数であり、`std::forward()`とよく似たものです。
 
@@ -2824,7 +2712,7 @@ struct wrap {
 
   template<typename Self>
   auto value(this Self&& self) -> decltype(auto) {
-    return std::forward_like<Self>(self).v;
+    return std::forward_like<Self>(self.v);  // 👈
   }
 };
 ```
@@ -2874,147 +2762,13 @@ namespace std {
 }
 ```
 
-`std::forward_like`のテンプレートパラメータ`T`はユーザーが明示的に指定するもので、これは通常`this Slef&& self`のようにテンプレートパラメータ`Self`で`this`引数を受けているときの`Self`を指定します。`U`はテンプレート引数推論によって決定されるもので通常ユーザーが指定する必要はありません。
+`std::forward_like`のテンプレートパラメータ`T`はユーザーが明示的に指定するもので、これは通常`this Slef&& self`のようにテンプレートパラメータ`Self`で`this`引数を受けているときの`Self`を指定します。`U`はテンプレート引数推論によって決定されるもので通常ユーザーが指定する必要はなく、`std::forward_like<Self>(x)`の`x`には完全転送対象のメンバ変数を指定します。
 
 また、`this auto&& self`のように引数を受ける場合は`decltype(self)`を`T`に指定すればokです
 
 ```cpp
 auto value(this auto&& self) -> decltype(auto) {
   return std::forward_like<decltype(self)>(self).v;
-}
-```
-
-## `std::optional`のモナドインターフェース
-
-「C++23 ライブラリ機能1」で紹介した`std::expected`はモナドインターフェースを持っていましたが、`std::optional`にもほぼ同じものが導入されます。ただし`std::optional`の無効値が`std::nullopt`固定という事情もあり、一部だけかつ微妙に違いがあります。
-
-まず、`std::optional`のモナドインターフェースとして導入されるのは次の3つです
-
-- `.and_then(f)`: `std::optional<T>` -> `std::optional<U>`
-    - `f`: `T` -> `std::optional<U>`
-- `.or_else(f)`: `std::optional<T>` -> `std::optional<T>`
-    - `f`: `void` -> `std::optional<U>`
-- `.transform(f)`: `std::optional<T>` -> `std::optional<U>`
-    - `f`: `T` -> `U`
-
-`.and_then()`と`.transform()`は`std::expected`のそれと同じものとなりますが、`.or_else()`だけが少し異なっています。
-
-`.or_else()`に渡す関数は引数として`std::nullopt_t`を受け取るのではなく何も受け取らず、戻り値は任意の`std::optional<U>`ではなく呼び出した`std::optional<T>`と同じ型の`std::optional<T>`を返す必要があります（その有効状態を切り替えることはできます）。
-
-そのほか動作や役割などは`std:expected`のものと共通しています（詳しい説明は「C++23 ライブラリ機能1」もご覧ください）。
-
-`.and_then()`のサンプルコード
-
-```cpp
-// ファイルを開く
-auto attempt_to_open(std::filesystem::path file)
-  -> std::optional<std::ifstream>;
-
-// ファイルの内容を読み込む
-auto extract_content(std::ifstream ifs)
-  -> std::optional<std::string>;
-
-void example() {
-  // ファイルを開いて内容を出力してから返す
-  auto res = attempt_to_open("file.txt")
-                .and_then(extract_content)
-                .and_then([](auto file_str) {
-                   std::println("file content: {:s}", file_str);
-                   return std::optional<std::string>{std::move(file_str)};
-                 });
-
-  ...
-}
-```
-
-`attempt_to_open()`か`extract_content()`が失敗によって無効値を保持する`optional`を返した場合、`res`は無効状態になります。
-
-`.or_else()`のサンプルコード
-
-```cpp
-// ファイルを開く
-auto attempt_to_open(std::filesystem::path file)
-  -> std::optional<std::ifstream>;
-
-// ファイルの内容を読み込む
-auto extract_content(std::ifstream ifs)
-  -> std::optional<std::string>;
-
-// ファイルオープンエラーをハンドリング、
-auto on_error() -> std::optional<std::string> {
-  // 空文字のstringに変換
-  return { "" };
-}
-
-void example() {
-  // ファイルを開いてエラーを処理する
-  auto res = attempt_to_open("file.txt")
-                .and_then(extract_content)
-                .or_else(on_error);
-
-  assert(res.has_value());  // ✅
-
-  ...
-}
-```
-
-この場合、`.or_else(on_error)`は前の2つの処理が失敗（無効値）を返した場合にのみ呼ばれて、エラー状態を空文字列に変換することで最終的な`res`は常に有効状態となります。
-
-`.transform()`のサンプルコード
-
-```cpp
-// ファイルを開く
-auto attempt_to_open(std::filesystem::path file)
-  -> std::optional<std::ifstream>;
-
-// ファイルの内容を読み込む
-auto extract_content(std::ifstream ifs) -> std::string;
-
-void example() {
-  // ファイルを開いて内容を出力してから返す
-  auto res = attempt_to_open("file.txt")
-                .transform(extract_content)
-                .transform([](auto file_str) {
-                  std::println("file content: {:s}", file_str);
-                  return file_str;
-                 });
-
-  ...
-}
-```
-
-`.transform()`に渡す処理は`optional`が有効状態の場合のみ呼ばれるため、この場合の`res`は`attempt_to_open()`の結果によって無効状態になりえます。`.transform()`は`optional`の有効状態を変更できないため、この場合に`extract_content`のエラーを`optional`の無効値という形で報告することはできません。
-
-なおこちらの`.transform()`は渡す関数の戻り値型を`void`にすることはできません。
-
-この3つの関数はいずれも`std::optional`そのものを返すため、メソッドチェーンの形で組み合わせて使用できます。
-
-```cpp
-// ファイルを開く
-auto attempt_to_open(std::filesystem::path file)
-  -> std::optional<std::ifstream>;
-
-// ファイルオープンエラーをハンドリング
-auto attempt_recovery()
-  -> std::optional<std::ifstream>;
-
-// ファイルの内容を読み込む
-auto extract_content(std::ifstream ifs)
-  -> std::string;
-
-// 読み取った内容を検証
-auto ensure_valid_content(std::string file_data)
-  -> std::optional<std::string>;
-
-
-void example() {
-  // ファイルを開いて内容を読み取って返す
-  auto res = attempt_to_open("file.txt")
-                .or_else(attempt_recovery)
-                .transform(extract_content)
-                .and_then(ensure_valid_content);
-
-  ...
 }
 ```
 
@@ -3144,9 +2898,9 @@ namespace std {
 
 こちらの場合は少し実装が複雑ですが、`apply-impl()`で利用可能なテンプレート引数等を用いると、`noexcept(invoke(forward<F>(f), get<I>(forward<Tuple>(t))...))`のように指定でき、C++23ではこれが`std::apply()`の`noexcept`として指定されるようになります。
 
-##　`std::pair`と2要素`std::tuple`/`tuple`ライクな型との間での互換性の向上
+## `std::pair`と2要素`std::tuple`/`tuple`ライクな型との間での互換性の向上
 
-`std::pair<T, U>`と2要素の`std::tuple<T, U>`は意味論的に同一の型であり、標準ライブラリに両方が存在しているのは歴史的経緯以外の理由がありません。この2つの型は多くのインターフェースを共有していますが、一部非互換な部分があります。
+`std::pair<T, U>`と2要素の`std::tuple<T, U>`は意味的に同一の型であり、標準ライブラリに両方が存在しているのは歴史的経緯以外の理由がありません。この2つの型は多くのインターフェースを共有していますが、一部非互換な部分があります。
 
 ```cpp
 int main() {
@@ -3272,120 +3026,9 @@ int main() {
 
 しかし、どちらのケースもかなり稀であり存在する可能性が低いと判断されたため、破壊的変更が受け入れられています。
 
-## `std::barrier`の同期保証の調整
+\clearpage
 
-`std::barrier`はFork-Joinモデルのような並行処理の実装に活用することができる繰り返し使用可能な同期機構です。典型的には、同期に参加する全スレッドが並列実行される部分と一つのスレッドだけで実行される同期部分から構成される処理単位の繰り返しのような処理になり、その繰り返しの中の1つの処理単位のことをバリアフェーズと呼びます。
-
-`std::barrier`はテンプレート引数として完了関数（`CompletionFunction`）の型を受け取って、そのオブジェクトを保持しておくことでバリアフェーズの最後にどこか一つのスレッドでそれを実行してから、待機しているスレッドを再開します。
-
-```cpp
-// 複数のスレッドで呼ばれる処理
-template<typename CF>
-void fork_proc(std::barrier<CF>& sync) {
-  // キャンセルされるまで行われる連続処理
-  // ループごとに全スレッドで同期しつつ実行される
-  while(/*キャンセルの検出*/) {
-
-    // メインの処理
-    ...
-
-    // 全スレッドはここで待ち合わせる（1ループの処理の完了を同期する）
-    // バリアフェーズに参加する全てのスレッドがここに到達した時、CFの処理を実行してから次のバリアフェーズを開始する
-    sync.arrive_and_wait(); // 同期ポイント
-  }
-}
-
-int main() {
-  // 並列数
-  constexpr std::size_t N = 10;
-
-  // 完了関数
-  // バリアフェーズの最後にどこか1スレッドが実行する
-  auto completion_function = [] {
-    // 処理対象データの更新など、同期が必要なシングルスレッド処理
-    ...
-  };
-
-  // スレッド数でバリアを初期化
-  // 同時に、同期ポイントで再開直前に実行する完了関数を指定
-  std::barrier sync{N, completion_function};
-
-  for ([[maybe_unused]] auto i : std::views::iota(0, N)) {
-    std::thread{[&sync]{
-      fork_proc(sync);
-    }}.detach();
-  }
-
-  // 完了を待機する処理など
-  ...
-}
-```
-
-バリアで同期する（バリアフェーズに参加する）各スレッドは`.arive()`（同期ポイント到達通知）と`.wait()`（他スレッドの待機）もしくは`.arrive_and_wait()`（`.arive()`と`.wait()`の複合操作）を呼び出すことで同期を取ります。完了関数は、バリアフェーズに参加しているスレッドが全て同期ポイントに到達した後、バリアフェーズに参加するスレッドのいずれかで実行され、その実行が完了した後で次のバリアフェーズが開始されます。
-
-C++20の標準の規定では、この完了関数がどのスレッドで実行されるかは実装の自由として明確に規定していません。しかし、`std::barrier`の保証やメンバ関数の規定などの相互作用から生じる（意図しない）制約によって、実質的に同期ポイントに最後に到達したスレッドで実行する実装しか取れないようになっていました。それによって、ハードウェア（GPUなど）が持っているスレッド同期機構やそのサポート機構を用いて`std::barrier`を効率的に実装することが妨げられていました。
-
-C++23では、この意図しない制限が取り払われたことで、`std::barrier`の効率的な実装が可能になります。
-
-これは厳密には振る舞いの変更であり破壊的変更となりますが、元の規定による振る舞いが多くの場合に意外なものであったことと、C++20で追加されたばかりだったことなどから、破壊的変更の影響は小さいと判断されました。
-
-### C++20の意図しない制約と変更の詳細
-
-C++20時点の意図しない制限というのは、`std::barrier`の`.arive()`（同期ポイント到達通知）と`.wait()`（他スレッドの待機）の操作が分かれている事に原因があります。`.arive()`は戻り値として`arrival_token`というものを返し、`.wait()`はその`arrival_token`を受け取って待機します。この2つの操作が分割されていることによって、バリア同期ポイント通知とバリア同期の待機を異なるスレッドで行うことができるようになっています。
-
-これによって、恣意的ではあるものの次のようなことが起こります
-
-```cpp
-// 参加スレッド数2で初期化、完了関数cfをセット
-std::barrier<CF> b{2, cf};
-
-// arrival_tokenの型
-using tok_t = decltype(b.arrive());
-
-void thread() {
-  new tok_t(b.arrive());  // A: 同期ポイント到達を通知するが、返されるトークンを消費しない（リークしてる
-}                         // B: スレッド終了
-
-// C: 2つのスレッドを起動
-auto t0 = std::thread(thread);
-auto t1 = std::thread(thread);
-
-// D: 2つのスレッド終了待機
-t0.join();                      
-t1.join();
-
-// E: 完了関数cfが呼ばれていることが保証される
-```
-
-この例では、2つの`arrival_token`が有効であり続けながら`std::barrier`の`.wait()`は呼ばれておらず、バリアフェーズに参加している（完了を待機している）スレッドが居なくなっています。現在の標準の規定はこの時でも完了関数が呼ばれていることを保証しているため、このような極端な場合でもそれを確実に達成するためには、最後に`.arive()`したスレッドで完了関数を実行するという実装を取らざるを得ません。
-
-これは、C++20の`std::barrier`仕様が保証していた次の2つのことの相互作用の結果です
-
-- スレッドが`.wait()`を呼び出さなくてもいい自由
-- 完了関数（バリアフェーズ完了ステップ）は、バリアに参加しているすべてのスレッドが同期ポイントに到達した時に常に実行される
-
-数百万のHWスレッドを持つアーキテクチャでは、わずかな並列化されていない処理によって大きく並列化のスケーラビリティが制限されます（アムダールの法則）。`.arive()`と`.wait()`を分割しているAPIはそのオーバーヘッドを削減するためのもので、完了関数が実行するシングルスレッド処理と`std::barrier`の同期の処理を並列化し、同期をさらに別のスレッドやHWアクセラレータで実行することで同期のコストを完了関数の処理の背後に隠蔽することを意図したものでした。しかし、上記の問題によってそのような実装は実質的に許可されていませんでした。
-
-C++23では、`std::barrier`の保証を次のように変更することでこの問題が解決されています
-
-- 累積性は以下の2つの場所で確立される
-    - バリアフェーズに参加しているすべてのスレッドと完了関数を実行するスレッドの間
-    - 完了関数を実行するスレッドと`.wait()`の呼び出しによってバリアフェーズ完了を待機しているすべてのスレッドの間
-- 完了関数は、バリアに参加しているすべてのスレッドが同期ポイントに到達した後、ちょうど一度だけ、次のバリアフェーズ開始前に実行される
-- 完了関数は、そのバリアフェーズに参加している（参加していた）スレッドの一つで実行される
-- バリアフェーズ完了を待機するスレッドが無い場合（だれも`.wait()`を呼んでいない場合）、完了関数が実行されるかは実装定義
-
-累積性（*Cumulativity*）とは、2つの処理（A, B）を接続するある地点（A -> C -> BのC）について、AがCに到達してからBが実行されるという順序関係を言うもので、特にマルチスレッド処理の場合にはAの並行処理がすべて終わってから（各スレッドの完了がCに累積してから）、Bの処理開始が実行（累積）されることを表現しています。
-
-すなわち、この累積性の規定によって、あるバリアフェーズの終了によって実行される完了関数からは、そのバリアフェーズで行われた任意のスレッドの変更が確実に同期されており（可視になっており）、またその完了関数の終了によって待機が解除されて次のバリアフェーズを開始するスレッドからは完了関数で行われた変更が確実に同期（可視になる）されています。
-
-バリアフェーズA -> 完了関数 -> バリアフェーズB、のような処理の流れの中で、Aで行われた変更は競合等なく完了関数から安全に利用可能になり、完了関数で行われた変更も競合等なく安全にBの開始時点で利用可能になる、ということを言っています。これは`std::barrier`のセマンティクスからすると当然提供されるべき保証であり、（分かりづらくはあるものの）特に驚きの無い当然の保証です。
-
-そして、完了関数の実行は最後に同期ポイントに到達したスレッドではなく、そのバリアフェーズに参加して居た任意のスレッドで実行することができるようになり、次のバリアフェーズに参加するスレッドがない（だれも`.wait()`を呼んでいない）場合に必ずしも完了関数を実行しなくてもよくなっています。
-
-このような変更によって、完了関数の実行場所の自由度が向上し、元来意図されていたようにHWアクセラレータを活用することもできるようになっています。
-
-# type_trais
+# コンセプトと型特性
 
 ## `std::is_scoped_enum`
 
@@ -3432,7 +3075,7 @@ using namespace std::string_literals;
 std::tuple<const std::string&> t1("hello");  // ub、ダングリング参照
 ```
 
-例えばこの例での`t1`は常にダングリング参照を生成します。`std::string`の一時オブジェクトは`std::tuple`のコンストラクタの内側で作成され（引数を完全転送して内部変数を構築するコンストラクタが呼ばれるため）、内部で`const std::string&`を初期化した後、コンストラクタの完了と共に寿命が尽きます。このため、`std::string_view`で受けた時とは異なりこのコードは常に未定義動作となります。
+例えばこの例での`t1`は常にダングリング参照を生成します。`std::tuple`のメンバとなる`const std::string&`は一時オブジェクトの寿命延長を行うことができる参照であり、完全転送されてくる引数`"hello"`は`std::string`ではない文字列リテラルです。ここで、`const std::string&`を初期化するために`std::string`の一時オブジェクトが作成され、その一時オブジェクトは`std::tuple`のメンバとなる`const std::string&`を初期化した後、コンストラクタの完了と共に寿命が尽きます。このため、`std::string_view`で受けた時とは異なりこのコードは常に未定義動作となります。
 
 また、別の例として参照を返す`std::function`があります。
 
@@ -3442,7 +3085,7 @@ std::function<const std::string&()> f = [] { return ""; };
 auto& str = f();  // ダングリング参照を返す
 ```
 
-この場合は、`std::function`の`operator()`の中で保持する関数が呼び出される際にその戻り値が`std::function`の関数型に指定された戻り値型に暗黙変換されることで一時オブジェクトが生成され、その一時オブジェクトへの参照が返されます。このため、`str`は常にダングリング参照となります。
+この場合は、`std::function`の`operator()`の中で保持する関数が呼び出される際にその戻り値が`std::function`の関数型に指定された戻り値型に暗黙変換されることで一時オブジェクトが生成され、その一時オブジェクトへの参照が返されます。このため、`str`は常にダングリング参照となります。なお、この場合の暗黙変換は`std::function`の`operator()`の`return`文で起こります。
 
 この問題は上記例のように、標準ライブラリ内部ですら普通に起こりえます。そのうえ、一部の実装では標準ライブラリ内部で起こるコンパイラの警告を抑制していることがあるため、コンパイラの警告で気付くことができなくなる場合もあります。
 
@@ -3509,7 +3152,7 @@ static_assert(std::reference_converts_from_temporary_v<const int&, int&&> == fal
 
 ここでは`T`として`int`を例に使用していますが他のクラス型等でも同じです。ただし、クラス型の場合は変換可能のケースに変換コンストラクタや派生クラスから基底クラスへの変換なども含まれるようになります。
 
-`std::reference_constructs_from_temporary`と`std::reference_converts_from_temporary`は名前が異なり扱う初期化形式も異なっているものの、C++23時点では同じ`T, U`に対して同じ結果となるはずです。これは、参照の初期化において`T&& t(u);`と`T&& t = u;`の両方で寿命延長が発生する場合の条件が同じであるためです。直接初期化とコピー初期化の形式は値の初期化あれば`explicit`な変換が考慮されるかが異なりますが、参照の初期化の場合はどちらにおいても考慮されません。
+`reference_constructs_from_temporary`と`reference_converts_from_temporary`は名前が異なり扱う初期化形式も異なっているものの、C++23時点では同じ`T, U`に対して同じ結果となるはずです。これは、参照の初期化において`T&& t(u);`と`T&& t = u;`の両方で寿命延長が発生する場合の条件が同じであるためです。直接初期化とコピー初期化の形式は値の初期化あれば`explicit`な変換が考慮されるかが異なりますが、参照の初期化の場合はどちらにおいても考慮されません。
 
 名前が異なっているのはおそらく、将来的に両者の条件が異なる可能性を残しているためと考えられます。あるいは、`reference_constructs_from_temporary`はコンストラクタの文脈で、`reference_converts_from_temporary`は暗黙変換（関数戻り値）の文脈で使用するという使い分けを意識しているのかもしれません。
 
@@ -3651,7 +3294,7 @@ static_assert(
     std::common_reference_t<int&, std::reference_wrapper<int>>,
     int
   >
-);
+);  // ✅
 ```
 
 C++23ではこれが修正され、`std::common_reference_t<T&, std::reference_wrapper<T>>`の結果が`T&`になるように変更されます。
@@ -3662,7 +3305,7 @@ static_assert(
     std::common_reference_t<int&, std::reference_wrapper<int>>,
     int&
   >
-);
+);  // ✅
 ```
 
 また、`std::reference_wrapper`に対するCVと参照修飾も正しく扱えるようになります。
@@ -3673,14 +3316,14 @@ static_assert(
     std::common_reference_t<int&, std::reference_wrapper<int>&>,
     int&  // 以前はint
   >
-);
+);  // ✅
 
 static_assert(
   std::same_as<
     std::common_reference_t<int&, const std::reference_wrapper<int>&>,
     int&  // 以前はconst int&
   >
-);
+);  // ✅
 ```
 
 標準ライブラリ中でも`<ranges>`などで`std::common_reference`が使用されているため、この変更によってそれらの振る舞いも改善されます（コピーや一時オブジェクト生成が参照になるなど）。
@@ -3744,9 +3387,9 @@ namespace std {
 - `std::equality_comparable_with`
 - `std::totally_ordered_with`
 
-そもそもこのような共通参照型の上での比較可能性の要求は、`std::equality_comparable_with<T, U>`のように異なる型`T, U`の間の比較を定義するコンセプトにおいて2つの異なる型の間での比較（二項関係）を数学的に考えた時に、その2つの型を包含するような型`V`が存在してその上での二項関係が定義されている必要がある、という考え方によるものです。この型`V`を定義するのが`std::common_reference_t<T, U>`であり、`std::common_reference_with<T, U>`はそのような型`V`が存在することを指定します。
+そもそもこのような共通参照型の上での比較可能性の要求は、`equality_comparable_with<T, U>`のように異なる型`T, U`の間の比較を定義するコンセプトにおいて2つの異なる型の間での比較（二項関係）を数学的に考えた時に、その2つの型を包含するような型`V`が存在してその上での二項関係が定義されている必要がある、という考え方によるものです。この型`V`を定義するのが`common_reference_t<T, U>`であり、`common_reference_with<T, U>`はそのような型`V`が存在することを指定します。
 
-これは実行時にそのような変換が行われるわけではなく、数学的な比較の定義をC++のコンセプト定義にエンコードする際に`common_reference`を使用しているだけです。そのため、`common_reference_with`を使用していることに実利的な意味があるわけではありません。
+これは実行時にそのような変換が行われるわけではなく、数学的な比較の定義をC++のコンセプト定義にエンコードする際に`common_reference`を使用しているだけです。そのため、`common_reference_with`を使用していることに実利的な意味があるわけではありません。また、その過程で`const`参照を使用していることにも大きな意味はありません。
 
 C++23では、これらの異種型比較のコンセプトの`common_reference_with`要件がムーブオンリー型に対応できる別の説明専用コンセプトに置き換えられることで、ムーブオンリー型で動作しない問題が修正されます。ただし、共通参照型の上での比較可能性の要求とその背景にある数学的な考察についての意図には変化がありません。
 
@@ -3806,9 +3449,381 @@ static_assert(std::equality_comparable_with<std::unique_ptr<T>, std::nullptr_t>)
 
 また同時に、異種型間比較系コンセプトの意味論要件についても同様にムーブオンリー型を考慮するように調整が行われています。とはいえ、意味論要件が大きく変更されるわけではなく、共通参照型の上での比較に関連するところでコピーではなくムーブも考慮するようになるだけです。
 
-# chrono
+\clearpage
 
-## `time_point`の時計型の要件緩和
+# その他のヘッダやカテゴリ
+
+## `std::byteswap()`
+
+※この項目は「C++20 ライブラリ機能1」に早まって掲載されていたものとほぼ同一です。`std::byteswap`はC++20ではなく23から利用可能になります。
+
+バイトオーダーとは値のバイト配列をメモリ上に保存する際の順序の事で、エンディアンとも呼ばれます。大別すると、ビッグエンディアンとリトルエンディアンの2つがあります。
+
+エンディアンは値（オブジェクト）をバイト列として読み出すときに問題となるほか、ネットワークバイトオーダーはビッグエンディアンである一方でx86 CPUはリトルエンディアンであることから、ネットワーク越しに送受信したバイト列を読み替える（*punning*する）際に問題となったりします。
+
+リトルエンディアンとビッグエンディアンはバイトスワップという操作によって簡単に相互変換することができますが、これまでのC++にはそれを行うための標準的な方法がありませんでした（一応POSIX規格に`htonl()/ntohl()`という関数はありました）。
+
+C++23からはそのために、`std::byteswap()`が用意されます。この`std::byteswap()`の入力は、符号付きも含めた整数型を使用可能です。
+
+```cpp{style=cppstddecl}
+namespace std {
+  template<std::integral T>
+  constexpr T byteswap(T value) noexcept;
+}
+```
+
+```cpp
+#include <bit>
+
+int main() {
+  // プログラマが扱うのはビッグエンディアン
+  constexpr std::uint32_t n = 0x1234ABCD;
+
+  // リトルエンディアンに変換
+  std::uint32_t lite = std::byteswap(n);
+  // ビッグエンディアンに変換
+  std::uint32_t bige = std::byteswap(lite);
+
+  std::println("{:#X}", lite);
+  std::println("{:#X}", bige);
+}
+```
+```{style=planetext}
+0XCDAB3412
+0X1234ABCD
+```
+
+バイトスワップは、バイト列の真ん中（全体の長さが偶数の場合はバイト境界、奇数の場合は中心バイト）を中心とした点対称のような交換によってバイト列の並べ替えを行います。
+
+ややこしい点として、先ほどのサンプルコードはx86 CPU等リトルエンディアンのCPUで動かしたとき、想定（コメントの記述）とメモリ上の実際の配置は逆になります。例えば、最初の`n`はメモリ上ではリトルエンディアンで格納されており、それを`byteswap()`するとメモリ上の配置としてはビッグエンディアンに見えるようになりますが、CPUはいつもリトルエンディアンとして読み出すため、その値（のバイト表現）はまた実際のメモリ上の配置とは逆になります。
+
+```cpp
+#include <bit>
+
+int main() {
+  // 0x1234ABCDをビッグエンディアンで配置
+  std::array<std::uint8_t, 4> bytes{0x12, 0x34, 0xAB, 0xCD};
+
+  auto n = std::bit_cast<std::uint32_t>(bytes);
+  // メモリ配置は|12|34|AB|CD|
+  // 値は0xCDAB3412
+
+  std::uint32_t lite = std::byteswap(n);
+  // メモリ配置は|CD|AB|34|12|
+  // 値は0x1234ABCD
+
+  std::uint32_t bige = std::byteswap(lite);
+  // メモリ配置は|12|34|AB|CD|
+  // 値は0xCDAB3412
+
+  std::println("{:#X}", lite);
+  std::println("{:#X}", bige);
+}
+```
+```{style=planetext}
+0X1234ABCD
+0XCDAB3412
+```
+
+すなわち、この関数はメモリ上の配置としてバイトスワップを行うのではなく、読み出した値のバイト表現についてバイトスワップを行います（そしてその上で再度環境のエンディアンによってメモリに格納されます）。とはいえ、リトルエンディアンとビッグエンディアンは相互変換可能であることもあり、多くの場合にこのことを意識する必要はないはずです。
+
+## `std::visit()`の制限緩和
+
+`std::visit`は引数列の最後に受け取る`std::variant`をテンプレートで受け取っています。
+
+```cpp{style=cppstddecl}
+namespace std {
+  // visit()の宣言例（戻り値型指定をする方
+  template<typename R, typename Visitor, typename... Variants>
+  constexpr R visit(Visitor&& vis, Variants&&... vars);
+}
+```
+
+可変長引数で受けているのは複数の`std::variant`を同時に扱うことができるためですが、この`vars`に渡すことのできる型としては`std::variant`の特殊化のみでした。
+
+C++23からはそれが少し緩和され、`std::variant`（の任意の特殊化）を曖昧でない`public`な基底クラスとして持つ型でも呼べるようになります。
+
+```cpp
+// variantによってステートマシンを表現する例
+struct State : public std::variant<Disconnected, Connecting, Connected> {
+  using std::variant::variant;
+  
+  // variantにはないこの用途での専用APIを追加する
+  bool is_connected() const {
+    return std::holds_alternative<Connected>(*this);
+  }
+  
+  friend std::ostream& operator<<(std::ostream&, const State&) {
+    ...
+  }
+};
+
+int main() {
+  State state = ...;
+
+  if (state.is_connected()) {
+    ...
+  }
+
+  // 状態に応じた処理にvisit()を使用
+  std::visit(overloaded {
+      [](const Disconnected& s) { ... },
+      [](const Connecting& s) { ... },
+      [](const Connected& s) { ... },
+    }, state);  // ok、State型でもvisit()が使える
+}
+```
+
+## `std::optional`のモナドインターフェース
+
+「C++23 ライブラリ機能1」で紹介した`std::expected`はモナドインターフェースを持っていましたが、`std::optional`にもほぼ同じものが導入されます。ただし`std::optional`の無効値が`std::nullopt`固定という事情もあり、一部だけかつ微妙に違いがあります。
+
+まず、`std::optional`のモナドインターフェースとして導入されるのは次の3つです
+
+- `.and_then(f)`: `std::optional<T>` -> `std::optional<U>`
+    - `f`: `T` -> `std::optional<U>`
+- `.or_else(f)`: `std::optional<T>` -> `std::optional<T>`
+    - `f`: `void` -> `std::optional<U>`
+- `.transform(f)`: `std::optional<T>` -> `std::optional<U>`
+    - `f`: `T` -> `U`
+
+`.and_then()`と`.transform()`は`std::expected`のそれと同じものとなりますが、`.or_else()`だけが少し異なっています。
+
+`.or_else()`に渡す関数は引数として`std::nullopt_t`を受け取るのではなく何も受け取らず、戻り値は任意の`std::optional<U>`ではなく呼び出した`std::optional<T>`と同じ型の`std::optional<T>`を返す必要があります（その有効状態を切り替えることはできます）。
+
+そのほか動作や役割などは`std:expected`のものと共通しています（詳しい説明は「C++23 ライブラリ機能1」もご覧ください）。
+
+`.and_then()`のサンプルコード
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs)
+  -> std::optional<std::string>;
+
+void example() {
+  // ファイルを開いて内容を出力してから返す
+  auto res = attempt_to_open("file.txt")
+                .and_then(extract_content)
+                .and_then([](auto file_str) {
+                   std::println("file content: {:s}", file_str);
+                   return std::optional<std::string>{std::move(file_str)};
+                 });
+
+  ...
+}
+```
+
+`attempt_to_open()`か`extract_content()`が失敗によって無効値を保持する`optional`を返した場合、`res`は無効状態になります。
+
+`.or_else()`のサンプルコード
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs)
+  -> std::optional<std::string>;
+
+// ファイルオープンエラーをハンドリング、
+auto on_error() -> std::optional<std::string> {
+  // 空文字のstringに変換
+  return { "" };
+}
+
+void example() {
+  // ファイルを開いてエラーを処理する
+  auto res = attempt_to_open("file.txt")
+                .and_then(extract_content)
+                .or_else(on_error);
+
+  assert(res.has_value());  // ✅
+
+  ...
+}
+```
+
+この場合、`.or_else(on_error)`は前の2つの処理が失敗（無効値）を返した場合にのみ呼ばれて、エラー状態を空文字列に変換することで最終的な`res`は常に有効状態となります。
+
+`.transform()`のサンプルコード
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs) -> std::string;
+
+void example() {
+  // ファイルを開いて内容を出力してから返す
+  auto res = attempt_to_open("file.txt")
+                .transform(extract_content)
+                .transform([](auto file_str) {
+                  std::println("file content: {:s}", file_str);
+                  return file_str;
+                 });
+
+  ...
+}
+```
+
+`.transform()`に渡す処理は`optional`が有効状態の場合のみ呼ばれるため、この場合の`res`は`attempt_to_open()`の結果によって無効状態になりえます。`.transform()`は`optional`の有効状態を変更できないため、この場合に`extract_content`のエラーを`optional`の無効値という形で報告することはできません。
+
+なおこちらの`.transform()`は渡す関数の戻り値型を`void`にすることはできません。
+
+この3つの関数はいずれも`std::optional`そのものを返すため、メソッドチェーンの形で組み合わせて使用できます。
+
+```cpp
+// ファイルを開く
+auto attempt_to_open(std::filesystem::path file)
+  -> std::optional<std::ifstream>;
+
+// ファイルオープンエラーをハンドリング
+auto attempt_recovery()
+  -> std::optional<std::ifstream>;
+
+// ファイルの内容を読み込む
+auto extract_content(std::ifstream ifs)
+  -> std::string;
+
+// 読み取った内容を検証
+auto ensure_valid_content(std::string file_data)
+  -> std::optional<std::string>;
+
+
+void example() {
+  // ファイルを開いて内容を読み取って返す
+  auto res = attempt_to_open("file.txt")
+                .or_else(attempt_recovery)
+                .transform(extract_content)
+                .and_then(ensure_valid_content);
+
+  ...
+}
+```
+
+## `std::barrier`の同期保証の調整
+
+`std::barrier`はFork-Joinモデルのような並行処理の実装に活用することができる繰り返し使用可能な同期機構です。典型的には、同期に参加する全スレッドが並列実行される部分と一つのスレッドだけで実行される同期部分から構成される処理単位の繰り返しのような処理になり、その繰り返しの中の1つの処理単位のことをバリアフェーズと呼びます。
+
+`std::barrier`はテンプレート引数として完了関数（`CompletionFunction`）の型を受け取って、そのオブジェクトを保持しておくことでバリアフェーズの最後にどこか一つのスレッドでそれを実行してから、待機しているスレッドを再開します。
+
+```cpp
+// 複数のスレッドで呼ばれる処理
+template<typename CF>
+void fork_proc(std::barrier<CF>& sync) {
+  // キャンセルされるまで行われる連続処理
+  // ループごとに全スレッドで同期しつつ実行される
+  while(/*キャンセルの検出*/) {
+
+    // メインの処理
+    ...
+
+    // 全スレッドはここで待ち合わせる（1ループの処理の完了を同期する）
+    // バリアフェーズに参加する全てのスレッドがここに到達した時、CFの処理を実行してから次のバリアフェーズを開始する
+    sync.arrive_and_wait(); // 同期ポイント
+  }
+}
+
+int main() {
+  // 並列数
+  constexpr std::size_t N = 10;
+
+  // 完了関数
+  // バリアフェーズの最後にどこか1スレッドが実行する
+  auto completion_function = [] {
+    // 処理対象データの更新など、同期が必要なシングルスレッド処理
+    ...
+  };
+
+  // スレッド数でバリアを初期化
+  // 同時に、同期ポイントで再開直前に実行する完了関数を指定
+  std::barrier sync{N, completion_function};
+
+  for ([[maybe_unused]] auto i : std::views::iota(0, N)) {
+    std::thread{[&sync]{
+      fork_proc(sync);
+    }}.detach();
+  }
+
+  // 完了を待機する処理など
+  ...
+}
+```
+
+バリアで同期する（バリアフェーズに参加する）各スレッドは`.arive()`（同期ポイント到達通知）と`.wait()`（他スレッドの待機）もしくは`.arrive_and_wait()`（`.arive()`と`.wait()`の複合操作）を呼び出すことで同期を取ります。完了関数は、バリアフェーズに参加しているスレッドが全て同期ポイントに到達した後、バリアフェーズに参加するスレッドのいずれかで実行され、その実行が完了した後で次のバリアフェーズが開始されます。
+
+C++20の標準の規定では、この完了関数がどのスレッドで実行されるかは実装の自由として明確に規定していません。しかし、`std::barrier`の保証やメンバ関数の規定などの相互作用から生じる（意図しない）制約によって、実質的に同期ポイントに最後に到達したスレッドで実行する実装しか取れないようになっていました。それによって、ハードウェア（GPUなど）が持っているスレッド同期機構やそのサポート機構を用いて`std::barrier`を効率的に実装することが妨げられていました。
+
+C++23では、この意図しない制限が取り払われたことで、`std::barrier`の効率的な実装が可能になります。
+
+これは厳密には振る舞いの変更であり破壊的変更となりますが、元の規定による振る舞いが多くの場合に意外なものであったことと、C++20で追加されたばかりだったことなどから、破壊的変更の影響は小さいと判断されました。
+
+### C++20の意図しない制約と変更の詳細
+
+C++20時点の意図しない制限というのは、`std::barrier`の`.arive()`（同期ポイント到達通知）と`.wait()`（他スレッドの待機）の操作が分かれている事に原因があります。`.arive()`は戻り値として`arrival_token`というものを返し、`.wait()`はその`arrival_token`を受け取って待機します。この2つの操作が分割されていることによって、バリア同期ポイント通知とバリア同期の待機を異なるスレッドで行うことができるようになっています。
+
+これによって、恣意的ではあるものの次のようなことが起こります
+
+```cpp
+// 参加スレッド数2で初期化、完了関数cfをセット
+std::barrier<CF> b{2, cf};
+
+// arrival_tokenの型
+using tok_t = decltype(b.arrive());
+
+void thread() {
+  new tok_t(b.arrive());  // A: 同期ポイント到達を通知するが、返されるトークンを消費しない（リークしてる
+}                         // B: スレッド終了
+
+// C: 2つのスレッドを起動
+auto t0 = std::thread(thread);
+auto t1 = std::thread(thread);
+
+// D: 2つのスレッド終了待機
+t0.join();                      
+t1.join();
+
+// E: 完了関数cfが呼ばれていることが保証される
+```
+
+この例では、2つの`arrival_token`が有効であり続けながら`std::barrier`の`.wait()`は呼ばれておらず、バリアフェーズに参加している（完了を待機している）スレッドが居なくなっています。現在の標準の規定はこの時でも完了関数が呼ばれていることを保証しているため、このような極端な場合でもそれを確実に達成するためには、最後に`.arive()`したスレッドで完了関数を実行するという実装を取らざるを得ません。
+
+これは、C++20の`std::barrier`仕様が保証していた次の2つのことの相互作用の結果です
+
+- スレッドが`.wait()`を呼び出さなくてもいい自由
+- 完了関数（バリアフェーズ完了ステップ）は、バリアに参加しているすべてのスレッドが同期ポイントに到達した時に常に実行される
+
+数百万のHWスレッドを持つアーキテクチャでは、わずかな並列化されていない処理によって大きく並列化のスケーラビリティが制限されます（アムダールの法則）。`.arive()`と`.wait()`を分割しているAPIはそのオーバーヘッドを削減するためのもので、完了関数が実行するシングルスレッド処理と`std::barrier`の同期の処理を並列化し、同期をさらに別のスレッドやHWアクセラレータで実行することで同期のコストを完了関数の処理の背後に隠蔽することを意図したものでした。しかし、上記の問題によってそのような実装は実質的に許可されていませんでした。
+
+C++23では、`std::barrier`の保証を次のように変更することでこの問題が解決されています
+
+- 累積性は以下の2つの場所で確立される
+    - バリアフェーズに参加しているすべてのスレッドと完了関数を実行するスレッドの間
+    - 完了関数を実行するスレッドと`.wait()`の呼び出しによってバリアフェーズ完了を待機しているすべてのスレッドの間
+- 完了関数は、バリアに参加しているすべてのスレッドが同期ポイントに到達した後、ちょうど一度だけ、次のバリアフェーズ開始前に実行される
+- 完了関数は、そのバリアフェーズに参加している（参加していた）スレッドの一つで実行される
+- バリアフェーズ完了を待機するスレッドが無い場合（だれも`.wait()`を呼んでいない場合）、完了関数が実行されるかは実装定義
+
+累積性（*Cumulativity*）とは、2つの処理（A, B）を接続するある地点（A -> C -> BのC）について、AがCに到達してからBが実行されるという順序関係を言うもので、特にマルチスレッド処理の場合にはAの並行処理がすべて終わってから（各スレッドの完了がCに累積してから）、Bの処理開始が実行（累積）されることを表現しています。
+
+すなわち、この累積性の規定によって、あるバリアフェーズの終了によって実行される完了関数からは、そのバリアフェーズで行われた任意のスレッドの変更が確実に同期されており（可視になっており）、またその完了関数の終了によって待機が解除されて次のバリアフェーズを開始するスレッドからは完了関数で行われた変更が確実に同期（可視になる）されています。
+
+バリアフェーズA -> 完了関数 -> バリアフェーズB、のような処理の流れの中で、Aで行われた変更は競合等なく完了関数から安全に利用可能になり、完了関数で行われた変更も競合等なく安全にBの開始時点で利用可能になる、ということを言っています。これは`std::barrier`のセマンティクスからすると当然提供されるべき保証であり、（分かりづらくはあるものの）特に驚きの無い当然の保証です。
+
+そして、完了関数の実行は最後に同期ポイントに到達したスレッドではなく、そのバリアフェーズに参加して居た任意のスレッドで実行することができるようになり、次のバリアフェーズに参加するスレッドがない（だれも`.wait()`を呼んでいない）場合に必ずしも完了関数を実行しなくてもよくなっています。
+
+このような変更によって、完了関数の実行場所の自由度が向上し、元来意図されていたようにHWアクセラレータを活用することもできるようになっています。
+
+## `<chrono>`
+
+### `time_point`の時計型の要件緩和
 
 `std::chrono::time_point`は時間軸上の一点を指定する型で、その時間基準（始点（*epoch*）と分解能）を指定するために時計型と時間間隔を表す2つのテンプレートパラメータを受け取ります。
 
@@ -3839,7 +3854,7 @@ C++23ではこの制限が緩和され、`std::chrono::time_point`の`Clock`テ�
 
 この変更がなされたとしても既存のライブラリ機能とそれを使ったコードに影響はなく、`local_t`が既にあることから実装にも影響はありません。
 
-## リテラルエンコーディングとロケールエンコーディングが異なっている場合の`chrono`型のフォーマット結果の明確化
+### リテラルエンコーディングとロケールエンコーディングが異なっている場合の`chrono`型のフォーマット結果の明確化
 
 C++20で追加された`chrono`型のフォーマット対応において、ロケールオプションが指定されている場合にリテラルエンコーディング（文字列リテラルのエンコーディング）とロケールで指定されたエンコーディングの間に不一致がある場合の振る舞いが規定されていませんでした。
 
@@ -3853,7 +3868,7 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
 
 この例では、リテラルエンコーディング（文字列リテラルのエンコーディング）がUTF-8の場合、グローバルロケールに指定されている`Russian.1251`エンコーディングとの間に不一致があります。
 
-C++23ではこの場合の振る舞いが規定され、文字列リテラルのエンコーディングがユニコードでありロケールの指定するエンコーディングと異なる場合、ロケールによる文字列置換結果は、文字列リテラルのエンコーディングに変換されて出力される、ようになります。
+C++23ではこの場合の振る舞いが規定され、文字列リテラルのエンコーディングがユニコードでありロケールの指定するエンコーディングと異なる場合、ロケールによる文字列置換結果は、文字列リテラルのエンコーディング（すなわちユニコード）に変換されて出力される、ようになります。
 
 ```cpp
 std::locale::global(std::locale("Russian.1251"));
@@ -3865,6 +3880,8 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
 
 なお、このことは`std::print()`などでも同様に適用されます。
 
+\clearpage
+
 # 大域的な変更
 
 ここでは、大きくはないものの同種の変更がより広いライブラリ機能にわたるものについて簡単にまとめておきます。その性質上、個別に列挙する場合は抜けがあるかもしれませんがご容赦ください。
@@ -3874,6 +3891,7 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
 次の関数はC++23から`constexpr`指定されるようになり、定数式で使用可能となります。
 
 - `std::unique_ptr`のメンバ関数と関連関数
+    - 全メンバ関数の`constexpr`対応
     - `nullptr`との比較ではない順序付け比較演算子（`<`など）は除く
     - ハッシュサポートは除く
 - `std::bitset`のメンバ関数と関連関数
@@ -3883,7 +3901,7 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
     - `<cstdllib>`の`abs`/`div`系関数
     - `<cmath>`では三角関数・双曲線関数・指数/対数関数・平方根などの主要な関数は対象外
 - `std::type_info::operator==`
-- `to_chars`/`form_chars`の整数型用オーバーロード
+- `std::to_chars`/`std::form_chars`の整数型用オーバーロード
 - `std::optional, std::variant`の一部の関数
     - これによって、`std::optional, std::variant`は全てのメンバ関数が`constexpr`対応した
 
@@ -3915,7 +3933,7 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
 
 ## 非推奨化の解除
 
-次のものは、以前に非推奨だったもののC++23で解除されたものです。
+次のものは、以前に非推奨だったもののC++23で解除されました。
 
 - Cヘッダ
   - `<cxxx>`に対する`xxx.h`
@@ -3946,7 +3964,7 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
     - `<type_traits>`
     - `<ratio>`
     - `<bit>`
-- 一部の機能
+- ヘッダ内の一部の機能
     - `<cstdlib>`
     - `<memory>`
     - `<functional>`
@@ -3954,7 +3972,7 @@ auto s = std::format("День недели: {:L}", std::chrono::Monday);
     - `<ranges>`
     - `<atomic>`
 
-フリースタンディング機能の性質上、動的メモリ確保やスレッドサポート、iostreamに関するものは除かれています。
+フリースタンディング機能の性質上、動的メモリ確保やスレッドサポート、iostreamに関するものは除かれています（ただし`new/delete`は含まれます）。
 
 \clearpage
 
