@@ -3234,6 +3234,8 @@ namespace std {
 }
 ```
 
+\clearpage
+
 C++23時点で、*implicit-lifetime type*に該当する型は次のいずれかのものです
 
 - スカラ型
