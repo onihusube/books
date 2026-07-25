@@ -987,27 +987,27 @@ int f(const int y)
 int f(const int x)
   pre (x != 1)
   pre (0 <= x)
-  post(r : r == x);
+  post(r : r == x)
   post(r : r != 2);
 
 // 以下の再宣言は同一とみなされない
 int f(const int x)
   pre (0 <= x)      // 入れ替わっている
   pre (x != 1)      // 入れ替わっている
-  post(r : r == x);
+  post(r : r == x)
   post(r : r != 2);
 
 int f(const int x)
   pre (x != 1)
   pre (0 <= x)
-  post(r : r != 2); // 入れ替わっている
+  post(r : r != 2)  // 入れ替わっている
   post(r : r == x); // 入れ替わっている
 
 int f(const int x)
-  post(r : r == x); // postが先に来ている
-  post(r : r != 2); // postが先に来ている
+  post(r : r == x)  // postが先に来ている
+  post(r : r != 2)  // postが先に来ている
   pre (x != 1)
-  pre (0 <= x)
+  pre (0 <= x);
 ```
 
 #### 事前条件と事後条件アサーションにおけるラムダ式の使用
@@ -1084,7 +1084,7 @@ C++26時点の各セマンティクスの違いは表にして一覧できます
 - *enforce* : 違反ハンドラが正常にリターンした場合、プログラムを終了する
     - 違反ハンドラがリターンしなければ、プログラムは終了されない
 
-*observe*と*enforce*のデフォルトの継続動作はそれぞれ継続すると継続しないですが、違反ハンドラがリターンするかどうかによってこの動作をオーバーライドできます。これについては次節で詳しく説明します。
+*observe*と*enforce*のデフォルトの継続動作はそれぞれ継続すると継続しないですが、違反ハンドラがリターンするかどうかによってこの動作をオーバーライドできます。これについては「契約違反ハンドラ」の節で詳しく説明します。
 
 *ignore*セマンティクスはチェックを行わないため契約違反が発生しないので違反ハンドラ呼び出しもプログラム終了も行われません。そのため実際に契約違反が発生していたとしてもそれを検出することはできません。しかし、これにより契約アサーションの評価によるオーバーヘッドをゼロにすることができます。なお、契約アサーションが*ignore*セマンティクスでコンパイルし実行される場合でも契約条件式のコンパイル（構文チェック）は行われており、*ignore*セマンティクスのアサーションの契約条件式で参照されているテンプレートは実体化されます（これは`assert`マクロのセマンティクスとは異なる点です）。
 
@@ -1645,7 +1645,7 @@ void handle_contract_violation(const std::contracts::contract_violation& info) n
   const auto loc = info.location();
 
   std::println("{} In function '{}'", loc.file_name(), loc.function_name());
-  std::print("{}:{}:{}: contract violation occured", loc.file_name(), loc.line(), loc.column());
+  std::print("{}:{}:{}: contract violation occurred", loc.file_name(), loc.line(), loc.column());
   // フォーマッタが用意されているとする
   std::println(" [assertion={}, semantic={}]", info.kind(), info.semantic());
   std::println("{}", info.comment());
@@ -1752,7 +1752,7 @@ if (evaluation_semantic::ignore == _semantic) {
     // 定数式における契約チェック
     ...
   } else {
-    // 契約違反が起きていないかを記録する
+    // 契約違反が起きたかを記録する
     bool _violation;
     // 違反ハンドラが呼び出されたかを記録する
     bool _handled = false;
@@ -1760,7 +1760,7 @@ if (evaluation_semantic::ignore == _semantic) {
     // 契約条件式のチェックと違反ハンドラの呼び出し(必要な場合）
     try {
       // 契約条件式の評価
-      _violation = __check_predicate(X);
+      _violation = __check_predicate(X) == false;
     } catch (...) {
       // 契約条件式の評価が例外を送出した場合
       if (evaluation_semantic::quick_enforce == _semantic) {
@@ -2325,7 +2325,7 @@ P2900はC++ Contracts機能の最初の提案ではありますが、最後の�
 
 ただし、既存のC++の規則に起因する未定義動作を契約アサーション内で回避できるわけではなく、契約アサーションに関連する新しい仕様についてはこの原則に従うということです。
 
-ただし、実装定義（implementation defined）の選択は未規定や未定義動作とは異なるもので、Contracts機能の多様な環境におけるサポートのために明確な意図をもって選択されています（詳細は後述）。
+また、実装定義（implementation defined）の選択は未規定や未定義動作とは異なるもので、Contracts機能の多様な環境におけるサポートのために明確な意図をもって選択されています（詳細は後述）。
 
 ## 互換性についての原則
 
