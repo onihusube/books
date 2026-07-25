@@ -1,7 +1,7 @@
 ---
 title: C++26 Contracts
 author: onihusube
-date: 2025/12/31
+date: 2026/08/17
 geometry:
   width: 188mm
   height: 263mm
@@ -82,12 +82,6 @@ namespace std {
 \clearpage
 
 # 契約プログラミングについて
-
-契約プログラミング
-
-ドキュメント同期問題
-
-契約が守られていない場合はバグである
 
 ## 契約とは
 
@@ -208,8 +202,6 @@ int divide(int x, int y);
 
 事前条件と事後条件は契約の一部であり、プログラムを正しく利用するための利用者と実装者の間の共通理解でした。仕様が正しいとして事前条件と事後条件がその仕様をすべて反映しているとすると、事前条件が全て順守され、プログラムが実行され、実行後に事後条件が全て順守されていれば、そのプログラムは正しく動作したと言えます。この意味で、正しいプログラムはその仕様の下でバグが無いということになります。
 
-https://www.is.s.u-tokyo.ac.jp/shingaku/highschool/logic.html
-
 ## 契約プログラミング、あるいは契約による設計
 
 先ほどまでの契約という概念から、特に関数呼び出し境界の契約だけを考えて、その契約をさらに事前条件・事後条件とそれ以外の部分（関数の動作やエラーについてなどの仕様）に分割して事前条件と事後条件に着目します。この事前条件と事後条件を適切に設計し表明することで関数の利用者と実装者の間の責務を明文化しながらプログラム構造を設計します。これが、契約プログラミングあるいは契約による設計と呼ばれる方法論です。
@@ -289,8 +281,6 @@ https://www.is.s.u-tokyo.ac.jp/shingaku/highschool/logic.html
 
 データ型としてのクラスにおいてはクラス不変条件の成立はデータの正しさを保証することでもあり、クラス不変条件が成立しているクラスオブジェクトの表現するデータは（そのクラスの仕様の下で）正しい状態にあるということができます。これは契約プログラミングを実践してプログラムの正しさを向上させる際にも同時に重要です。
 
-https://nous.web.nitech.ac.jp/individual/inuzuka/lecture/PLT/PLT07/PLT4-4up.pdf
-
 ループ不変条件はループの間常に成立している必要がある条件であり、ループが正しく実行されるために必須の条件です。これは形式手法においてアルゴリズムの正しさを証明する際にも重要な役割を持ちます。
 
 より細かくは、ループ不変条件はループの開始前と各イテレーションの前後で成り立つ条件です。
@@ -328,8 +318,6 @@ auto fact(std::size_t n) -> std::size_t {
 
 そのため、契約プログラミングを実践する際には事前条件と事後条件に加えて不変条件も考えて扱う必要があります。不変条件はプログラムの至る所に現れうるため適切に扱えるようになるには少し慣れが必要になるかもしれませんが、不変条件を意識してそれをアサーションを用いて可視化することもより正確なプログラムを記述することに繋がります。
 
-https://qiita.com/Kokudori/items/2e4bd32abf7abea3186f
-
 ### ホーア論理
 
 契約プログラミング・契約による設計はバートランド・メイヤーによって提案され、プログラミング言語Eiffelで実証された概念です。メイヤーによる契約による設計のアイデアは、ホーア論理という形式的検証の手法を実際のソフトウェア開発に導入しようとするものでした。
@@ -357,10 +345,6 @@ $$
 しかし、実際にはホーア論理のみで形式的検証を行うのはあまり現実的ではなく、ホーア論理を基礎とする形式的検証の手法でもホーア論理そのものが直接的に使用されているわけではありません。ホーア論理を理論的基礎として応用・発展させた手法や周辺手法の発展を取り込むことで、ホーア論理を基礎とする現代のプログラムの形式検証手法は実践されています。
 
 例えば、Ada/SPARK、Frama-Cなどのプログラミング言語や静的解析ツールでは、事前条件と事後条件および不変条件のアサーションを活用してホーア論理に基づく関数の正しさの証明を行うことができ、なおかつ一定規模の産業応用の実績があります（ただし、事前条件と事後条件を書いておくだけで検証可能になるという訳ではありません）。C++26の契約プログラミング機能はそのような機能を持たないものの、契約プログラミング機能を活用してアサーションを積極的に書いておくと、どこかの将来でこのような形式手法を利用できるようになる時が来るかもしれません。
-
-https://group-mmm.org/~ichiro/talks/komabaSogo2011Handout.pdf
-https://research.nii.ac.jp/~f-ishikawa/work/UEC-MItoku2/MItoku2-04-hoare.pdf
-https://nous.web.nitech.ac.jp/individual/inuzuka/lecture/PLT/PLT07/PLT12-4up.pdf
 
 ## 狭い契約と広い契約
 
@@ -508,8 +492,6 @@ C++26の契約プログラミング機能では、基本的に契約違反はバ
 
 防衛的プログラミングには、契約を人為的に広げた時と同じようなデメリットがあります。つまり、検査のコストが色々なところで発生し、エラーハンドリングのためのコードは可読性を低下させると同時にコードの複雑度・テスト項目を増大させ、保守性を低下させます。また、防衛的な設計や制限が開発上の制約にもなりえます。
 
-https://blog.ohgaki.net/3748
-
 #### 正当性検証と入力検証
 
 防衛的プログラミングと契約プログラミングのどちらを採用すべきかは要件等によるものの、中には防衛的プログラミングを採用しなければならず単に契約としてはならない場合があります。ここではそのような検証（実行時チェック）を入力検証と呼び、契約プログラミングを採用しても良いような検証を正当性検証と呼びます。
@@ -530,9 +512,6 @@ https://blog.ohgaki.net/3748
 
 ただし、文脈依存である正当性検証は単なる1コードの開発・保守を超えて、そのようなコードのパッケージングからテスト、デプロイ、実稼働に至るまで一貫してそれが正当性検証足りえることを保証する必要があります。プログラムの規模が大きくなるほど関係者が多くなるなどしてこれは困難になり、文脈依存である検証について正当性検証とすべきかはプログラムの要件や両者の利点と欠点などを考慮したうえでのトレードオフによって決定されることになります。
 
-https://bloomberg.github.io/bde-resources/pdfs/P2053R1.pdf
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1743r0.pdf
-
 #### 予防的プログラミング
 
 防衛的プログラミングを実践すると、関数の出入り口や不変条件の成立地点において`if`チェックを細かく行う必要が出てきます。このことは防衛的プログラミングのデメリットに直結するものであり、また関数の入口で`if`チェックしまくるような誤ったイメージの原因でもあります。
@@ -542,10 +521,6 @@ https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1743r0.pdf
 このような防衛的プログラミングの取り組みを指して、予防的プログラミングと呼ぶことがあります。
 
 責務の分離や型による表明などによって考えるべき事前条件と事後条件、不変条件を削減することは、ソースコード上の情報を落とすことなく実行時のアサーションを省略することにもつながるため、予防的プログラミング（すなわち防衛的プログラミング）のこのような取り組みは契約プログラミングの実践においても重要になります。
-
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4035r0.pdf
-https://www.youtube.com/watch?v=54jHDHvcYAo
-https://speakerdeck.com/twada/php-conference-2016
 
 ### 攻撃的プログラミング
 
@@ -720,7 +695,7 @@ class C {
 
   bool valid() const;
 public:
-  C(int a) :n(m) {}
+  C(int a) : n(a) {}
 
   void f()
     pre(valid())    // ok
@@ -1082,7 +1057,7 @@ auto f2(int n)
 
 結果名はテンプレートなどのように後から型を確定させることはなく、最初の宣言のその場で型が確定している必要があります。
 
-これはたとえ最初の宣言の直度に関数定義があったとしてもコンパイルエラーになります。戻り値型推論と事後条件での結果名の使用を両立させるには、関数の最初の宣言で定義まで行う必要があります。
+これはたとえ最初の宣言の直後に関数定義があったとしてもコンパイルエラーになります。戻り値型推論と事後条件での結果名の使用を両立させるには、関数の最初の宣言で定義まで行う必要があります。
 
 関数テンプレートの場合はこの制限が無く、宣言と定義が分かれていて戻り値型推論を使用していても、最初の宣言の時点で事後条件の結果名を使用できます。これは、関数テンプレートは宣言および定義の時点では実体化されておらず、どこかで利用されてインスタンス化された時にそのインスタンス化された対象が最初の宣言となるためです。
 
@@ -1875,7 +1850,7 @@ C++26 Contractsの提案段階ではかなり直前のリビジョンまで残�
 
 関数テンプレートも通常の関数同様に契約アサーションを指定することができ、ほとんどの規則は共通しています。ただし、前述のように戻り値型推論時の事後条件での結果名使用時に宣言と定義の分離が可能であるように、テンプレートであることによる差異があります。
 
-テンプレートにはプライマリテンプレートとその明示的/部分的特殊化があり、関数テンプレートでも同様です。この時、プライマリテンプレートに対して明示的/部分的な特殊化されている関数テンプレートはその契約アサーションを引き継がず、独立したものとして扱われます。
+テンプレートにはプライマリテンプレートとその明示的/部分的特殊化があり、関数テンプレートにも明示的特殊化があります。この時、プライマリテンプレートに対して明示的特殊化されている関数テンプレートはその契約アサーションを引き継がず、独立したものとして扱われます。
 
 ```cpp
 template<typename T>
@@ -1894,14 +1869,14 @@ void f(bool b) {}  // ok、f<bool>の最初の宣言
 
 ```cpp
 int f(int n)
-  post(n != 0); // ng、nがcostではない
+  post(n != 0); // ng、nがconstではない
 ```
 
 関数テンプレートでは、事後条件から使用されている引数の型がインスタンス化した結果として`const`な型になっていればそれでよく、明示的に`const`指定されている必要は必ずしもありません。
 
 ```cpp
 template<typename T>
-int f(T t)
+void f(T t)
   post(bool(t)) {}
 
 int main() {
@@ -1920,13 +1895,13 @@ int main() {
 
 ```cpp
 template<typename T>
-auto f(T&& t) pre(t.has_value()) {}
+auto f(T t) pre(t.has_value()) {}
 
 template<typename T>
 auto f(T&& t) pre(t.empty() == false) {}
 
 int main() {
-  std::string str = "test":
+  std::string str = "test";
   f(str); // ng、呼び出しが曖昧
 }
 ```
@@ -1940,17 +1915,17 @@ template<typename T>
 void f(T&& t, T&& u)
   pre(t < u);
 
-template<typnaem T>
-concept chack_f =
+template<typename T>
+concept check_f =
   requires(T t, T u) {
     f(t, u);
   };
 
-static_assert(chack_f<int>);  // ok
-static_assert(chack_f<std::any> == false); // ng、コンパイルエラー
+static_assert(check_f<int>);  // ok
+static_assert(check_f<std::any> == false); // ng、コンパイルエラー
 ```
 
-コンセプトの`requires`式内では通常、内部に記述された式の呼び出しが失敗してもそれを含む`requires`式の結果が`false`になるだけでコンパイルエラーにはなりません。しかし、そのようなコンテキストから契約アサーション内のエラーが誘発される場合はコンパイルエラーになります。上記例では`std::any`が比較演算子を持たないことによって`f()`の契約アサーション内でエラーが発生し、それが`chack_f`コンセプトを`false`にするのではなくコンパイルエラーにしています。
+コンセプトの`requires`式内では通常、内部に記述された式の呼び出しが失敗してもそれを含む`requires`式の結果が`false`になるだけでコンパイルエラーにはなりません。しかし、そのようなコンテキストから契約アサーション内のエラーが誘発される場合はコンパイルエラーになります。上記例では`std::any`が比較演算子を持たないことによって`f()`の契約アサーション内でエラーが発生し、それが`check_f`コンセプトを`false`にするのではなくコンパイルエラーにしています。
 
 ### ラムダ式
 
@@ -2417,9 +2392,6 @@ C++26契約プログラミング機能はこれら5つの原則をかなり重�
 
 前節のコンパイル時の契約アサーションに関する原則と同様に、ここでの実行時評価に関する原則もContracts機能の設計において極めて重要な基盤となっています。
 
-const化
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3261r1.pdf
-
 ## 契約アサーションと自然言語による契約
 
 契約アサーションがチェックするのは従来自然言語で指定されていた契約（仕様）の一部であり、契約アサーションを使用するために新しくチェックしなければならないことが増えるわけではありません。
@@ -2510,35 +2482,43 @@ C++26 Contracts仕様にある実装定義とは、こうした多様な実装�
 
 また、P3321R0という提案においてP2900 Contractsで実装定義とされている部分について実装が選択可能なオプションが列挙されています。
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3321r0.pdf
-
 \clearpage
 
 # 謝辞
 
 本書を執筆するに当たっては以下のサイトをとても参照しました。サイト管理者及び編集者・執筆者の方々に厚く御礼申し上げます。
 
-- https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf
-- https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4020r0.html
+一章
 
-https://www.kmonos.net/alang/d/dbc.html
-https://gihyo.jp/news/report/01/phpcon2016/0002
-https://sititou70.github.io/%E3%81%96%E3%81%A3%E3%81%8F%E3%82%8A%E3%83%9B%E3%83%BC%E3%82%A2%E8%AB%96%E7%90%86/
+- 契約による設計から見た例外 - Qiita (https://qiita.com/Kokudori/items/2e4bd32abf7abea3186f)
+- [phpconfuk2017] PHP7で堅牢なコードを書く - 例外処理、表明プログラミング、契約による設計 和田 卓人 - YouTube (https://www.youtube.com/watch?v=54jHDHvcYAo)
+- PHP7 で堅牢なコードを書く - 例外処理、表明プログラミング、契約による設計 / PHP Conference 2016 - Speaker Deck (https://speakerdeck.com/twada/php-conference-2016)
+- 和田卓人さん、PHPで堅牢なコードを書く—例外処理、表明プログラミング、契約による設計 〜PHPカンファレンス2016 | gihyo.jp (https://gihyo.jp/news/report/01/phpcon2016/0002)
+- 契約プログラミング - プログラミング言語 D (日本語訳) (https://www.kmonos.net/alang/d/dbc.html)
+- P1743R0 Contracts, Undefined Behavior, and Defensive Programming (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1743r0.pdf)
+- P2053R1 Defensive Checking Versus Input Validation (https://bloomberg.github.io/bde-resources/pdfs/P2053R1.pdf)
+- P4035R0 Info: The Need for Escape Hatches (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4035r0.pdf)
+- セキュアプログラミング（防御的プログラミング）の歴史をざっと振り返る – yohgaki's blog (https://blog.ohgaki.net/3748)
+- 論理の話｜高校生に伝えたいほんとうの情報科学 (https://www.is.s.u-tokyo.ac.jp/shingaku/highschool/logic.html)
+- プログラミング言語論 - 犬塚研究室 (https://nous.web.nitech.ac.jp/individual/inuzuka/lecture/PLT/PLT07/PLT4-4up.pdf)
+- Hoare 論理による プログラム検証入門 - Group MMM (https://group-mmm.org/~ichiro/talks/komabaSogo2011Handout.pdf) 
+- 経営情報システム学特論2 4．ホーア論理 (https://research.nii.ac.jp/~f-ishikawa/work/UEC-MItoku2/MItoku2-04-hoare.pdf)
+- プログラムの意味論と検証(1) - 犬塚研究室 (https://nous.web.nitech.ac.jp/individual/inuzuka/lecture/PLT/PLT07/PLT12-4up.pdf)
+- ざっくりホーア論理 | sititou70 (https://sititou70.github.io/%E3%81%96%E3%81%A3%E3%81%8F%E3%82%8A%E3%83%9B%E3%83%BC%E3%82%A2%E8%AB%96%E7%90%86/)
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3896r0.html
-Kotlin Contracts
+二章および三章
 
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3859r0.html
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3896r0.html
-
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3591r0.pdf
+- P2900R14 Contracts for C++ (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf)
+- P2899R1 Contracts for C++ - Rationale (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2899r1.pdf)
+- P3896R0 Design goals for a contract support facility (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3896r0.html)
+- P4020R0 Concerns about contract assertions (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4020r0.html)
+- P3859R0 Assertions are not necessarily for changing program behavior (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3859r0.html)
+- P3591R0 Contextualizing Contracts Concerns (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3591r0.pdf)
 https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3846r0.pdf
-
-- [P3471R4 Standard Library Hardening](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html)
-- [P3697R1 Minor additions to C++26 standard library hardening](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3697r1.html)
-- [P3878R1 Standard library hardening should not use the 'observe' semantic](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3878r1.html)
-
-- [P2899R1 Contracts for C++ - Rationale](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2899r1.pdf)
-
-
-\clearpage
+- P3261R1 Revisiting const-ification in Contract Assertions (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3261r1.pdf)
+- P3321R0 Contracts Interaction With Tooling (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3321r0.pdf)
+- P3471R4 Standard Library Hardening (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html)
+- P3697R1 Minor additions to C++26 standard library hardening (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3697r1.html)
+- P3878R1 Standard library hardening should not use the 'observe' semantic (https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3878r1.html)
+- P3819R0	Remove evaluation_exception() from contract-violation handling (https://open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3819r0.pdf)
+- P3598R0	CWG 3158 – const-ification of Splice Expressions (https://open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3598r0.pdf)
