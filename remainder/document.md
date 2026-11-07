@@ -42,6 +42,8 @@ okuduke:
 
 本書はそんな本です。
 
+\clearpage
+
 # 剰余と丸め
 
 ## 剰余
@@ -412,26 +414,6 @@ C++の`%`演算子による剰余演算においては、被除数が正の領�
 
 正/負の無限大方向への丸めというよりも切り上げ/切り捨てと言った方が意味は通りやすいかもしれませんが、他の丸めの呼称との一貫性や負数の扱いについての曖昧さのために本書ではこのような通称を基本的には使用しません。
 
-また、C++コード中で丸めを行うシチュエーションとその際の丸めは次のようになります
-
-|ケース|丸め方法|別名|
-|---|---|---|
-|浮動小数点数型から整数型への変換|ゼロ方向への丸め|切り捨て|
-|整数型の割り算|ゼロ方向への丸め|切り捨て|
-|`std::round`|最近接丸め+0から遠い方向への丸め|四捨五入|
-|`std::ceil`|正の無限大方向への丸め|天井関数|
-|`std::floor`|負の無限大方向への丸め|床関数|
-|`std::trunc`|ゼロ方向への丸め|切り捨て|
-|浮動小数点演算結果の丸め|最近接偶数丸め※|最近接丸め※|
-
-※ 計算時点の丸めモードに従う場合で、一般的なIEEE854浮動小数点演算環境の既定値
-
-0除算やオーバーフローなどは考慮しないものとします。
-
-一番最後のものは整数への丸めではなく、浮動小数点演算中の計算結果の値を宛先の浮動小数点数型で表現可能な値に丸める際の丸めです。この場合も候補は2つありますが、その際の距離や中間値などは整数型の場合と異なります（その点を意識すれば、丸めとして同じく扱うことができます）。ただし、この丸め方法は変更できる場合があります。
-
-`std::round()`などの関数では、現在の丸めモードとは無関係に常に関数の仕様で指定されている丸め方法によって丸められます。
-
 ## 丸めによる剰余
 
 少し脱線したものの、丸め処理には思ったよりも色々な方法があることが分かったと思います。
@@ -543,6 +525,7 @@ $$
 - $Rem(-a, d) = -Rem(a, d)$
 - $Rem(a, -d) = Rem(a, d)$
 
+すなわち、剰余の値は被除数に対して奇対称性（被除数の符号反転に対する符号対称性）を持ち、除数に対して偶対称性（除数の符号に対する不変性）を持ちます。ただし、この対称性は除数か被除数の片方を固定した際に他方の符号を反転させた際に成立するもので、両方を同時に反転させた場合には必ずしも成立しません。
 
 丸めの選択は主に、剰余の符号と値の範囲に影響します。これらの性質について、前節で提示した丸め処理毎に一覧してみます。
 
@@ -569,22 +552,22 @@ Nはここで追加しています。
 
 商の下側候補を$l = \lfloor \frac{dividend}{divisor} \rfloor$として
 
-|丸め|剰余の符号|剰余の範囲|
-|:--:|:--|:--|
-|A| 中間値は$l$の偶奇による | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ |
-|B| 中間値は被除数と逆符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ |
-|C| 中間値は$l$の偶奇による | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ |
-|D| 中間値は被除数と同符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ |
-|E| 中間値は除数と逆符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ |
-|F| 中間値は除数と同符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ |
-|G| 被除数と同符号 | $(-\lvert d \rvert, \lvert d \rvert)$ |
-|H| 除数と逆符号 | $(-\lvert d \rvert, \lvert d \rvert)$ |
-|I| 除数と同符号 | $(-\lvert d \rvert, \lvert d \rvert)$ |
-|J| $l$の偶奇による | $(-\lvert d \rvert, \lvert d \rvert)$ |
-|K| $l$の偶奇による | $(-\lvert d \rvert, \lvert d \rvert)$ |
-|L| 被除数と逆符号 | $(-\lvert d \rvert, \lvert d \rvert)$ |
-|M| 非決定的 | $(-\lvert d \rvert, \lvert d \rvert)$ |
-|N| 常に正 | $[0, \lvert d \rvert)$ |
+|丸め|剰余の符号|剰余の範囲|符号反転に関する対称性|
+|:--:|:--|:--|:--:|
+|A| 中間値は$l$の偶奇による | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ | `✅` |
+|B| 中間値は被除数と逆符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ | `✅` |
+|C| 中間値は$l$の偶奇による | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ | `✅` |
+|D| 中間値は被除数と同符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ | `✅` |
+|E| 中間値は除数と逆符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ | `❌` |
+|F| 中間値は除数と同符号 | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ | `❌` |
+|G| 被除数と同符号 | $(-\lvert d \rvert, \lvert d \rvert)$ | `✅` |
+|H| 除数と逆符号 | $(-\lvert d \rvert, \lvert d \rvert)$ | `❌` |
+|I| 除数と同符号 | $(-\lvert d \rvert, \lvert d \rvert)$ | `❌` |
+|J| $l$の偶奇による | $(-\lvert d \rvert, \lvert d \rvert)$ | `✅` |
+|K| $l$の偶奇による | $(-\lvert d \rvert, \lvert d \rvert)$ | `✅` |
+|L| 被除数と逆符号 | $(-\lvert d \rvert, \lvert d \rvert)$ | `✅` |
+|M| 非決定的 | $(-\lvert d \rvert, \lvert d \rvert)$ | `❌` |
+|N| 常に正 | $[0, \lvert d \rvert)$ | `❌` |
 
 剰余の符号については、剰余が0でない場合についてのものとします。
 
@@ -697,9 +680,9 @@ $$
 
 先ほどの表と同様に表すと、この剰余は次の性質を持ちます
 
-|剰余の符号|剰余の範囲|
-|:--|:--|
-|常に負|$(-\lvert d \rvert, 0]$|
+|剰余の符号|剰余の範囲|符号反転に関する対称性|
+|:--|:--|:--:|
+|常に負|$(-\lvert d \rvert, 0]$| `❌` |
 
 これは丸めによって剰余を設計することができるということの一例を示したものですが、このような剰余が具体的に何の役に立つのかは分かりません・・・
 
@@ -717,6 +700,8 @@ $$
 など。
 
 前節の常に負になる剰余のように欲しい剰余の性質から考えることで、ここまで挙げたもの以外の丸め方法を考えることができる可能性があります。例えば、丸めの候補は最近接値の2つ以外にも考えることができるかもしれません。
+
+\clearpage
 
 # 整数の剰余
 
@@ -750,6 +735,8 @@ C++の`%`演算子による整数の剰余は、先ほどの剰余の定義式�
 有名なところでは、奇数判定の次のようなコードは負の数の入力について意図通りになりません
 
 ```cpp
+#include <print>
+
 // dividendが負の値の場合、dividend % 2は-1になる
 if ((dividend % 2) == 1) {
   std::println("{} is odd number.", dividend);
@@ -807,8 +794,8 @@ int remainder = dividend % divisor; // C++11以前、結果は実装定義
 
 auto res = std::div(dividend, divisor);
 
-assert(res.quo == -3);  // ✅
-assert(res.rem == -2);  // ✅
+contract_assert(res.quo == -3);  // ✅
+contract_assert(res.rem == -2);  // ✅
 ```
 
 ただし、この問題は欠陥報告として修正されているため、おそらくゼロ方向丸め以外を採用した環境は実質的に存在していなかったものと思われます。
@@ -989,6 +976,8 @@ namespace std {
 
 提案文書のappendixにはこれらの関数の参照実装が示されています。C++29や26などの機能を特に使用していないため、C++26以前の環境で実装する場合の参考になるかもしれません。
 
+\clearpage
+
 # 浮動小数点数の剰余
 
 この章では、C++における浮動小数点数の除算における剰余についてを見ていきます。
@@ -1067,6 +1056,7 @@ namespace std {
 |商の丸め| 非最近接ゼロ方向丸め | 最近接偶数丸め |
 |剰余の符号| 被除数と同符号 | 選択される丸め候補による |
 |剰余の範囲| $(-\lvert d \rvert, \lvert d \rvert)$ | $[-\frac{\lvert d \rvert}{2}, \frac{\lvert d \rvert}{2}]$ |
+|符号反転に関する対称性| `✅` | `✅` |
 |丸め方法| 固定 | 固定 |
 
 `std::remainder()`における剰余の符号は選択される丸め候補によって変化し、商の上側候補が選択されると剰余の符号は除数の符号と同じになり、下側候補が選択されると除数の符号と逆になります。特に、中間値の符号は、$l = \lfloor \frac{a}{d} \rfloor$に対して次のようになります
@@ -1096,7 +1086,10 @@ namespace std {
 周期性を持つ値の典型的な例は角度です。角度の値では、ある角度値$\theta$に対して$\theta + \pi$あるいは$\theta + n\pi$（$n \in \mathbb{N}$）は同じ値とみなすことができます。角度は$\pi$の周期性を持つため、任意の角度値に対して$\pi$による剰余を求めることで基底の$\pi$周期の値に正規化することができます。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   std::println("{:>6.2f}", std::fmod(90.0, 180.0));
   std::println("{:>6.2f}", std::fmod(135.0, 180.0));
   std::println("{:>6.2f}", std::fmod(270.0, 180.0));
@@ -1117,7 +1110,10 @@ int main(){
 `std::fmod()`では被除数が負の場合は剰余も負になり、剰余の範囲も0を基準に反転するため、負の角度に対しても同様の正規化を行うことができます。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   std::println("{:>7.2f}", std::fmod(-90.0, 180.0));
   std::println("{:>7.2f}", std::fmod(-410.0, 180.0));
   std::println("{:>7.2f}", std::fmod(-15630.53, 180.0));
@@ -1134,7 +1130,10 @@ int main(){
 例えば2.5秒周期の処理において、全体の経過時間から現在の周期内での時間を求めるということにも使用できます。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   std::println("{:>4.2f}", std::fmod(0.1, 2.5));
   std::println("{:>4.2f}", std::fmod(5.5, 2.5));
   std::println("{:>4.2f}", std::fmod(14234.66, 2.5));
@@ -1153,7 +1152,10 @@ int main(){
 このため、`std::remainder()`による周期的な値の正規化においては、周期の端点に最も近くなるように正規化されます。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   std::println("{:>6.2f}", std::remainder(90.0, 180.0));
   std::println("{:>6.2f}", std::remainder(135.0, 180.0));
   std::println("{:>6.2f}", std::remainder(270.0, 180.0));
@@ -1176,7 +1178,10 @@ int main(){
 例えば、二次元平面におけるある物体の向きをX軸方向を0度として反時計回りを正、時計回りを負の角度による回転とすると、その角度範囲は$[-\pi, \pi)$の様に取ることができます。このように定義した角度の表現において角度の正規化を行う場合には`std::fmod()`よりも`std::remainder()`の方が適しています。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   std::println("{:>7.2f}", std::remainder(45.0, 360.0));
   std::println("{:>7.2f}", std::remainder(-45.0, 360.0));
   std::println("{:>7.2f}", std::remainder(370.0, 360.0));
@@ -1199,7 +1204,10 @@ int main(){
 `std::remainder()`の注意点は半周期ちょうどの値の扱いです。半周期ちょうど（上記例の場合は$\pi$）の値の場合とはつまり商の計算の丸めにおいて中点の値を丸めている場合です。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   std::println("{:>7.2f}", std::remainder(180.0, 360.0));
   std::println("{:>7.2f}", std::remainder(540.0, 360.0));
 }
@@ -1218,7 +1226,10 @@ int main(){
 例えば、一定周期の基準点・格子点上の値について、現在の値が基準点からどれだけずれているかを求めることができます。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   // 周期2.5の基準点からのずれを求める
   std::println("{:>5.2f}", std::remainder(1.0, 2.5));
   std::println("{:>5.2f}", std::remainder(1.25, 2.5));
@@ -1252,6 +1263,9 @@ int main(){
 周期が積み重なった値から既に完了している周期の部分を取り除くという見方の応用として、値からより上位の桁を取り除いて下位桁を取り出すことができます。
 
 ```cpp
+#include <print>
+#include <cmath>
+
 int main() {
   std::println("{:>8.4f}", std::fmod(12345.6789, 1000.0));
   std::println("{:>8.4f}", std::fmod(12345.6789, 100.0));
@@ -1275,6 +1289,9 @@ int main() {
 別の例として、秒数から分や時間の単位を取り除くこともできます。
 
 ```cpp
+#include <print>
+#include <cmath>
+
 int main() {
   // 秒数から分未満の秒数を取り出す
   std::println("{:>8.3f}", std::fmod(2350.785, 60.0));
@@ -1297,7 +1314,10 @@ int main() {
 このような差分に対する正規化では`std::remainder()`がその威力を発揮します。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   {
     const double angle_diff = 1.0 - 359.0;
 
@@ -1322,7 +1342,10 @@ int main(){
 先ほどの例のように$[-\pi, \pi)$のような範囲で定義された角度においても、`std::remainder()`では$\pm\pi$を跨ぐような差分の正規化を最短距離で行うことができます。
 
 ```cpp
-int main(){
+#include <print>
+#include <cmath>
+
+int main() {
   {
     const double angle_diff = -180.0 - 179.0;
 
@@ -1361,15 +1384,319 @@ namespace std {
 
 まず、この関数の返す剰余は`std::remainder(x, y)`と同じもので、そちらと同じく商の丸めの方法を変更することはできません。
 
-次に`*quo`には、`x/y`を整数型の値に丸めた結果の符号と下位3ビット分の情報が出力されます。これは商の値がごく小さい場合を除いて、通常本来の商の値とは一致しません。
+次に`*quo`には、`x/y`を最近接偶数丸めによって整数型の値に丸めた結果の符号と下位3ビット分の情報が出力されます。これは通常本来の商の値とは一致しません。
 
-`*quo`に出力される商の情報は、規格で最低下位3ビットまでが保証されており、実際に何ビットまでが出力されるかは実装定義です。
+`*quo`に出力される商の情報は、規格で最低下位3ビットまで（+符号ビット）が保証されており、実際に何ビットまでが出力されるかは実装定義です。
 
-この関数の用途は周期性を持つ値の正規化にあります。
+先ほどの`std:remainder`の例の中に、周期的な基準点からのずれを求めるというものがありました。そこでは、どこかの基準点からどの方向にどの程度ずれているかは分かるものの、どの基準点の近くにいるのかは分かりません。
 
+最も近い（何番目の）基準点の情報は商から得ることができます。
 
-この3ビットという値はどうやらintelのCPUの命令である`FPREM1`の仕様から来ており、これはおそらく、三角関数の実装において引数の周期を$\frac{\pi}{4}$周期（単位円上で8分割）に削減するのに必要な最低のビット幅から来ています。
+```cpp
+#include <print>
+#include <cmath>
 
+int main() {
+  {
+    const double q = std::nearbyint(1.0 / 2.5);
+    const double r = std::remainder(1.0, 2.5);
+
+    std::println("{:>3} {:>+5.2f}", q, r);
+  }
+  {
+    const double q = std::nearbyint(6.4 / 2.5);
+    const double r = std::remainder(6.4, 2.5);
+
+    std::println("{:>3} {:>+5.2f}", q, r);
+  }
+  {
+    const double q = std::nearbyint(-35.23 / 2.5);
+    const double r = std::remainder(-35.23, 2.5);
+
+    std::println("{:>3} {:>+5.2f}", q, r);
+  }
+}
+```
+```
+  0 +1.00
+  3 -1.10
+-14 -0.23
+```
+
+`std::nearbyint()`は現在の丸めモードによる整数値への丸めを行う関数で、この例では現在の丸めモードが最近接偶数丸めであることを仮定しています。
+
+この例からさらに限定して、基準点を2種類に分けてどちらの基準点に近いかを知りたいとします。例えば、0.0をA、2.5をB、5.0をA、7.5をBというように基準点に対して交互にA/Bのラベルを振り、現在の値がA/Bのどちらの近くにいるかを知りたいとします。
+
+これを知るためには商を求めてその偶奇を見ればわかりますが、この場合商の全部は必要なく、下位1ビットだけが分かれば十分です。
+
+`std::remquo()`はこのために使用できます。
+
+```cpp
+#include <print>
+#include <cmath>
+
+char get_label(int quo) {
+  // 下位1ビットだけを見る
+  if ((quo & 1) == 0) {
+    return 'A';
+  } else {
+    return 'B';
+  }
+}
+
+void print_label_and_diff(double value, double period) {
+  int quo;
+  const double r = std::remquo(value, period, &quo);
+
+  std::println("{} {:>+5.2f}", get_label(quo), r);
+}
+
+int main() {
+  print_label_and_diff(1.0, 2.5);
+  print_label_and_diff(3.0, 2.5);
+  print_label_and_diff(4.0, 2.5);
+  print_label_and_diff(-1.0, 2.5);
+}
+```
+```
+A +1.00
+B +0.50
+A -1.00
+A -1.00
+```
+
+`quo`には商の少なくとも下位3ビット分の情報が出力されているため、下位1ビットは確実に利用できます。
+
+ラベルの数を増やして4種類にして、A(0.0) -> B(2.5) -> C(5.0) -> D(7.5) -> A(10.0)... のようにする場合でも同様に`std::remquo()`の商情報を用いて判定できます。この場合は下位2ビット分の情報だけから判定できます。
+
+```cpp
+#include <print>
+#include <cmath>
+#include <utility>
+
+char get_label(int quo) {
+  // 下位2ビットだけを見る
+  const int k = quo & 0b11;
+  switch(k) {
+    case 0b00:
+      return 'A';
+    case 0b01:
+      return 'B';
+    case 0b10:
+      return 'C';
+    case 0b11:
+      return 'D';
+  };
+
+  std::unreachable();
+}
+
+void print_label_and_diff(double value, double period) {
+  int quo;
+  const double r = std::remquo(value, period, &quo);
+
+  std::println("{} {:>+5.2f}", get_label(quo), r);
+}
+
+int main() {
+  print_label_and_diff(1.0, 2.5);
+  print_label_and_diff(3.0, 2.5);
+  print_label_and_diff(4.5, 2.5);
+  print_label_and_diff(8.0, 2.5);
+  print_label_and_diff(11.0, 2.5);
+}
+```
+```
+A +1.00
+B +0.50
+C -0.50
+D +0.50
+A +1.00
+```
+
+下位3ビットの保証の範囲内では、同様の考え方で8パターンまでの周期の識別が可能です。
+
+C++には最近接偶数丸めによる商と剰余を同時に求める関数が無く、商と剰余が同時に欲しいが商の全部の情報は必要ない場合、商と剰余を個別に求めるよりも`std::remquo()`を使用することで計算を効率化できる可能性があります。
+
+この関数の最も分かりやすい用途は三角関数の引数を簡約することです。三角関数の実装を考える際に角度の周期性を利用して引数の角度値を$[0, 2\pi)$もしくは$[0, \pi)$に簡約して計算することは計算誤差を抑制するなどの点で有効です。
+
+さらに進んで、引数値を$[0, \frac{\pi}{4})$の範囲に簡約して、元の角度値の象限情報を利用して`sin()`/`cos()`関数にディスパッチしたうえで適切な符号を与えることで正しく計算することができます。
+
+この方法の場合、`sin()`/`cos()`関数の実装を$[0, \frac{\pi}{4})$の範囲についてだけ用意しておけば`sin()`/`cos()`関数の実装を完成させることができます。
+
+簡約後の角度値は$[0, \frac{\pi}{4})$に抑えたいので、最近接偶数丸めによる剰余では除数を$\frac{\pi}{2}$にします。この場合の`std::remainder()`による剰余は$[-\frac{\pi}{4}, \frac{\pi}{4}]$になりますが、$sin/cos$がそれぞれ奇関数/偶関数であることを利用すると、`sin(-r) = -sin(r)`、`cos(-r) = cos(r)`であるため、`r`の絶対値を取って$[0, \frac{\pi}{4}]$の範囲だけを入力として、符号は後から補正すればよくなります。
+
+端点$r = \frac{\pi}{4}$の値の扱いについては直接$\frac{1}{\sqrt{2}}$を返すなどの方法もありますが、ここでは単純に簡約後の引数範囲を$[0, \frac{\pi}{4}]$にすることにします。ここまでの説明と若干条件は変わりますが、`std::remquo()`の例としては影響しません。
+
+$2\pi$周期の値を$\frac{\pi}{2}$周期の値に簡約しているため、元の周期を4分割しています。そのため、`std::remaquo()`で得られる商情報は4パターンの識別を行えれば良く、前の例と同様に下位2ビットを利用すれば十分です。
+
+入力値`x`に対する`std::remaquo(x, pi/2)`で得られる商情報を`quo`剰余を`r`、`x`を$2\pi$周期に簡約した値を$\theta$としたとき、`quo`の下位2ビットの値に対する$sin(\theta)$/$cos(\theta)$の計算の対応は次のようになります
+
+| `quo & 0b11` | $\theta$ | $sin(\theta)$ | $cos(\theta)$ |
+|---|---|---|---|
+| `0b00`（0） | `r` | `sin(r)` | `cos(r)` |
+| `0b01`（1） | $\frac{\pi}{2}$ + `r` | `cos(r)` | `-sin(r)` |
+| `0b10`（2） | $\pi$ + `r` | `-sin(r)` | `-cos(r)` |
+| `0b11`（3） | $\frac{3\pi}{2}$ + `r` | `-cos(r)` | `sin(r)` |
+
+この対応は加法定理から求めることができます。
+
+加えて、`r`が負の場合は`-sin(abs(r))`のように符号を補正することで、$[0, \frac{\pi}{4}]$の値の範囲内の入力のみから任意の角度に対する`sin()/cos()`の計算を完了することができます。
+
+これらの事を踏まえた実装は次のようになります
+
+```cpp
+#include <cmath>
+#include <numbers>
+#include <utility>
+
+struct sin_cos_result {
+  double sin;
+  double cos;
+};
+
+auto sincos(double rad) -> sin_cos_result {
+  constexpr double half_pi = std::numbers::pi / 2.0;
+
+  int quo;
+  const double r = std::remquo(rad, half_pi, &quo);
+  const double a = std::abs(r);
+
+  // 剰余の符号によるsin(r)の符号補正
+  const double sin_r = std::copysign(std::sin(a), r);
+  const double cos_r = std::cos(a);
+
+  switch (quo & 0b11) {
+    case 0b00:
+      return {
+        .sin = sin_r,
+        .cos = cos_r
+      };
+    case 0b01:
+      return {
+        .sin = cos_r,
+        .cos = -sin_r
+      };
+    case 0b10:
+      return {
+        .sin = -sin_r,
+        .cos = -cos_r
+      };
+    case 0b11:
+      return {
+        .sin = -cos_r,
+        .cos = sin_r
+      };
+  };
+
+  std::unreachable();
+}
+```
+
+ここでは三角関数実装として`std::sin()`と`std::cos()`を使用しているものの、それに与える引数`a`は$[0, \frac{\pi}{4})$の範囲内に制限されています。独自の三角関数実装に対して適用する場合は`std::sin()`/`std::cos()`の使用を置き換えれば良いでしょう。
+
+このように、`std::remquo()`は単に商（の一部）と剰余の値を同時に求める関数ではなく、周期性を持つ値をその周期よりさらに短い周期の値として簡約する際に、元の周期内における位置（象限）の情報を同時に取得する関数です。
+
+時間軸上の位置にABCDのラベルを振る例では、10秒周期の値を2.5秒周期（1/4）に簡約する際に、商情報を用いてラベルという形で元の10秒周期内でのおおよその位置を得ています。このおおよその位置に剰余の値を加えることで元の周期上での位置を復元することができます。
+
+三角関数の引数の簡約の例では、$2\pi$周期の角度値を$\frac{\pi}{2}$周期に簡約する際に、商情報と剰余の符号を用いて元の$2\pi$周期（円周上）における象限情報を得ています。
+
+## 整数への丸めを行う関数
+
+剰余の性質は商の整数への丸め方法によって定義づけられており、商の整数への丸めを関数を用意すれば通常とは異なる性質を持つ剰余計算を行うことができます。
+
+2章で紹介した丸め方法の全てではないものの、標準には浮動小数点数値から整数値への丸めを行う関数がいくつか提供されています。
+
+```cpp
+// doubleオーバーロードの宣言例
+namespace std {
+  double ceil(double x);
+
+  double floor(double x);
+
+  double trunc(double x);
+
+  double round(double x);
+
+  double nearbyint(double x);
+
+  double rint(double x);
+}
+```
+
+これらの関数はいずれも、引数`x`の小数部を丸めた整数の浮動小数点数値を返します。
+
+なお、`std::round()`と`std::rint()`には、直接`long`/`long long`型（整数型）へ丸める同系統の関数`std::lround()`/`std::llround()`、`std::lrint()`/`std::llrint()`も用意されています。
+
+これらの関数は
+
+| 関数 | 丸め方法 | 別称 |
+|---|---|---|
+| `std::ceil()` | 正の無限大方向への丸め | 天井関数 |
+| `std::floor()` | 負の無限大方向への丸め | 床関数 |
+| `std::trunc()` | ゼロ方向丸め | 切り捨て |
+| `std::round()` | 最近接ゼロから遠い方向への丸め | 四捨五入 |
+| `std::nearbyint()` | 現在の丸めモードによる丸め |  |
+| `std::rint()` | 現在の丸めモードによる丸め |  |
+
+`std::nearbyint()`と`std::rint()`以外の関数は丸め方法が固定されており、現在の丸めモードの影響を受けません。`std::nearbyint()`と`std::rint()`の丸めモードはおそらく、ほとんどの環境で最近接偶数丸めがデフォルトになっていると思われます。
+
+`std::nearbyint()`と`std::rint()`の違いは、その処理に伴って`FE_INEXACT`浮動小数点例外（浮動小数点計算結果を保存するのに丸めを使用したことを表す）を発生させるか否かにあり、`std::nearbyint()`は発生させず、`std::rint()`は発生させます。それ以外の動作は同じです。
+
+```cpp
+#include <print>
+#include <cmath>
+#include <cfenv>
+
+void print_round(double v) {
+  std::println("ceil({})      = {:.1f}", v, std::ceil(v));
+  std::println("floor({})     = {:.1f}", v, std::floor(v));
+  std::println("trunc({})     = {:.1f}", v, std::trunc(v));
+  std::println("round({})     = {:.1f}", v, std::round(v));
+  std::println("nearbyint({}) = {:.1f}", v, std::nearbyint(v));
+  std::println("rint({})      = {:.1f}", v, std::rint(v));
+  std::println();
+}
+
+int main() {
+  // 最近接偶数丸めを仮定
+  contract_assert(std::fegetround() == FE_TONEAREST);
+
+  print_round(0.5);
+  print_round(1.5);
+  print_round(-1.5);
+  print_round(1.7);
+}
+```
+```
+ceil(0.5)      = 1.0
+floor(0.5)     = 0.0
+trunc(0.5)     = 0.0
+round(0.5)     = 1.0
+nearbyint(0.5) = 0.0
+rint(0.5)      = 0.0
+
+ceil(1.5)      = 2.0
+floor(1.5)     = 1.0
+trunc(1.5)     = 1.0
+round(1.5)     = 2.0
+nearbyint(1.5) = 2.0
+rint(1.5)      = 2.0
+
+ceil(-1.5)      = -1.0
+floor(-1.5)     = -2.0
+trunc(-1.5)     = -1.0
+round(-1.5)     = -2.0
+nearbyint(-1.5) = -2.0
+rint(-1.5)      = -2.0
+
+ceil(1.7)      = 2.0
+floor(1.7)     = 1.0
+trunc(1.7)     = 1.0
+round(1.7)     = 2.0
+nearbyint(1.7) = 2.0
+rint(1.7)      = 2.0
+```
 
 # 発展
 
@@ -1383,8 +1710,6 @@ namespace std {
 - 満たさない: G（0の前後で崩れる）、A（周期は $2|d|$）
 
 「発展」に置いている「合同類と代表元」への伏線にもなります。
-
-rintとnearbyint、その他丸め関数
 
 合同類と代表元
 https://info.atcoder.jp/entry/algorithm_lectures/modular_arithmetic
