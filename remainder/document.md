@@ -61,7 +61,7 @@ okuduke:
 > ある整数$a$に対して、$d$を0でない整数とすると
 > 
 > $$
-> a = qd + r　(0 \leq r \lt |d|)
+> a = qd + r (0 \leq r < |d|)
 > $$
 > 
 > を満たす整数$q, r$がただ一つ存在する。この時、$q$を商、$r$を剰余と呼ぶ。
@@ -70,19 +70,19 @@ okuduke:
 
 ここでの商$q$は整数ですが、通常の除算で得られる正確な商$\frac{a}{d}$は有理数であり、一般には一致しません。そのため、ここには有理数を整数に変換する処理、すなわち丸め（round）が必要になります。
 
-一旦剰余についての制約（$0 \leq r \lt |d|$）を忘れて、丸め処理を$R(x)$と表すと
+一旦剰余についての制約（$0 \leq r < |d|$）を忘れて、丸め処理を$R(x)$と表すと
 
 $$
-q = R(\frac{a}{d}),　a = R(\frac{a}{d}) \times d + r
+q = R(\frac{a}{d}), a = R(\frac{a}{d}) \times d + r
 $$
 
 あるいは剰余について書くと
 
 $$
-\begin{align}
+\begin{aligned}
 r &= a - q \times d \\
 &= a - R(\frac{a}{d}) \times d
-\end{align}
+\end{aligned}
 $$
 
 となります。
@@ -105,10 +105,10 @@ $a, d$の値は$a \div d$という式において所与のものであること�
 例えば先ほどの除算と剰余と丸めの関係式は次のように書き直されます
 
 $$
-\begin{align}
+\begin{aligned}
 remainder &= dividend - quotient \times divisor \\
 &= dividend - R(\frac{dividend}{divisor}) \times divisor
-\end{align}
+\end{aligned}
 $$
 
 ## 丸め処理
@@ -289,13 +289,11 @@ $$
 確率的丸めによる丸め関数を$SR(x)$とすると、次のように定義されます
 
 $$
-\begin{equation}
-  SR(x)=
-  \begin{cases}
-    \lfloor x \rfloor & \text{with probability $1 - (x - \lfloor x \rfloor)$} \\
-    \lceil x \rceil & \text{with probability $x - \lfloor x \rfloor$}
-  \end{cases}
-\end{equation}
+SR(x)=
+\begin{cases}
+  \lfloor x \rfloor & \text{with probability $1 - (x - \lfloor x \rfloor)$} \\
+  \lceil x \rceil & \text{with probability $x - \lfloor x \rfloor$}
+\end{cases}
 $$
 
 この定義は実数値を整数値に丸める場合のものです。例えば浮動小数点数値の丸めのためには定義を修正する必要があります。
@@ -348,12 +346,12 @@ SR-nearnessの丸めは入力値の分布によらず丸め結果のバイアス
 > ある整数$a$に対して、$d$を0でない整数とすると
 > 
 > $$
-> a = qd + r　(0 \leq r \lt |d|)
+> a = qd + r (0 \leq r < |d|)
 > $$
 > 
 > を満たす整数$q, r$がただ一つ存在する。この時、$q$を商、$r$を剰余と呼ぶ。
 
-がユークリッド除法の定義そのものです。剰余に対して$0 \leq r \lt |d|$という制約が指定されていることが重要になります。
+がユークリッド除法の定義そのものです。剰余に対して$0 \leq r < |d|$という制約が指定されていることが重要になります。
 
 この定義に値を当てはめて剰余の制約を満たすように商と剰余を選択することで計算することができ、定義を満たす商と剰余のペアは常に一意になります。しかしこれは定義でありアルゴリズムではありません。
 
@@ -362,13 +360,11 @@ SR-nearnessの丸めは入力値の分布によらず丸め結果のバイアス
 この場合の丸め関数は除数の符号を使用するため1引数関数ではなく2引数関数になります。ユークリッド除法の場合の丸め関数を$R_{divisor}()$とすると、次のように定義されます
 
 $$
-\begin{equation}
-  R_{divisor}(x)=
-  \begin{cases}
-    \lfloor x \rfloor & \text{$divisor>0$} \\
-    \lceil x \rceil & \text{$divisor<0$}
-  \end{cases}
-\end{equation}
+R_{divisor}(x)=
+\begin{cases}
+  \lfloor x \rfloor & \text{$divisor>0$} \\
+  \lceil x \rceil & \text{$divisor<0$}
+\end{cases}
 $$
 
 ここでは、最初に導入した$R()$と合わせるために添え字を利用して$divisor$への依存を表し疑似的な1変数関数としています。
@@ -427,21 +423,21 @@ C++の`%`演算子による剰余演算においては、被除数が正の領�
 最初に示したように剰余は丸め処理によって定義される側面がありました。ここで、先ほど導入した丸め誤差を用いて剰余を表してみます。まず、符号付の丸め誤差$e(x)$の定義から
 
 $$
-\begin{align}
+\begin{aligned}
   e(x) &= R(x) - x \\
   R(x) &= e(x) + x
-\end{align}
+\end{aligned}
 $$
 
 これを剰余の定義式に代入すると
 
 $$
-\begin{align}
+\begin{aligned}
   remainder &= dividend - R(\frac{dividend}{divisor}) \times divisor \\
   &= dividend - (e(\frac{dividend}{divisor}) + \frac{dividend}{divisor}) \times divisor \\
   &= dividend - (divisor \times e(\frac{dividend}{divisor}) + dividend) \\
   &= - divisor \times e(\frac{dividend}{divisor}) \\
-\end{align}
+\end{aligned}
 $$
 
 このように、剰余は丸め誤差によっても特徴づけることができます。丸め誤差から剰余を見てみることで、丸めの諸性質と剰余をより関連付けて捉えることができます。
@@ -461,7 +457,7 @@ $$
 
 $q$が正の場合でも負の場合でもこれは成り立ち、丸めにおいて上側の候補$\lceil q \rceil$を選択すると丸め誤差$e(q)$は非負になり、下側の候補$\lfloor q \rfloor$を選択すると丸め誤差$e(q)$は0以下になります。
 
-また、丸め誤差の絶対値の上界より、最近接丸めかそうでないかに応じて$|e(q)| \le \frac{1}{2}$か$|e(q)| \lt 1$のどちらかでした。
+また、丸め誤差の絶対値の上界より、最近接丸めかそうでないかに応じて$|e(q)| \le \frac{1}{2}$か$|e(q)| < 1$のどちらかでした。
 
 したがって、$remainder = - divisor \times e(q)$の式において、$e(q)$は丸めの選び方によって$\pm 1$か$\pm \frac{1}{2}$のどちらかで押さえられます。
 
@@ -473,8 +469,8 @@ $q$が正の場合でも負の場合でもこれは成り立ち、丸めにお�
 |---|:---:|:---:|
 |最近接丸め / 正| $-\frac{\lvert d \rvert}{2} \le r \le 0$ | $0 \le r \le \frac{\lvert d \rvert}{2}$ |
 |最近接丸め / 負| $0 \le r \le \frac{\lvert d \rvert}{2}$ | $-\frac{\lvert d \rvert}{2} \le r \le 0$ |
-|非最近接丸め / 正| $-\lvert d \rvert \lt r \le 0$ | $0 \le r \lt \lvert d \rvert$ |
-|非最近接丸め / 負| $0 \le r \lt \lvert d \rvert$ | $-\lvert d \rvert \lt r \le 0$ |
+|非最近接丸め / 正| $-\lvert d \rvert < r \le 0$ | $0 \le r < \lvert d \rvert$ |
+|非最近接丸め / 負| $0 \le r < \lvert d \rvert$ | $-\lvert d \rvert < r \le 0$ |
 
 この表を見ながら改めてユークリッド除法における丸めの選択を振り返ってみると、剰余が非負になるように適応的に除数の符号に応じた丸め方法を選択していることが分かります。
 
@@ -491,11 +487,11 @@ $$
 となります。丸め$R()$が符号対称性（$R(-x) = -R(x)$）を持つ場合
 
 $$
-\begin{align}
+\begin{aligned}
   e(-x) &= R(-x) + x \\
   &= -R(x) + x \\
   &= -e(x)
-\end{align}
+\end{aligned}
 $$
 
 となります。
@@ -505,11 +501,11 @@ $$
 丸める前の商を$q = \frac{dividend}{divisor}$とおいて、除数はそのままに被除数の符号だけを反転して$-dividend$として$-q$とします。$remainder = - divisor \times e(q)$より
 
 $$
-\begin{align}
+\begin{aligned}
   -divisor \times e(-q) &= -divisor \times (-e(q)) \\
   &= divisor \times e(q) \\
   &= -remainder
-\end{align}
+\end{aligned}
 $$
 
 となり、丸め$R()$が符号対称性を持つ場合、剰余の値は被除数の符号に対して符号対称性を持ちます。
@@ -517,11 +513,11 @@ $$
 逆に除数の符号を変えて$-q$とすると
 
 $$
-\begin{align}
+\begin{aligned}
   -(-divisor) \times e(-q) &= divisor \times (-e(q)) \\
   &= -divisor \times e(q) \\
   &= remainder
-\end{align}
+\end{aligned}
 $$
 
 となり、丸め$R()$が符号対称性を持つ場合、剰余の値は除数の符号の影響をうけなくなります。
@@ -656,13 +652,11 @@ Nはここで追加しています。
 この場合の丸め関数を$R_{divisor}()$とすると、次のように定義されます
 
 $$
-\begin{equation}
   R_{divisor}(x)=
   \begin{cases}
     \lceil x \rceil & \text{$divisor>0$} \\
     \lfloor x \rfloor & \text{$divisor<0$}
   \end{cases}
-\end{equation}
 $$
 
 この丸めを用いた剰余は通常通りに計算されます
@@ -1000,10 +994,10 @@ namespace std {
 実数・浮動小数点数の剰余計算においては除数と被除数がともに実数（浮動小数点数）になり、したがってどちらも必ずしも整数値ではなくなります。しかしその場合にも剰余の定義などは整数の場合と同じです。
 
 $$
-\begin{align}
+\begin{aligned}
 remainder &= dividend - quotient \times divisor \\
 &= dividend - R(\frac{dividend}{divisor}) \times divisor
-\end{align}
+\end{aligned}
 $$
 
 $remainder, dividend, divisor$がそれぞれ実数となりますが、実数の剰余においても商の値が丸めによって整数値になる必要があることは変わらないため、この式は引き続き使用可能です。
