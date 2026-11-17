@@ -1,7 +1,7 @@
 ---
 title: C++26 Contracts
 author: onihusube
-date: 2026/08/17
+date: 2026/08/16
 geometry:
   width: 188mm
   height: 263mm
