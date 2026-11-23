@@ -850,8 +850,9 @@ consteval void example() {
 2. 両オペランドがテンプレート引数として等価な値を表現している場合
 3. 両オペランドが同一のオブジェクトを表現している場合
 4. 両オペランドが同一のエンティティを表現している場合
-5. 両オペランドが同一の直接の基底クラス関係を表現している場合
-6. 両オペランドが等しいデータメンバ記述を表現している場合
+5. 両オペランドが同一のアノテーションを表現している場合
+6. 両オペランドが同一の直接の基底クラス関係を表現している場合
+7. 両オペランドが等しいデータメンバ記述を表現している場合
 
 いずれにも該当しない場合は`false`になり、他の型との比較は定義されていません。
 
@@ -936,7 +937,19 @@ static_assert(reflect_object(i) != reflect_constant(j));
 static_assert(reflect_object(i) != ^^i);  // 変数の映象とオブジェクトの映象は異なる
 ```
 
-5の直接の基底クラス関係（direct base class relationship）とは、あるクラス型についてそのクラスが直接的に継承しているクラス型の組（順序対）の事です。これは`std::meta::bases_of()`メタ関数によって取得することができ、この直接の基底クラス関係を表す映象同士の比較は同じ組となっている場合に`true`となります。
+5のアノテーションはリフレクション機能の一部として導入されているもので、各種の宣言に対してユーザーが注釈を指定しそれを取得できるようにする仕組みです。詳細は後述しますが、このアノテーションの等価性は同じアノテーションを表現する場合に等値となります。
+
+```cpp
+[[=1]] void f();
+[[=1]] void g();
+
+using namespace std::meta;
+
+static_assert(annotations_of(^^f) == annotations_of(^^f));
+static_assert(annotations_of(^^f) != annotations_of(^^g));
+```
+
+6の直接の基底クラス関係（direct base class relationship）とは、あるクラス型についてそのクラスが直接的に継承しているクラス型の組（順序対）の事です。これは`std::meta::bases_of()`メタ関数によって取得することができ、この直接の基底クラス関係を表す映象同士の比較は同じ組となっている場合に`true`となります。
 
 ```cpp
 #include <cassert>
@@ -982,6 +995,52 @@ static_assert(dmd1 != dmd3);  // アラインメント指定が異なる
 ```
 
 データメンバ記述および`define_aggregate()`の詳細は後述します。
+
+### 保持可能な値の制限
+
+`std::meta::reflect_constant()`や`std::meta::constant_of()`を使用すると式（定数式）の値の映象を取得することができます。この定数値の映象もまた`std::meta::info`型の値となりますが、`std::meta::info`が保持できる値の型は構造的な型（structural type）に制限されています。
+
+構造的な型は定数テンプレートパラメータ（NTTP）として使用可能な型の分類で、次のいずれかの型です
+
+1. スカラ型
+2. 左辺値参照型
+    - ただし、`std::meta::info`は参照を保持できない
+3. 次の条件を満たすクラス型
+    - 全ての基底クラス及び非静的メンバ変数が`public`かつ`mutable`、かつ
+    - 全ての基底クラス及び非静的メンバ変数が構造的な型、もしくは構造的な型の配列
+4. 一部の標準ライブラリ型
+    - `std::string_view`
+    - `std::span`
+    - `std::tuple`
+        - 要素型がすべて構造的な型である場合のみ
+
+スカラ型は整数型や浮動小数点数型、ポインタ型、`std::meta::info`そのものなどが含まれます。
+
+`std::meta::reflect_constant()`や`std::meta::constant_of()`の引数に渡す式はこれらの型（参照型を除く）の定数値となるものである必要があります。
+
+```cpp
+// 構造的な型
+struct S {
+  int n = 0;
+};
+
+// 構造的な型ではない
+class NS {
+  int n = 0;  // プライベートメンバ
+};
+
+consteval void example() {
+  using namespace std::meta;
+
+  constexpr int N = 0;
+
+  info r1 = reflect_constant(10);     // ok
+  info r2 = reflect_constant(N);      // ok
+  info r3 = reflect_constant(^^int);  // ok
+  info r4 = reflect_constant(S{});    // ok
+  info r5 = reflect_constant(NS{});   // ng
+}
+```
 
 ### 関連名前空間
 
@@ -1067,6 +1126,126 @@ int main() {
 ここまでの例においても、この制限を回避するために`consteval`関数や`constexpr`変数を使用していました。
 
 # アノテーション
+
+アノテーションは、ソースコード上で何らかの宣言に付与してリフレクション機能を通してそれをコンパイル時に取得し読み取ることができるようにする機能です。他の言語ではユーザー定義属性や単に属性として導入されていることがあります。
+
+アノテーションを用いることで、ソースコード上のエンティティに対してユーザーが任意のメタデータを指定し、それをリフレクション機能によるメタプログラミングにおいて活用することができます。
+
+C++26のアノテーションは属性構文を拡張した`[[=expr]]`の形式で、属性を置くことができる場所に付与できます。ただし付与できるものは制限されており、次の宣言に対してのみ付与可能です
+
+1. クラス定義における基底クラスリスト内の各クラス名
+2. 型
+3. 型エイリアス
+4. 変数
+5. 関数
+6. 非`void`型の関数引数
+7. 名前空間
+8. 列挙子
+9. 非静的メンバ変数
+
+ただし、クラスや関数の宣言のうち定義を伴わない`friend`宣言に対しては付与できません。
+
+```cpp
+// 関数と関数引数
+[[=1]] void f();
+void g [[=2]] ([[=3]] int a [[=0]]) {
+  // 変数
+  int l [[=4]] = 0;
+}
+
+// クラス
+struct [[="a"]] S {
+  // 非静的メンバ変数
+  [[=5.0]]
+  int m [[=0]];
+  
+  // 変数（静的メンバ）
+  [[=-1.0]]
+  inline static int N [[=4]] = 0;
+};
+
+// 基底クラス
+struct D : [[=6]] S {};
+
+// 型エイリアス
+using A [[=1]] = S;
+
+// 型エイリアス（エイリアステンプレート）
+template<typename T>
+using AT [[=true]] = std::vector<T>;
+
+// 名前空間
+namespace [[=7]] NS {}
+
+// 列挙子
+enum class E {
+  e [[=0]] = 1,
+};
+```
+
+属性の指定が実際にどこで可能なのかはC++の文法を紐解く必要があり、かなり複雑になるのでここでは深入りしません。上記例のように、基本的には名前の後ろになりますが、クラス（基底クラス指定も）と名前空間の場合は名前の前になり、関数および関数引数とメンバ変数（静的メンバも含む）の場合は宣言の先頭でも指定することができます。
+
+`[[=expr]]`の`expr`部分には定数式を記述することができ、その式は最終的に構造的な型の定数値に評価される必要があります。これはアノテーションの値が最終的に映象（`std::meta::info`型の値）として取得されることによる制限です。
+
+例えば映象自体をアノテーションに指定することができます。
+
+```cpp
+template<typename T>
+[[=^^T]]
+void f(); // ok
+```
+
+アノテーションは繰り返すことができ、`[[=expr1, =expr2, ...]]`のように、カンマと`=`で区切って複数同時に付与できます。あるいは`[[]]`を複数指定することもできます。
+
+```cpp
+[[=1, ='2', =3.0]]
+void f(); // ok
+
+[[=1]][[=2]][[=3]]
+void g(); // ok
+```
+
+属性とアノテーションは1つの`[[]]`の中に一緒に書くことはできず、分けて書く必要があります。この時、属性とアノテーションに順番はありません。
+
+```cpp
+[[nodiscard, = 1]]
+int f(); // ng
+
+[[nodiscard]][[= 1]]
+int g(); // ok
+
+[[= 1]][[nodiscard]]
+int h(); // ok
+```
+
+## アノテーションのクエリ
+
+このように宣言に対して付与されたアノテーションは、専用のメタ関数によってクエリすることができます。アノテーションに関連するメタ関数は次の3つです
+
+```cpp{style=cppstddecl}
+namespace std::meta {
+  consteval bool is_annotation(info);
+
+  consteval vector<info> annotations_of(info item);
+  consteval vector<info> annotations_of_with_type(info item, info type);
+}
+```
+
+`std::meta::is_annotation(r)`は引数の映象がアノテーションを表現している場合に`true`を返し、それ以外の場合は`false`を返す関数です。
+
+### `std::meta::annotations_of()`
+
+
+### `std::meta::annotations_of_with_type()`
+
+
+## その他の注意事項
+
+> An annotation on a parameter-declaration in a function definition applies to both the function parameter and the variable.
+
+> Each annotation or instantiation thereof produces a unique annotation.
+
+アノテーションは即時コンテキストではない。
 
 # `[: r :]` - スプライス式
 
