@@ -936,7 +936,52 @@ static_assert(reflect_object(i) != reflect_constant(j));
 static_assert(reflect_object(i) != ^^i);  // 変数の映象とオブジェクトの映象は異なる
 ```
 
-== : https://eel.is/c++draft/expr.eq#7
+5の直接の基底クラス関係（direct base class relationship）とは、あるクラス型についてそのクラスが直接的に継承しているクラス型の組（順序対）の事です。これは`std::meta::bases_of()`メタ関数によって取得することができ、この直接の基底クラス関係を表す映象同士の比較は同じ組となっている場合に`true`となります。
+
+```cpp
+#include <cassert>
+
+struct B {};
+struct D1 : B {};
+struct D2 : D1 {};
+
+consteval void example() {
+  using namespace std::meta;
+
+  // これらはstd::vector<std::meta::info>型
+  auto dbcr1 = bases_of(^^D1, access_context::unchecked());
+  auto dbcr2 = bases_of(^^D2, access_context::unchecked());
+
+  assert(dbcr1.size() == 1);  // ✔️
+  assert(dbcr2.size() == 1);  // ✔️ 直接継承している基底クラスのみが含まれる
+
+  assert(dbcr1[0] == dbcr1[0]); // ✔️
+  assert(dbcr1[0] != dbcr2[0]); // ✔️
+}
+
+int main() {
+  example();
+}
+```
+
+`bases_of()`は`std::meta::info`の`std::vector`を返すのですが、コンパイル時の`std::vector`の使用時は実行時に残らない（コンパイル中に破棄される）ようにする必要があるため、この例では`consteval`関数内で`assert`を使用しています。
+
+最後のデータメンバ記述（data member description）とは`std::meta::data_member_spec()`メタ関数によって取得できるもので、後述する`define_aggregate()`を使用する際のメンバ変数の詳細を指定するものです。これは、型・名前・アラインメント・ビットフィールド幅・`[[no_unique_address]]`指定の5つ組になっており、これらの指定が完全に一致する場合に2つのデータメンバ記述（を表現する映象）は等値になります。
+
+```cpp
+using namespace std::meta;
+
+// これらもmeta::info型の値
+constexpr auto dmd1 = data_member_spec(^^int, { .name = "a" });
+constexpr auto dmd2 = data_member_spec(^^int, { .name = "b" });
+constexpr auto dmd3 = data_member_spec(^^int, { .name = "a", .alignment = 4 });
+
+static_assert(dmd1 == dmd1);
+static_assert(dmd1 != dmd2);  // 名前が異なる
+static_assert(dmd1 != dmd3);  // アラインメント指定が異なる
+```
+
+データメンバ記述および`define_aggregate()`の詳細は後述します。
 
 ### 関連名前空間
 
@@ -954,7 +999,72 @@ std::string name1 = identifier_of(^^S);             // ok、ADL
 
 なお、`std::meta::info`型の関連名前空間には`std::meta`以外の名前空間は含まれません。
 
-### consteval only value
+### コンパイル時専用の値
+
+`std::meta::info`型の値はコンパイル時専用の値（consteval only value）であり、定数式においてのみ使用することができ、実行時に持ち越すことができません。
+
+これは、映象の値の表現方法が実装定義であり、コンパイル時にしか存在しないASTを参照するものである可能性があるなど、実行時に使用できるようにすると実装難易度の上昇や追加のコストなどの問題があるためです。
+
+コンパイル時専用の値は次のいずれかです
+
+- 空ではない映象の値
+- `consteval`関数へのポインタ
+- 即値オブジェクトへのポインタ
+- 3、4の末尾の先（past the end）を指すポインタ
+
+即値オブジェクト（immediate object）とは、そのオブジェクト内に次のいずれかが含まれているものです
+
+- コンパイル時専用の値
+- 即値オブジェクト/`consteval`関数を参照するもの
+
+コンパイル時専用の値は`std::meta::info`の値（空ではないもの）のほかに、`consteval`関数ポインタや、`std::meta::info`をメンバに持つクラスのオブジェクトなどがあります。
+
+そして、即値オブジェクト（コンパイル時専用の値）は次のいずれかの使用法がなされている必要があります
+
+1. `constexpr`変数もしくは、そのサブオブジェクトに関連付けられている
+2. 定数テンプレートパラメータもしくは、そのサブオブジェクトに関連付けられている
+3. 定数式の評価中に生存期間が満了するオブジェクト
+
+```cpp
+consteval int plus1(int x) { return x + 1; }
+
+template <auto V>
+struct C { };
+
+auto a = plus1;           // ng、非constexpr変数
+constexpr auto b = plus1; // ok
+auto c = C<plus1>();      // ok、定数テンプレートパラメータに関連付けられている
+
+auto d = ^^int;       // ng、非constexpr変数
+auto e = C<^^char>(); // ok、定数テンプレートパラメータに関連付けられている
+```
+
+```cpp
+struct S {
+  std::meta::info r;
+};
+
+int main() {
+  S s1{};             // ok、空の映象
+  S s2{ .r = ^^int }; // ng、非constexpr変数
+  constexpr S s3{ .r = ^^int }; // ok
+}
+```
+
+定数式の評価中に生存期間が満了する場合とは、典型的には`consteval`関数内や`constexpr`変数の初期化式内での使用です。
+
+```cpp
+consteval bool f(std::meta::info r) {
+  auto r2 = ^^int;
+  return r == r2;
+}
+
+int main() {
+  bool b = f(^^int);  // ok、定数式内での使用
+}
+```
+
+ここまでの例においても、この制限を回避するために`consteval`関数や`constexpr`変数を使用していました。
 
 # アノテーション
 
