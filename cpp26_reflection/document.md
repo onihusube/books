@@ -753,7 +753,9 @@ consteval void example() {
 - 非静的メンバ変数
 
 ```cpp
-auto f() -> std::pair<int, double>;
+auto f() -> std::pair<int, double> {
+  return { 0, 2.0 };
+}
 
 enum E {
   e = 0,
@@ -952,8 +954,6 @@ static_assert(annotations_of(^^f) != annotations_of(^^g));
 6の直接の基底クラス関係（direct base class relationship）とは、あるクラス型についてそのクラスが直接的に継承しているクラス型の組（順序対）の事です。これは`std::meta::bases_of()`メタ関数によって取得することができ、この直接の基底クラス関係を表す映象同士の比較は同じ組となっている場合に`true`となります。
 
 ```cpp
-#include <cassert>
-
 struct B {};
 struct D1 : B {};
 struct D2 : D1 {};
@@ -965,11 +965,11 @@ consteval void example() {
   auto dbcr1 = bases_of(^^D1, access_context::unchecked());
   auto dbcr2 = bases_of(^^D2, access_context::unchecked());
 
-  assert(dbcr1.size() == 1);  // ✔️
-  assert(dbcr2.size() == 1);  // ✔️ 直接継承している基底クラスのみが含まれる
+  contract_assert(dbcr1.size() == 1);  // ✔️
+  contract_assert(dbcr2.size() == 1);  // ✔️ 直接継承している基底クラスのみが含まれる
 
-  assert(dbcr1[0] == dbcr1[0]); // ✔️
-  assert(dbcr1[0] != dbcr2[0]); // ✔️
+  contract_assert(dbcr1[0] == dbcr1[0]); // ✔️
+  contract_assert(dbcr1[0] != dbcr2[0]); // ✔️
 }
 
 int main() {
@@ -977,7 +977,7 @@ int main() {
 }
 ```
 
-`bases_of()`は`std::meta::info`の`std::vector`を返すのですが、コンパイル時の`std::vector`の使用時は実行時に残らない（コンパイル中に破棄される）ようにする必要があるため、この例では`consteval`関数内で`assert`を使用しています。
+`bases_of()`は`std::meta::info`の`std::vector`を返すのですが、コンパイル時の`std::vector`の使用時は実行時に残らない（コンパイル中に破棄される）ようにする必要があるため、この例では`consteval`関数内で`contract_assert`（C++26からの契約アサーション）を使用しています。
 
 最後のデータメンバ記述（data member description）とは`std::meta::data_member_spec()`メタ関数によって取得できるもので、後述する`define_aggregate()`を使用する際のメンバ変数の詳細を指定するものです。これは、型・名前・アラインメント・ビットフィールド幅・`[[no_unique_address]]`指定の5つ組になっており、これらの指定が完全に一致する場合に2つのデータメンバ記述（を表現する映象）は等値になります。
 
@@ -995,6 +995,79 @@ static_assert(dmd1 != dmd3);  // アラインメント指定が異なる
 ```
 
 データメンバ記述および`define_aggregate()`の詳細は後述します。
+
+### `std::meta::info`が保持できるもの
+
+映象には掬映式から取得できるもの以外にもメタ関数から取得できるものがあり、それらすべてが`std::meta::info`型の値として取り扱われます。`std::meta::info`型の値である映象は、C++26では次のものを表現することができます
+
+- スカラ型の値
+- 静的記憶域期間のオブジェクト
+- 変数
+- 構造化束縛
+- 関数
+- 関数引数
+- 列挙子
+- アノテーション
+- 型エイリアス
+- 型
+- クラスメンバ
+- 無名のビットフィールド
+- クラステンプレート
+- 関数テンプレート
+- 変数テンプレート
+- エイリアステンプレート
+- コンセプト
+- 名前空間エイリアス
+- 名前空間
+- 直接の基底クラス関係
+- データメンバ記述
+
+```cpp
+int arr[] = {1, 2, 3};
+auto [a1, a2, a3] = arr;
+[[=1]] void fn(int n);
+enum Enum { A };
+using Alias = int;
+struct B {};
+struct S : B {
+  int mem;
+  int : 0;
+};
+template<auto> struct TCls {};
+template<auto> void TFn();
+template<auto> int TVar;
+template<auto N> using TAlias = TCls<N>;
+template<auto> concept Concept = requires { true; };
+namespace NS {};
+namespace NSAlias = NS;
+
+constexpr auto ctx = std::meta::access_context::current();
+
+constexpr auto r1 = std::meta::reflect_constant(42);     // 値（42）
+constexpr auto r2 = std::meta::reflect_object(arr[1]);   // オブジェクト
+constexpr auto r3 = ^^arr;                               // 変数
+constexpr auto r4 = ^^a3;                                // 構造化束縛
+constexpr auto r5 = ^^fn;                                // 関数
+constexpr auto r6 = std::meta::parameters_of(^^fn)[0];   // 関数引数
+constexpr auto r7 = ^^Enum::A;                           // 列挙子
+constexpr auto r8 = std::meta::annotations_of(^^fn)[0];  // アノテーション
+constexpr auto r9 = ^^Alias;                             // 型エイリアス
+constexpr auto r10 = ^^S;                                // 型
+constexpr auto r11 = ^^S::mem;                           // クラスメンバ
+constexpr auto r12 = std::meta::members_of(^^S, ctx)[1]; // 無名ビットフィールド
+constexpr auto r13 = ^^TCls;                             // クラステンプレート
+constexpr auto r14 = ^^TFn;                              // 関数テンプレート
+constexpr auto r15 = ^^TVar;                             // 変数テンプレート
+constexpr auto r16 = ^^TAlias;                           // エイリアステンプレート
+constexpr auto r17 = ^^Concept;                          // コンセプト
+constexpr auto r18 = ^^NSAlias;                          // 名前空間エイリアス
+constexpr auto r19 = ^^NS;                               // 名前空間
+constexpr auto r20 = std::meta::bases_of(^^S, ctx)[0];   // 直接の基底クラス関係
+constexpr auto r21 =
+  std::meta::data_member_spec(^^int, {.name="member"});  // データメンバ記述
+```
+
+このリストは将来にわたって固定化されたものではなく、C++29以降で順次拡張されていく予定です。
 
 ### 保持可能な値の制限
 
@@ -1150,7 +1223,8 @@ C++26のアノテーションは属性構文を拡張した`[[=expr]]`の形式�
 [[=1]] void f();
 void g [[=2]] ([[=3]] int a [[=0]]) {
   // 変数
-  int l [[=4]] = 0;
+  int n [[=4]] = 0;
+  [[=4]] int m = 0;
 }
 
 // クラス
@@ -1183,7 +1257,7 @@ enum class E {
 };
 ```
 
-属性の指定が実際にどこで可能なのかはC++の文法を紐解く必要があり、かなり複雑になるのでここでは深入りしません。上記例のように、基本的には名前の後ろになりますが、クラス（基底クラス指定も）と名前空間の場合は名前の前になり、関数および関数引数とメンバ変数（静的メンバも含む）の場合は宣言の先頭でも指定することができます。
+属性の指定が実際にどこで可能なのかはC++の文法を紐解く必要があり、かなり複雑になるのでここでは深入りしません。上記例のように、基本的には名前の後ろになりますが、クラス（基底クラス指定も）と名前空間の場合は名前の前になり、関数および関数引数と変数（メンバ変数も含む）の場合は宣言の先頭でも指定することができます。
 
 `[[=expr]]`の`expr`部分には定数式を記述することができ、その式は最終的に構造的な型の定数値に評価される必要があります。これはアノテーションの値が最終的に映象（`std::meta::info`型の値）として取得されることによる制限です。
 
@@ -1198,11 +1272,29 @@ void f(); // ok
 アノテーションは繰り返すことができ、`[[=expr1, =expr2, ...]]`のように、カンマと`=`で区切って複数同時に付与できます。あるいは`[[]]`を複数指定することもできます。
 
 ```cpp
-[[=1, ='2', =3.0]]
+[[=1, ='a', =3.0]]
 void f(); // ok
 
 [[=1]][[=2]][[=3]]
 void g(); // ok
+```
+
+アノテーションにおいてパラメータパックを展開することもでき、この場合パックの各要素を`elem`とすると`=elem`がカンマ区切りのリストとして展開されます。すなわち、`[[=pack...[0], =pack...[1], ...]]`のように書いた場合と同じになります。
+
+```cpp
+constexpr auto f() -> std::tuple<int, char, short> {
+  return {1, '2', 3};
+}
+
+template<typename... Ts>
+void example() {
+  // 構造化束縛でのパック導入とconstexpr指定、C++26から
+  constexpr auto [...pack] = f();
+
+  // この2つのアノテーションは同じ指定となる
+  int n1 [[=pack...]];
+  int n2 [[=pack...[0], =pack...[1], =pack...[2]]];
+}
 ```
 
 属性とアノテーションは1つの`[[]]`の中に一緒に書くことはできず、分けて書く必要があります。この時、属性とアノテーションに順番はありません。
@@ -1233,19 +1325,242 @@ namespace std::meta {
 
 `std::meta::is_annotation(r)`は引数の映象がアノテーションを表現している場合に`true`を返し、それ以外の場合は`false`を返す関数です。
 
-### `std::meta::annotations_of()`
+アノテーションのクエリは主に`std::meta::annotations_of()`で行います。この関数は引数`item`が表現するものに対して付与されているアノテーションをすべて取得し、`std::vector`で返します。各アノテーションは`std::meta::info`の値として返されます。
 
+```cpp
+int f();
 
-### `std::meta::annotations_of_with_type()`
+[[= 1]]
+int g();
 
+[[= 5]]
+int h [[= 10]]();
+
+consteval void example() {
+  using namespace std::meta;
+
+  std::vector<info> v1 = annotations_of(^^f);
+  std::vector<info> v2 = annotations_of(^^g);
+  std::vector<info> v3 = annotations_of(^^h);
+
+  contract_assert(v1.empty());      // ✔️
+  contract_assert(v2.size() == 1);  // ✔️
+  contract_assert(v3.size() == 2);  // ✔️
+
+  contract_assert(is_annotation(v2[0]));  // ✔️
+
+  [[=1]] int x, y;
+
+  static_assert(annotations_of(^^x)[0] == annotations_of(^^y)[0]);
+}
+
+int main() {
+  example();
+}
+```
+
+関数は何度も再宣言することができ、その都度アノテーションを付与することができます。そのような関数のアノテーションをクエリすると、すべての宣言に指定されたアノテーションをすべて集めたものを取得できます。
+
+```cpp
+[[= 1]]
+void f();
+
+void f [[= 10]] ();
+
+[[= 5]]
+void f [[= 6]]();
+
+consteval void example() {
+  using namespace std::meta;
+
+  std::vector<info> v = annotations_of(^^f);
+
+  contract_assert(v.size() == 4);  // ✔️
+}
+
+int main() {
+  example();
+}
+```
+
+この時、`annotations_of()`の返す`vector`の順序は基本的にそのアノテーションの登場順になります。例えば上記例の場合は`1, 10, 5, 6`の順番になります。ただし、翻訳単位が異なる場合で双方の翻訳単位のクエリ地点から見える宣言が異なる場合などはそれぞれ異なる順序になる場合があります。
+
+`std::meta::annotations_of()`の引数にはアノテーションを付与できるものを表現した映象を渡さなければならず、それ以外の映象を渡すとエラーになります。
+
+```cpp
+consteval void example() {
+  using namespace std::meta;
+
+  auto [a, _] = std::pair{0, 1};
+
+  annotations_of(^^std::integral);  // ng、コンセプトはアノテーションを付与できない
+  annotations_of(^^a);              // ng、構造化束縛はアノテーションを付与できない
+}
+
+int main() {
+  example();
+}
+```
+
+この各アノテーションの映象は、`[[=expr]]`の`expr`を定数式で評価した結果の定数値を表現するものです。アノテーションの映象から定数値を取り出すにはいくつか方法がありますが、一番簡単なのは`std::meta::extract<T>()`を使用することです。
+
+```cpp
+[[= 10]]
+int f();
+
+consteval void example() {
+  using namespace std::meta;
+
+  constexpr info r = annotations_of(^^f)[0];
+  constexpr int N = extract<int>(r);
+
+  static_assert(N == 10);
+}
+```
+
+`std::meta::annotations_of_with_type()`は`std::meta::annotations_of(item, type)`の結果に対して、アノテーションの映象が表現する値が型の映象`type`と（`const`修飾を除いて）同じ型を持つものだけをフィルタした結果を返します。
+
+```cpp
+[[=1, =2, =3.0, ="4", = 5]]
+int f();
+
+consteval void example() {
+  using namespace std::meta;
+
+  std::vector<info> v = annotations_of_with_type(^^f, ^^int);
+
+  contract_assert(v.size() == 3);           // ✔️
+  contract_assert(extract<int>(v[0]) == 1); // ✔️
+  contract_assert(extract<int>(v[1]) == 2); // ✔️
+  contract_assert(extract<int>(v[2]) == 5); // ✔️
+}
+
+int main() {
+  example();
+}
+```
+
+`std::meta::extract()`も含めた各関数の詳細は後述します。
 
 ## その他の注意事項
 
-> An annotation on a parameter-declaration in a function definition applies to both the function parameter and the variable.
+### アノテーションを付与できない宣言
 
-> Each annotation or instantiation thereof produces a unique annotation.
+先ほど取り上げたアノテーションを付与できる宣言でも、次のいずれかに該当する場合その宣言にアノテーションを付与できません
 
-アノテーションは即時コンテキストではない。
+1. 宣言のホストスコープがターゲットスコープと異なる
+2. 定義の無い`friend`宣言
+
+宣言のターゲットスコープとは、その宣言が置かれているスコープの事です。宣言のホストスコープもおおむねターゲットスコープと同じになるのですが、一部の宣言では異なることがあります。その分類には深入りしませんが、ここで該当するのはどうやらローカルスコープにおける`extern`変数の宣言のみです。
+
+```cpp
+void f() {
+  extern int global [[=1]]; // ng
+}
+```
+
+このような宣言は、別の翻訳単位で定義されている外部リンケージを持つグローバル変数をローカルスコープに持ち込むために有効です。しかし、そのローカル`extern`宣言にアノテーションを付与できません。
+
+2の定義の無い`friend`宣言とは、関数`friend`宣言において定義を行わないものです。
+
+```cpp
+struct S {
+  friend void f1 [[=1]] ();     // ng
+  friend void f2 [[=1]] () {}   // ok、定義がある
+};
+```
+
+クラスやクラステンプレートの`friend`宣言においては、属性が指定できないようになっているためそもそもアノテーションを付与できません。
+
+```cpp
+class C;
+
+struct S {
+  friend class [[=1]] C;  // ng、無効な属性（アノテーション）の配置
+};
+```
+
+### 関数引数のアノテーション
+
+関数引数に対するアノテーションは、関数引数とそれに対応する変数の両方に付与されます。
+
+```cpp
+void f([[=1]] int x);
+
+void f([[=2]] int y) {
+  using namespace std::meta;
+
+  constexpr auto rp = parameters_of(^^f)[0];  // f()の第一引数の映象
+  constexpr auto ry = variable_of(rp);        // ↑の引数に対応する変数の映象
+
+  static_assert(ry == ^^y); // ryは変数（引数）yの映象である
+
+  // f()の第一引数にはアノテーションが2つ付与されている
+  static_assert(annotations_of(rp).size() == 2);    // `1`, `2`の2つ
+
+  // 変数yにはアノテーションは1つ付与されている
+  static_assert(annotations_of(ry).size() == 1);    // `2`のみ
+
+  // f()の第一引数の2つ目のアノテーションは、変数yのアノテーションに等しい
+  static_assert(annotations_of(rp)[1] == annotations_of(ry)[0]);
+}
+```
+
+関数定義内でその関数のある引数に対応する変数は一つですが、関数の仮引数宣言は複数存在する場合があります。リフレクション機能では両者の映象を区別してそれぞれ取得することができ、関数引数に対するアノテーションはその両方に対して付与されます。
+
+関数引数の映象に関する詳細は後述します。
+
+### テンプレートとアノテーション
+
+コンセプト以外のテンプレートの宣言にはアノテーションを付与することができますが、テンプレート特有の特性があります。
+
+まず、テンプレートに付与したアノテーションはインスタンス化毎に異なるものになります。
+
+```cpp
+// 変数テンプレート
+template<int>
+int x [[=1]];
+
+using namespace std::meta;
+
+// 異なるインスタンス化のアノテーションは異なるアノテーション
+static_assert(annotations_of(^^x<0>) != annotations_of(^^x<1>));
+```
+
+アノテーションの映象の等価性はその値（定数値）の等価性とは異なりますが、宣言されている場所が同一であれば同じアノテーションである訳でもありません。
+
+「同じアノテーション」の定義は難しいですが、基本的にはあるアノテーション指定（`[[=expr]]`）によるアノテーションと同じアノテーションになるのは同じアノテーション指定によるもののみで、テンプレートの場合は同じアノテーション指定によるアノテーションでもインスタンス化毎に異なるアノテーションになります。
+
+また、アノテーションにはほぼ任意の式を指定することができますが、これはテンプレートにおいて直接的なコンテキスト（immediate context）とみなされず、SFIINAEの対象になりません。
+
+```cpp
+template<class T>
+[[=T::type()]]
+void f(T t);  // (1)
+
+void f(int);  // (2)
+
+void g() {
+  f(0);         // ok、引数型がマッチするため(1)が選択される
+  f('0');       // ng、(1)の候補検討時にアノテーション内の式においてハードエラー
+}
+```
+
+# メタ関数
+
+## エラーハンドリング
+
+## `std::meta::access_context`
+
+## 式のリフレクションと値/オブジェクトのリフレクション
+
+We for now restrict the space of reflectable values to those of structural type in order to meet two requirements:
+
+## 関数仮引数
+
+
+## メタ関数
+
 
 # `[: r :]` - スプライス式
 
@@ -1296,21 +1611,6 @@ characteristic sequence
 
 injected declarationの生成は副作用（translation environment
 `consteval`ブロックではないコア定数式から注入宣言（injected declaration）が生成されることを禁止する。
-
-# メタ関数
-
-## エラーハンドリング
-
-## `std::meta::access_context`
-
-## 式のリフレクションと値/オブジェクトのリフレクション
-
-We for now restrict the space of reflectable values to those of structural type in order to meet two requirements:
-
-## 関数仮引数
-
-
-## メタ関数
 
 \clearpage
 
